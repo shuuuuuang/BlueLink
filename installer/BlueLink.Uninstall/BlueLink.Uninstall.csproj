@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>Uninstall</AssemblyName>
+    <RootNamespace>BlueLink.Uninstall</RootNamespace>
+    <ApplicationIcon>..\..\design\brand\app-icons\windows\bluelink.ico</ApplicationIcon>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Configuration" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\shared\WindowsAppControlChannel.cs" Link="Shared\WindowsAppControlChannel.cs" />
+    <Compile Include="..\..\shared\InstalledApplicationController.cs" Link="Shared\InstalledApplicationController.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="..\..\design\brand\final\bluelink-final-logo.png">
+      <Link>Assets\bluelink-logo.png</Link>
+    </Resource>
+  </ItemGroup>
+</Project>

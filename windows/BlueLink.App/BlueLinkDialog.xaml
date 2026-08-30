@@ -1,0 +1,24 @@
+<Window x:Class="BlueLink.BlueLinkDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="蓝联" Width="470" SizeToContent="Height" MinHeight="230" MaxHeight="520"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Icon="/BlueLink;component/Assets/bluelink.ico" Background="{StaticResource CanvasBrush}">
+    <Grid Margin="30,26,30,22">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="54"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border x:Name="IconSurface" Width="42" Height="42" CornerRadius="12" Background="{StaticResource SoftBlueBrush}" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <TextBlock x:Name="IconText" Text="i" Foreground="{StaticResource BlueBrush}" FontWeight="Bold" FontSize="23" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock x:Name="TitleText" Grid.Column="1" Foreground="{StaticResource InkBrush}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </Grid>
+        <ScrollViewer Grid.Row="1" MaxHeight="285" VerticalScrollBarVisibility="Auto" Margin="54,17,0,22">
+            <TextBlock x:Name="MessageText" Foreground="{StaticResource MutedBrush}" FontSize="14" LineHeight="23" TextWrapping="Wrap"/>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="CancelButton" Content="取消" Width="108" Click="Cancel_Click" Visibility="Collapsed"/>
+            <Button x:Name="ConfirmButton" Content="确定" Width="118" Margin="12,0,0,0" Style="{StaticResource PrimaryButtonStyle}" Click="Confirm_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

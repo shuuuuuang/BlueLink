@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <DirectoryRef Id="APPFOLDER">
+      <Component Id="PayloadComponent_7BC59740FDDA0D4474505D78" Guid="{502CA192-59BC-59BB-BD43-34F3E6CC51CA}">
+        <File Id="PayloadFile_7BC59740FDDA0D4474505D78" Source="E:\BlueLink\artifacts\windows\win-x64\app\BlueLink.deps.json" Name="BlueLink.deps.json" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_4D5688667214E99F9A34B098" Guid="{76A1A549-E16F-591C-8E91-1E7CCAAAB657}">
+        <File Id="PayloadFile_4D5688667214E99F9A34B098" Source="E:\BlueLink\artifacts\windows\win-x64\app\BlueLink.dll" Name="BlueLink.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_05E212C76CF22BC5986AFDB2" Guid="{D35DC140-2753-5FEC-A9D5-FA28043D4B66}">
+        <File Id="PayloadFile_05E212C76CF22BC5986AFDB2" Source="E:\BlueLink\artifacts\windows\win-x64\app\BlueLink.exe" Name="BlueLink.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_523024F9C3F19AB0EB47E79E" Guid="{358B64AE-5BD1-5A87-86E2-ECB1AAE52B56}">
+        <File Id="PayloadFile_523024F9C3F19AB0EB47E79E" Source="E:\BlueLink\artifacts\windows\win-x64\app\BlueLink.runtimeconfig.json" Name="BlueLink.runtimeconfig.json" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_85F79441BB2459B4AF1CD7D2" Guid="{50B79077-6F42-5ADA-98D2-869EC0B1E50E}">
+        <File Id="PayloadFile_85F79441BB2459B4AF1CD7D2" Source="E:\BlueLink\artifacts\windows\win-x64\app\BouncyCastle.Cryptography.dll" Name="BouncyCastle.Cryptography.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_785CCD899DC7977487BE2E94" Guid="{05607D88-E17C-5009-A8C8-B260D160A7DB}">
+        <File Id="PayloadFile_785CCD899DC7977487BE2E94" Source="E:\BlueLink\artifacts\windows\win-x64\app\Microsoft.Windows.SDK.NET.dll" Name="Microsoft.Windows.SDK.NET.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_18208160DF69028DC6AAEDC2" Guid="{42166175-AFAB-5233-A7F6-D94E46ED1E74}">
+        <File Id="PayloadFile_18208160DF69028DC6AAEDC2" Source="E:\BlueLink\artifacts\windows\win-x64\app\WinRT.Runtime.dll" Name="WinRT.Runtime.dll" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="BOOTSTRAPFOLDER">
+      <Component Id="PayloadComponent_3F4756F331F2D5B2F94A60A9" Guid="{91A75B79-3785-5977-8F56-8ADB512E1508}">
+        <File Id="PayloadFile_3F4756F331F2D5B2F94A60A9" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\runtime-package.json" Name="runtime-package.json" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_F248586957202EF3BA7F8013" Guid="{894490EF-880B-50B1-8601-352D80EB6CC9}">
+        <File Id="PayloadFile_F248586957202EF3BA7F8013" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\System.Buffers.dll" Name="System.Buffers.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_8C97BE4AE40145866DBF27C8" Guid="{EE71FA06-659C-5EC1-9462-12F59032364C}">
+        <File Id="PayloadFile_8C97BE4AE40145866DBF27C8" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\System.Memory.dll" Name="System.Memory.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_8ECC336B6BB7E8A124800C61" Guid="{120D06B2-0522-5469-90CD-1D78D362812A}">
+        <File Id="PayloadFile_8ECC336B6BB7E8A124800C61" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\System.Numerics.Vectors.dll" Name="System.Numerics.Vectors.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_E82A4463E687C82A4BA62827" Guid="{4C46AC33-3F64-5E92-B345-FA1FEC2F66ED}">
+        <File Id="PayloadFile_E82A4463E687C82A4BA62827" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\System.Runtime.CompilerServices.Unsafe.dll" Name="System.Runtime.CompilerServices.Unsafe.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_150B45F4CE5152A5F5F53BE4" Guid="{A231D23D-779E-52EF-8CB7-AA1544C49C25}">
+        <File Id="PayloadFile_150B45F4CE5152A5F5F53BE4" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\Wpf.Ui.Abstractions.dll" Name="Wpf.Ui.Abstractions.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_52C0B0F4F9E367CCF8F8ADAE" Guid="{0B14888B-A7B7-5F3F-ACA5-95DC00AEED5D}">
+        <File Id="PayloadFile_52C0B0F4F9E367CCF8F8ADAE" Source="E:\BlueLink\artifacts\windows\win-x64\bootstrap\Wpf.Ui.dll" Name="Wpf.Ui.dll" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <ComponentGroup Id="PublishedPayloadComponents">
+      <ComponentRef Id="PayloadComponent_7BC59740FDDA0D4474505D78" />
+      <ComponentRef Id="PayloadComponent_4D5688667214E99F9A34B098" />
+      <ComponentRef Id="PayloadComponent_05E212C76CF22BC5986AFDB2" />
+      <ComponentRef Id="PayloadComponent_523024F9C3F19AB0EB47E79E" />
+      <ComponentRef Id="PayloadComponent_85F79441BB2459B4AF1CD7D2" />
+      <ComponentRef Id="PayloadComponent_785CCD899DC7977487BE2E94" />
+      <ComponentRef Id="PayloadComponent_18208160DF69028DC6AAEDC2" />
+      <ComponentRef Id="PayloadComponent_3F4756F331F2D5B2F94A60A9" />
+      <ComponentRef Id="PayloadComponent_F248586957202EF3BA7F8013" />
+      <ComponentRef Id="PayloadComponent_8C97BE4AE40145866DBF27C8" />
+      <ComponentRef Id="PayloadComponent_8ECC336B6BB7E8A124800C61" />
+      <ComponentRef Id="PayloadComponent_E82A4463E687C82A4BA62827" />
+      <ComponentRef Id="PayloadComponent_150B45F4CE5152A5F5F53BE4" />
+      <ComponentRef Id="PayloadComponent_52C0B0F4F9E367CCF8F8ADAE" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

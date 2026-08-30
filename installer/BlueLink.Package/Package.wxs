@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="$(var.ProductName)" ProductCode="$(var.ProductCode)" Manufacturer="BlueLink"
+           Version="$(var.ProductVersion)" Language="2052" Scope="perUser" InstallerVersion="500"
+           UpgradeCode="$(var.PackageUpgradeCode)">
+    <SummaryInformation Description="蓝联安全蓝牙聊天与文件传输" Manufacturer="BlueLink" />
+    <MajorUpgrade DowngradeErrorMessage="此电脑上已安装更高版本的蓝联。" Schedule="afterInstallExecute" />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="CREATE_DESKTOP_SHORTCUT" Value="1" Secure="yes" />
+    <Property Id="AUTOSTART" Value="0" Secure="yes" />
+    <Property Id="BLUELINK_BUNDLE_PROVIDER_KEY" Secure="yes" />
+    <Property Id="ARPINSTALLLOCATION" Secure="yes" />
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="BlueLink">
+          <Directory Id="APPFOLDER" Name="app" />
+          <Directory Id="BOOTSTRAPFOLDER" Name="bootstrap" />
+          <Directory Id="DownloadFolder" Name="Download" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="ProductFeature" Title="蓝联" Level="1">
+      <ComponentRef Id="LauncherComponent" />
+      <ComponentRef Id="UninstallerComponent" />
+      <ComponentRef Id="InstallManifestComponent" />
+      <ComponentRef Id="DownloadFolderComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+      <ComponentRef Id="DesktopShortcutComponent" />
+      <ComponentRef Id="AutoStartComponent" />
+      <ComponentGroupRef Id="PublishedPayloadComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <Component Id="LauncherComponent" Directory="INSTALLFOLDER" Guid="$(var.ApplicationComponentGuid)">
+      <File Id="BlueLinkExe" Source="$(var.LauncherExe)" Name="BlueLink.exe" KeyPath="yes" Checksum="yes" />
+      <File Id="BlueLinkExeConfig" Source="$(var.LauncherConfig)" Name="BlueLink.exe.config" />
+    </Component>
+    <Component Id="UninstallerComponent" Directory="INSTALLFOLDER" Guid="$(var.UninstallerComponentGuid)">
+      <File Id="UninstallExe" Source="$(var.UninstallExe)" Name="Uninstall.exe" KeyPath="yes" Checksum="yes" />
+      <File Id="UninstallExeConfig" Source="$(var.UninstallConfig)" Name="Uninstall.exe.config" />
+    </Component>
+    <Component Id="InstallManifestComponent" Directory="INSTALLFOLDER" Guid="$(var.ManifestComponentGuid)">
+      <File Id="InstallManifest" Source="$(var.ManifestPath)" Name=".bluelink-install.json" KeyPath="yes" />
+    </Component>
+    <Component Id="DownloadFolderComponent" Directory="INSTALLFOLDER" Guid="$(var.DownloadComponentGuid)">
+      <CreateFolder Directory="DownloadFolder" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="MsiProductCode" Type="string" Value="[ProductCode]" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="MsiUpgradeCode" Type="string" Value="$(var.PackageUpgradeCode)" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="BundleUpgradeCode" Type="string" Value="$(var.BundleUpgradeCode)" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="BundleProviderKey" Type="string" Value="[BLUELINK_BUNDLE_PROVIDER_KEY]" />
+    </Component>
+    <Component Id="StartMenuShortcutComponent" Directory="ProgramMenuFolder" Guid="$(var.StartMenuComponentGuid)" Condition="$(var.StartMenuComponentCondition)">
+      <Shortcut Id="StartMenuShortcut" Name="蓝联 BlueLink" Description="安全蓝牙聊天与文件传输" Target="[#BlueLinkExe]" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      <RemoveFolder Id="RemoveStartMenuFolder" Directory="ProgramMenuFolder" On="uninstall" />
+    </Component>
+    <Component Id="DesktopShortcutComponent" Directory="DesktopFolder" Guid="$(var.DesktopComponentGuid)" Condition="CREATE_DESKTOP_SHORTCUT=1">
+      <Shortcut Id="DesktopShortcut" Name="蓝联 BlueLink" Description="安全蓝牙聊天与文件传输" Target="[#BlueLinkExe]" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="$(var.ProductRegistryKey)" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="AutoStartComponent" Directory="INSTALLFOLDER" Guid="$(var.AutoStartComponentGuid)" Condition="AUTOSTART=1">
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="BlueLink" Type="string" Value="&quot;[#BlueLinkExe]&quot; --background" KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

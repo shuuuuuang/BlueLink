@@ -1,0 +1,10 @@
+{
+  "MetadataUrl": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/8.0/releases.json",
+  "Version": "8.0.30",
+  "Rid": "win-x64",
+  "FileName": "windowsdesktop-runtime-win-x64.exe",
+  "Url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x64.exe",
+  "Sha512": "B4498F93CD6817E28ACD5C2AAA80FB7271F5EA62D7F3E2171B2B30D36A15BA950311208CEA55FC0903FC962FBC3184D457885DFE7C4AB19C022B52FFF6FCACEB",
+  "Size": 58510672,
+  "ManualUrl": "https://dotnet.microsoft.com/download/dotnet/8.0/runtime"
+}

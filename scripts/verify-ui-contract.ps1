@@ -1,0 +1,133 @@
+param(
+    [string]$RuntimeProbeReport = ''
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+
+function Assert-Contains([string]$Path, [string]$Pattern, [string]$Description) {
+    $fullPath = Join-Path $root $Path
+    if (-not (Test-Path -LiteralPath $fullPath)) { throw "Missing file: $Path" }
+    $content = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
+    if ($content -notmatch $Pattern) { throw "UI contract failed: $Description ($Path)" }
+    Write-Host "[PASS] $Description"
+}
+
+function Assert-NotContains([string]$Path, [string]$Pattern, [string]$Description) {
+    $fullPath = Join-Path $root $Path
+    if (-not (Test-Path -LiteralPath $fullPath)) { throw "Missing file: $Path" }
+    $content = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
+    if ($content -match $Pattern) { throw "UI contract failed: $Description ($Path)" }
+    Write-Host "[PASS] $Description"
+}
+
+$windowsPrototypeRoot = Join-Path $root 'design\prototypes\windows-v2'
+$windowsPrototypes = Get-ChildItem -LiteralPath $windowsPrototypeRoot -Filter '*.png'
+if ($windowsPrototypes.Count -ne 15) { throw "Expected 15 Windows prototypes, found $($windowsPrototypes.Count)." }
+Write-Host '[PASS] 15 Windows page prototypes are present'
+
+$overwritePrototype = Join-Path $root 'design\prototypes\installer-overwrite-dialog-wpfui.png'
+$runtimePrototype = Join-Path $root 'design\prototypes\installer-runtime-required-wpfui.png'
+if ((Get-FileHash -LiteralPath $overwritePrototype -Algorithm SHA256).Hash -ne 'C26741264D5B3402DC38DA536226401196085B4C3B81E91ED9FD9EEB433105B2') {
+    throw 'Overwrite-dialog prototype hash changed.'
+}
+if ((Get-FileHash -LiteralPath $runtimePrototype -Algorithm SHA256).Hash -ne 'BDCF4C291D8FA595FC45488568A240919F8162536DD775B83BA5C893CA4E7052') {
+    throw 'Runtime-required prototype hash changed.'
+}
+Write-Host '[PASS] confirmed installer prototype hashes'
+
+$productXamlRoots = @(
+    'windows\BlueLink.App',
+    'installer\BlueLink.SetupUI',
+    'installer\BlueLink.Launcher',
+    'installer\BlueLink.Uninstall'
+)
+$productXaml = foreach ($relativeRoot in $productXamlRoots) {
+    Get-ChildItem -LiteralPath (Join-Path $root $relativeRoot) -Filter '*.xaml' -File -Recurse |
+        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
+}
+$templateViolations = $productXaml | Select-String -Pattern '<ControlTemplate\b|ControlTemplate\s*=' -AllMatches
+if ($templateViolations) {
+    $details = ($templateViolations | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }) -join [Environment]::NewLine
+    throw "Hand-written base ControlTemplate is forbidden in product XAML:`n$details"
+}
+Write-Host '[PASS] product XAML contains zero hand-written ControlTemplate declarations'
+
+$removedControls = Join-Path $root 'windows\BlueLink.App\Themes\Controls.xaml'
+if (Test-Path -LiteralPath $removedControls) { throw 'Themes\Controls.xaml must be deleted, not renamed or retained.' }
+Write-Host '[PASS] legacy Themes\Controls.xaml is absent'
+
+Assert-Contains 'windows\BlueLink.App\BlueLink.App.csproj' '<PackageReference Include="WPF-UI" Version="4\.3\.0"' 'Windows client pins WPF-UI 4.3.0'
+Assert-Contains 'windows\BlueLink.App\App.xaml' '<ui:ThemesDictionary Theme="Light"\s*/>' 'Windows client loads official WPF UI theme dictionary'
+Assert-Contains 'windows\BlueLink.App\App.xaml' '<ui:ControlsDictionary\s*/>' 'Windows client loads official WPF UI controls dictionary'
+Assert-Contains 'windows\BlueLink.App\App.xaml' 'Themes/Components\.xaml' 'Windows client loads business composition styles'
+Assert-NotContains 'windows\BlueLink.App\App.xaml' 'Themes/Controls\.xaml' 'Windows client no longer loads legacy control templates'
+
+foreach ($project in @(
+    'installer\BlueLink.SetupUI\BlueLink.SetupUI.csproj',
+    'installer\BlueLink.Launcher\BlueLink.Launcher.csproj',
+    'installer\BlueLink.Uninstall\BlueLink.Uninstall.csproj'
+)) {
+    Assert-Contains $project '<PackageReference Include="WPF-UI" Version="4\.3\.0"' "$project pins WPF-UI 4.3.0"
+}
+
+foreach ($window in @(
+    'windows\BlueLink.App\MainWindow.xaml',
+    'windows\BlueLink.App\SettingsWindow.xaml',
+    'windows\BlueLink.App\ImagePreviewWindow.xaml',
+    'windows\BlueLink.App\AllTransfersWindow.xaml'
+)) {
+    Assert-Contains $window '^<ui:FluentWindow\b' "$window uses WPF UI FluentWindow"
+    Assert-Contains $window '<ui:TitleBar\b' "$window uses WPF UI TitleBar"
+}
+
+Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' '<ui:NavigationView\b' 'Settings uses WPF UI NavigationView'
+Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' '<ui:NavigationViewItem\b' 'Settings uses official WPF UI navigation items'
+Assert-NotContains 'windows\BlueLink.App\SettingsWindow.xaml' '<Tab(Control|Item)\b|<ui:TabView\b' 'Settings does not regress to top tabs'
+Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' 'x:Name="SaveInfoBar"' 'Settings exposes non-blocking save feedback'
+
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AllowDrop="True"' 'Windows chat accepts Explorer file drops'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'PreviewMouseMove="Attachment_PreviewMouseMove"' 'Windows attachments support drag-out'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AttachmentDeleteMenu_Click' 'Chat/file context menus include record deletion'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml.cs' 'SetTransferPanelExpandedAsync' 'Transfer panel expanded state is persisted'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'CurrentTransfersButton' 'Transfer panel retains current-session filter'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AllTransfersButton' 'Transfer panel retains all-transfers filter'
+Assert-NotContains 'windows\BlueLink.App\MainWindow.xaml' 'ClearCompletedTransfers_Click' 'Transfer panel omits clear-completed action'
+Assert-Contains 'windows\BlueLink.App\MainViewModel.cs' 'ComposerPlaceholder\s*=>' 'Offline subtitle behavior is projected by the view model'
+
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Fit_Click' 'Image preview retains fit-to-window'
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Content="100%"' 'Image preview retains actual-size action'
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Rotate_Click' 'Image preview retains rotation'
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'SaveCopy_Click' 'Image preview retains save-copy'
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Locate_Click' 'Image preview retains Explorer locate'
+Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'OpenOriginal' 'Image preview omits open-original action'
+
+$allProductSource = Get-ChildItem -LiteralPath (Join-Path $root 'windows\BlueLink.App'), (Join-Path $root 'installer\BlueLink.SetupUI'), (Join-Path $root 'installer\BlueLink.Launcher'), (Join-Path $root 'installer\BlueLink.Uninstall') -File -Recurse |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
+$nativeDialogViolations = $allProductSource | Select-String -Pattern 'System\.Windows\.MessageBox|MessageBox\.Show\s*\(' -AllMatches
+if ($nativeDialogViolations) { throw 'Native/system MessageBox usage remains in product source.' }
+Write-Host '[PASS] product source contains no native/system MessageBox calls'
+
+Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Windows dialogs use official WPF UI MessageBox'
+Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'TryFindResource\(typeof\(Wpf\.Ui\.Controls\.MessageBox\)\)' 'Windows dialogs explicitly bind the official MessageBox style'
+Assert-Contains 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Overwrite prompt directly uses official WPF UI MessageBox'
+Assert-NotContains 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs' 'TestableMessageBox|InvokeCloseButton' 'Overwrite UI test has no derived fake or internal close shortcut'
+Assert-Contains 'windows\BlueLink.App\TrustConfirmationDialog.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Trust confirmation uses official WPF UI MessageBox'
+Assert-Contains 'windows\BlueLink.App\TrustConfirmationDialog.cs' 'try[\s\S]*finally' 'Trust confirmation restores owner overlay through finally'
+
+Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'FocusVisualStyle" Value="\{x:Null\}"' 'Composition styles suppress default focus adorners'
+Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'MaxDropDownHeight" Value="320"' 'ComboBox dropdown height is bounded'
+Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'Height" Value="38"' 'Common input and action height token is 38 px'
+
+if (-not [string]::IsNullOrWhiteSpace($RuntimeProbeReport)) {
+    $resolvedProbe = [IO.Path]::GetFullPath($RuntimeProbeReport)
+    if (-not (Test-Path -LiteralPath $resolvedProbe)) { throw "Runtime probe report missing: $resolvedProbe" }
+    $probe = Get-Content -LiteralPath $resolvedProbe -Raw | ConvertFrom-Json
+    $failed = @($probe.controls | Where-Object { -not $_.StyleResolved -or -not $_.TemplateResolved -or -not $_.TemplateApplied -or $_.VisualChildren -lt 1 -or -not $_.FocusVisualSuppressed })
+    if ($failed.Count -gt 0) {
+        throw "Runtime WPF UI template probe failed: $($failed.Name -join ', ')"
+    }
+    Write-Host "[PASS] runtime style/template probe passed for $($probe.controls.Count) critical controls"
+}
+
+Write-Host 'WPF UI contract verification passed.'

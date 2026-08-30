@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package bluelink.btx.v1;
+
+option java_package = "com.bluelink.spec.v1";
+option csharp_namespace = "BlueLink.Spec.V1";
+
+message ProtocolHello {
+  repeated uint32 protocol_versions = 1;
+  bytes peer_id = 2;
+  repeated Feature features = 3;
+  uint32 max_frame_size = 4;
+  uint32 preferred_segment_size = 5;
+  uint32 preferred_extent_size = 6;
+}
+
+enum Feature {
+  FEATURE_UNSPECIFIED = 0;
+  CHAT = 1;
+  IMAGE = 2;
+  FILE = 3;
+  RESUME = 4;
+  MULTIPLEX = 5;
+  EXTENT_HASH = 6;
+  READ_RECEIPT = 7;
+}
+
+message TransportCapabilities {
+  bool ble_gatt_control = 1;
+  bool rfcomm_dial = 2;
+  bool rfcomm_listen = 3;
+  bool le_l2cap_coc_dial = 4;
+  bool le_l2cap_coc_listen = 5;
+  bool can_export_classic_address = 6;
+  uint32 max_concurrent_sessions = 7;
+  Platform platform = 8;
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  ANDROID = 1;
+  WINDOWS = 2;
+}
+
+message ChatMessage {
+  bytes message_id = 1;
+  bytes conversation_id = 2;
+  int64 created_at_unix_ms = 3;
+  uint64 monotonic_order = 4;
+  string content = 5;
+  bytes reply_to = 6;
+  repeated bytes attachment_ids = 7;
+}
+
+message FileEntry {
+  bytes file_id = 1;
+  string relative_path = 2;
+  string name = 3;
+  string mime_type = 4;
+  uint64 size = 5;
+  bytes whole_file_sha256 = 6;
+  uint32 extent_size = 7;
+}
+
+message TransferOffer {
+  bytes transfer_id = 1;
+  repeated FileEntry files = 2;
+}
+
+message TransferExtent {
+  bytes transfer_id = 1;
+  bytes file_id = 2;
+  uint32 extent_index = 3;
+  uint64 offset = 4;
+  bytes extent_sha256 = 5;
+  bytes data = 6;
+}
+
+message ResumeQuery { bytes transfer_id = 1; }
+
+message ResumeState {
+  bytes transfer_id = 1;
+  bytes completed_extents_bitmap = 2;
+  uint64 contiguous_committed_offset = 3;
+}
+
+message WindowUpdate {
+  uint32 stream_id = 1;
+  uint64 credit = 2;
+}
+

@@ -1,0 +1,27 @@
+<Project Sdk="WixToolset.Sdk/4.0.6">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <BundleName Condition="'$(BundleName)' == ''">蓝联 BlueLink</BundleName>
+    <BundleUpgradeCode Condition="'$(BundleUpgradeCode)' == ''">{6B6EB4AB-16E2-4E54-BBBE-556061F7D4A7}</BundleUpgradeCode>
+    <PackageUpgradeCode Condition="'$(PackageUpgradeCode)' == ''">{BE8A6A43-710C-4B6E-92DC-07C4FAFC22B9}</PackageUpgradeCode>
+    <BundleProviderKey Condition="'$(BundleProviderKey)' == ''">BlueLink.Desktop.Bundle.$(ProductVersion)</BundleProviderKey>
+    <ProductRegistryKey Condition="'$(ProductRegistryKey)' == ''">Software\BlueLink</ProductRegistryKey>
+    <MsiPath Condition="'$(MsiPath)' == ''">$(MSBuildThisFileDirectory)..\BlueLink.Package\bin\x64\Release\BlueLink.Package.msi</MsiPath>
+    <BaOutput Condition="'$(BaOutput)' == ''">$(MSBuildThisFileDirectory)..\BlueLink.SetupUI\bin\Release\net472\win-x64</BaOutput>
+    <IconPath Condition="'$(IconPath)' == ''">$(MSBuildThisFileDirectory)..\..\design\brand\app-icons\windows\bluelink.ico</IconPath>
+    <RuntimePayload Condition="'$(RuntimePayload)' == ''">$(MSBuildThisFileDirectory)..\..\.build\dotnet-runtime\windowsdesktop-runtime-8.0.30-win-x64.exe</RuntimePayload>
+    <RuntimeDownloadUrl Condition="'$(RuntimeDownloadUrl)' == ''">https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x64.exe</RuntimeDownloadUrl>
+    <RuntimeVersion Condition="'$(RuntimeVersion)' == ''">8.0.30</RuntimeVersion>
+    <RuntimeSize Condition="'$(RuntimeSize)' == ''">读取实际包大小</RuntimeSize>
+    <RuntimePerMachine Condition="'$(RuntimePerMachine)' == ''">yes</RuntimePerMachine>
+    <IncludePrerequisites Condition="'$(IncludePrerequisites)' == ''">yes</IncludePrerequisites>
+    <DefineConstants>ProductVersion=$(ProductVersion);BundleName=$(BundleName);BundleUpgradeCode=$(BundleUpgradeCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleProviderKey=$(BundleProviderKey);ProductRegistryKey=$(ProductRegistryKey);MsiPath=$(MsiPath);BaOutput=$(BaOutput);IconPath=$(IconPath);RuntimePayload=$(RuntimePayload);RuntimeDownloadUrl=$(RuntimeDownloadUrl);RuntimeVersion=$(RuntimeVersion);RuntimeSize=$(RuntimeSize);RuntimePerMachine=$(RuntimePerMachine);IncludePrerequisites=$(IncludePrerequisites)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="4.0.6" />
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="4.0.6" />
+  </ItemGroup>
+</Project>

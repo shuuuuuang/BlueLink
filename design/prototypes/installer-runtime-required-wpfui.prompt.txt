@@ -1,0 +1,35 @@
+Use case: ui-mockup
+Asset type: production-ready desktop WPF installer screen prototype
+Primary request: Create a new full-screen Chinese UI mockup for the BlueLink custom WPF installation wizard when the required .NET desktop runtime is missing. This is a new screen, not an edit of the reference screenshots.
+Input images: Image 1 is the current BlueLink installer layout reference; Image 2 is the approved BlueLink WPF UI visual-language reference.
+Scene/backdrop: A 1560 x 1020 Windows desktop installer window with the same light #FBFCFF background, thin gray outer border, 18 px rounded window corners, custom WPF UI title bar, BlueLink whale logo and title at top left, Windows minimize/maximize/close controls at top right.
+Style/medium: realistic shippable WPF UI 4.3 desktop interface, Microsoft Fluent-inspired, clean restrained spacing, exact practical controls, not concept art.
+Composition/framing:
+- Keep the existing page structure: title bar at top, large content region, 123 px footer separated by a thin line.
+- Main content begins around 82 px from the left and 155 px from the top.
+- Large heading, subtitle, then one prominent status card and one subtle information row.
+- Footer actions aligned bottom-right.
+Subject and exact text, render verbatim:
+Title bar: "蓝联安装向导"
+Main heading: "需要安装 .NET 8 桌面运行时"
+Subtitle: "蓝联需要此运行环境才能正常启动。安装向导可以为你自动下载并安装。"
+Status card badge: "尚未安装"
+Status card title: "Microsoft .NET Desktop Runtime 8"
+Status detail 1: "架构：x64"
+Status detail 2: "预计下载：约 55 MB"
+Status detail 3: "来源：Microsoft 官方"
+Information text: "仅安装运行环境，不会更改你的聊天记录、接收文件或蓝联设置。"
+Secondary text button: "我已安装，重新检测"
+Footer secondary button: "取消"
+Footer primary button: "下载并安装"
+Visual details:
+- Use a blue circular download/runtime icon inside a pale blue 64 px icon tile at the left of the status card.
+- Status card is white with a #D9E1EF border, 14 px corner radius, generous padding, and a compact light amber status badge.
+- The three status details are neatly aligned and readable, not tiny.
+- Information row uses a small blue information icon and muted blue-gray text.
+- Primary button is BlueLink blue #1264F6, 38 px high, about 168 px wide.
+- Cancel button is white/secondary, 38 px high, about 120 px wide.
+- "我已安装，重新检测" appears as a low-emphasis text button near the lower-left of the content, not in the footer.
+- Use Microsoft YaHei UI-like Chinese typography; heading dark navy #101B39, supporting text #58698D.
+- No visible black dotted focus rectangle and no extra blue focus ring.
+Constraints: Preserve the visual system and proportions from the references; no left marketing illustration panel on this runtime check page; no browser chrome; no Windows system MessageBox; no fake progress bar; no extra buttons; no extra text; no watermark; all Chinese text must be legible and rendered exactly once.

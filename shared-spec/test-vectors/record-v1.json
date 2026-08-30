@@ -1,0 +1,11 @@
+{
+  "description": "BTX/1 ChaCha20-Poly1305 encrypted chat record",
+  "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "nonce_prefix_hex": "11223344",
+  "sequence": 7,
+  "message_type": 10,
+  "flags": 0,
+  "stream_id": 1,
+  "payload_utf8": "BTX vector",
+  "wire_hex": "0000002a9f4673f31c1cefbcfc9f0ce6a1bf3ca2b34897a9e18964c813c4f0fcef14228ac8144be19a0549bb0e1c"
+}

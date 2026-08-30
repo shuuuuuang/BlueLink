@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package bluelink.rendezvous.v1;
+
+option java_package = "com.bluelink.spec.rendezvous.v1";
+option csharp_namespace = "BlueLink.Spec.Rendezvous.V1";
+
+message Presence {
+  uint32 protocol_major = 1;
+  Platform platform = 2;
+  uint32 feature_flags = 3;
+  fixed64 ephemeral_presence_id = 4;
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  ANDROID = 1;
+  WINDOWS = 2;
+}
+
+message TransportOffer {
+  bytes rendezvous_nonce = 1;
+  oneof endpoint {
+    RfcommEndpoint rfcomm = 2;
+    L2capEndpoint l2cap = 3;
+    CallbackEndpoint callback = 5;
+  }
+  string peer_display_name = 4;
+}
+
+message ConnectRequest {
+  bytes rendezvous_nonce = 1;
+  RfcommEndpoint requester = 2;
+  string requester_display_name = 3;
+}
+
+message RfcommEndpoint {
+  fixed64 classic_address = 1;
+  bytes service_uuid = 2;
+}
+
+message L2capEndpoint { uint32 psm = 1; }
+
+message CallbackEndpoint {}

@@ -1,0 +1,85 @@
+<Window x:Class="BlueLink.ImagePreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="图片预览" Width="1120" Height="820" MinWidth="940" MinHeight="540"
+        Icon="/BlueLink;component/Assets/bluelink.ico"
+        Background="#101624" WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <DrawingBrush x:Key="TransparencyGridBrush" TileMode="Tile" Viewport="0,0,20,20"
+                      ViewportUnits="Absolute" Viewbox="0,0,20,20" ViewboxUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#F8FAFD" Geometry="M0,0 H20 V20 H0 Z"/>
+                    <GeometryDrawing Brush="#E8EDF5" Geometry="M0,0 H10 V10 H0 Z M10,10 H20 V20 H10 Z"/>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+        <Style x:Key="PreviewToolButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#101B39"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#CDD8EB"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="13,8"/>
+            <Setter Property="MinHeight" Value="38"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="11" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#EDF3FF"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#DCE8FF"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="78"/></Grid.RowDefinitions>
+        <ScrollViewer x:Name="ImageScroller" Grid.Row="0" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto" Background="#0D1320" PanningMode="Both"
+                      PreviewMouseWheel="ImageScroller_MouseWheel" SizeChanged="ImageScroller_SizeChanged">
+            <Border x:Name="ImageStage" Margin="32" Background="{StaticResource TransparencyGridBrush}"
+                    BorderBrush="#2F3B50" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    MouseLeftButtonDown="ImageStage_MouseLeftButtonDown"
+                    MouseLeftButtonUp="ImageStage_MouseLeftButtonUp"
+                    MouseMove="ImageStage_MouseMove">
+                <Image x:Name="PreviewImage" Stretch="None" SnapsToDevicePixels="True">
+                    <Image.LayoutTransform>
+                        <TransformGroup>
+                            <ScaleTransform x:Name="ImageScale" ScaleX="1" ScaleY="1"/>
+                            <RotateTransform x:Name="ImageRotation" Angle="0"/>
+                        </TransformGroup>
+                    </Image.LayoutTransform>
+                </Image>
+            </Border>
+        </ScrollViewer>
+        <Border Grid.Row="1" Background="#F8FAFF" BorderBrush="#CDD8EB" BorderThickness="0,1,0,0" Padding="20,12">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="White" BorderBrush="#CDD8EB" BorderThickness="1" CornerRadius="11">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="−" Click="ZoomOut_Click" Style="{StaticResource PreviewToolButtonStyle}" BorderThickness="0" MinWidth="46" FontSize="21"/>
+                            <Button x:Name="ZoomTextButton" Content="100%" Click="ActualSize_Click" Style="{StaticResource PreviewToolButtonStyle}" BorderThickness="1,0" MinWidth="72"/>
+                            <Button Content="＋" Click="ZoomIn_Click" Style="{StaticResource PreviewToolButtonStyle}" BorderThickness="0" MinWidth="46" FontSize="18"/>
+                        </StackPanel>
+                    </Border>
+                    <Button Content="↻" ToolTip="顺时针旋转 90°" Click="Rotate_Click" Style="{StaticResource PreviewToolButtonStyle}" Margin="12,0,0,0" MinWidth="52" FontSize="23"/>
+                    <Button Content="适应窗口" Click="Fit_Click" Style="{StaticResource PreviewToolButtonStyle}" Margin="12,0,0,0"/>
+                </StackPanel>
+                <Slider x:Name="ZoomSlider" Grid.Column="1" Visibility="Collapsed" Minimum="0.05" Maximum="8"
+                        Value="1" ValueChanged="Zoom_Changed"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="在文件资源管理器中显示" Click="Locate_Click" Style="{StaticResource PreviewToolButtonStyle}" Padding="22,8"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

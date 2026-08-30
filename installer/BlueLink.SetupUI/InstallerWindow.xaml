@@ -1,0 +1,199 @@
+<ui:FluentWindow x:Class="BlueLink.SetupUI.InstallerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="蓝联安装向导" Width="1040" Height="680" MinWidth="920" MinHeight="620"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
+        Style="{StaticResource {x:Type ui:FluentWindow}}"
+        Background="#FBFCFF" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <ui:FluentWindow.Resources>
+        <SolidColorBrush x:Key="Ink" Color="#101B39" />
+        <SolidColorBrush x:Key="Muted" Color="#58698D" />
+        <SolidColorBrush x:Key="Primary" Color="#1264F6" />
+        <SolidColorBrush x:Key="Panel" Color="#F5F8FE" />
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+            <Setter Property="Foreground" Value="{StaticResource Ink}" />
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance" Value="Primary" />
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Padding" Value="24,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        </Style>
+        <Style x:Key="SecondaryButton" TargetType="{x:Type ui:Button}" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Appearance" Value="Secondary" />
+        </Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Foreground" Value="{StaticResource Ink}" />
+            <Setter Property="Margin" Value="0,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        </Style>
+        <Style TargetType="{x:Type ui:TextBox}" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="Foreground" Value="{StaticResource Ink}" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <Border x:Name="WindowSurface" Background="#FBFCFF" CornerRadius="18"
+            BorderBrush="#AEB8C8" BorderThickness="1" SizeChanged="WindowSurface_SizeChanged">
+        <Grid x:Name="RootGrid">
+            <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition x:Name="BrandColumn" Width="396" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <ui:TitleBar x:Name="InstallerTitleBar" Grid.Row="0" Grid.ColumnSpan="2" Title="蓝联安装向导"
+                         ShowMaximize="True" ShowMinimize="True" ShowClose="True" Panel.ZIndex="12">
+                <ui:TitleBar.Header>
+                    <StackPanel x:Name="HeaderBrand" Orientation="Horizontal">
+                        <Image Source="pack://application:,,,/BlueLink.SetupUI;component/Assets/bluelink-logo.png" Width="30" Height="30" Stretch="Uniform" />
+                        <TextBlock Text="蓝联安装向导" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ui:TitleBar.Header>
+            </ui:TitleBar>
+            <Border x:Name="BrandPanel" Grid.Row="1" Grid.Column="0" CornerRadius="0,0,0,18">
+                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#082D95" Offset="0" /><GradientStop Color="#075DDF" Offset="0.48" /><GradientStop Color="#031F73" Offset="1" /></LinearGradientBrush></Border.Background>
+                <Grid ClipToBounds="True">
+                    <Ellipse Width="560" Height="560" Fill="#0C52C8" Opacity="0.55" Margin="-260,-280,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    <Ellipse Width="520" Height="520" Fill="#062066" Opacity="0.58" Margin="0,0,-310,-250" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                    <StackPanel x:Name="BrandContentStack" Margin="40,42,30,38">
+                        <StackPanel x:Name="PanelBrandHeader" Orientation="Horizontal"><Image Source="pack://application:,,,/BlueLink.SetupUI;component/Assets/bluelink-logo.png" Width="52" Height="52" Stretch="Uniform" /><TextBlock Text="蓝联安装向导" Foreground="White" FontSize="17" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" /></StackPanel>
+                        <Image x:Name="BrandHeroLogo" Source="pack://application:,,,/BlueLink.SetupUI;component/Assets/bluelink-logo.png" Width="330" Height="330" Stretch="Uniform" Margin="-8,35,0,15" />
+                        <TextBlock Text="蓝联" Foreground="White" FontSize="38" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                        <TextBlock Text="BLUETOOTH ONLY" Foreground="#BED7FF" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid x:Name="ContentShell" Grid.Row="1" Grid.Column="1">
+                <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="123" /></Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="54,18,54,12">
+                    <Grid x:Name="WelcomePage">
+                        <StackPanel VerticalAlignment="Top" Margin="0,17,0,0">
+                            <TextBlock Text="欢迎安装蓝联" FontSize="34" FontWeight="Bold" />
+                            <TextBlock Text="在 Android 与 Windows 之间，通过蓝牙安全地聊天和传输文件。" Foreground="{StaticResource Muted}" FontSize="16" TextWrapping="Wrap" LineHeight="27" Margin="0,14,0,43" />
+                            <Grid Margin="0,0,0,4">
+                                <Grid.RowDefinitions><RowDefinition Height="100" /><RowDefinition Height="100" /><RowDefinition Height="100" /></Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border Width="58" Height="58" Background="#EDF3FF" CornerRadius="13"><TextBlock Text="&#xE702;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Primary}" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="仅使用蓝牙" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="所有连接与传输均通过蓝牙完成，无需网络。" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,5,0,0" /></StackPanel>
+                                <Border Grid.Row="1" Grid.ColumnSpan="2" Height="1" Background="#DDE4EF" VerticalAlignment="Top" />
+                                <Border Grid.Row="1" Width="58" Height="58" Background="#EDF3FF" CornerRadius="13"><TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" Foreground="#5066E8" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <StackPanel Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="端到端加密" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="消息与文件在设备间加密，确保隐私安全。" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,5,0,0" /></StackPanel>
+                                <Border Grid.Row="2" Grid.ColumnSpan="2" Height="1" Background="#DDE4EF" VerticalAlignment="Top" />
+                                <Border Grid.Row="2" Width="58" Height="58" Background="#EDF3FF" CornerRadius="13"><TextBlock Text="&#xE7F8;" FontFamily="Segoe MDL2 Assets" Foreground="#5066E8" FontSize="29" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <StackPanel Grid.Row="2" Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="支持多设备会话" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="同时管理多个设备的会话与文件传输。" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,5,0,0" /></StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="LocationPage" Visibility="Collapsed">
+                        <StackPanel Margin="0,46,0,0">
+                            <TextBlock Text="选择安装位置" FontSize="31" FontWeight="Bold" /><TextBlock Text="请选择蓝联的安装文件夹。" Foreground="{StaticResource Muted}" FontSize="16" Margin="0,11,0,31" />
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="126" /></Grid.ColumnDefinitions><ui:TextBox x:Name="InstallFolderBox" /><ui:Button Grid.Column="1" Content="浏览…" Style="{StaticResource SecondaryButton}" Margin="14,0,0,0" Click="Browse_Click" /></Grid>
+                            <StackPanel Margin="2,28,0,0"><TextBlock x:Name="RequiredSpaceText" Text="需要空间 190 MiB" Foreground="{StaticResource Muted}" FontSize="14" /><TextBlock x:Name="AvailableSpaceText" Foreground="{StaticResource Muted}" FontSize="14" Margin="0,13,0,0" /></StackPanel>
+                            <Border Background="#F5F7FE" BorderBrush="#D9E1EF" BorderThickness="1" CornerRadius="13" Height="128" Padding="22,18" Margin="0,30,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="92" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Canvas Width="70" Height="66" HorizontalAlignment="Left" VerticalAlignment="Center"><Path Data="M 7,18 L 27,18 L 35,25 L 63,25 L 63,57 L 7,57 Z" Fill="#91A7F7" /><Path Data="M 7,23 L 63,23 L 63,57 L 7,57 Z" Fill="#829AF2" Opacity="0.78" /></Canvas><StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="默认接收文件夹" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="&lt;安装位置&gt;\Download" Foreground="{StaticResource Muted}" FontSize="14" Margin="0,6,0,0" /><TextBlock x:Name="FallbackFolderText" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,6,0,0" /></StackPanel></Grid></Border>
+                            <TextBlock x:Name="LocationErrorText" Foreground="#D74242" FontSize="13" TextWrapping="Wrap" Margin="2,12,0,0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="RuntimePage" Visibility="Collapsed">
+                        <Grid Margin="0,14,0,0">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="需要安装 .NET 8 桌面运行时" FontSize="34" FontWeight="Bold" />
+                                <TextBlock Text="蓝联需要此运行环境才能正常启动。安装向导可以为你自动下载并安装。" Foreground="{StaticResource Muted}" FontSize="16" Margin="0,10,0,0" />
+                            </StackPanel>
+                            <Border Grid.Row="1" Height="156" Margin="0,34,0,0" Background="White" BorderBrush="#CBD6E8" BorderThickness="1" CornerRadius="11" Padding="28,24">
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="125"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Border Width="92" Height="92" CornerRadius="46" Background="#E7EFFF" HorizontalAlignment="Left"><ui:SymbolIcon Symbol="ArrowDownload24" FontSize="52" Foreground="#0969F5"/></Border>
+                                    <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                        <TextBlock Text="Microsoft .NET Desktop Runtime 8" FontSize="22" FontWeight="Bold"/>
+                                        <Border Grid.Row="1" Background="#FFF0E4" CornerRadius="6" Padding="10,5" HorizontalAlignment="Left" Margin="0,10,0,0"><TextBlock x:Name="RuntimeStatusBadge" Text="尚未安装" Foreground="#DA7218" FontSize="13"/></Border>
+                                        <Grid Grid.Row="2" Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="1"/><ColumnDefinition Width="220"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <TextBlock Text="架构：x64" FontSize="15" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
+                                            <Border Grid.Column="1" Background="#D9E1EE"/><TextBlock x:Name="RuntimePackageSizeText" Grid.Column="2" FontSize="15" Foreground="{StaticResource Muted}" Margin="34,0,0,0" VerticalAlignment="Center"/>
+                                            <Border Grid.Column="3" Background="#D9E1EE"/><TextBlock Grid.Column="4" Text="来源：Microsoft 官方" FontSize="15" Foreground="{StaticResource Muted}" Margin="34,0,0,0" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <ui:InfoBar x:Name="RuntimeInfoBar" Grid.Row="2" IsOpen="True" IsClosable="False" Severity="Informational" Message="仅安装运行环境，不会更改你的聊天记录、接收文件或蓝联设置。" Margin="0,22,0,0"/>
+                            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,14,0,0">
+                                <ui:Button Appearance="Transparent" Padding="0" Height="Auto" MinHeight="0"
+                                           Background="Transparent" BorderBrush="Transparent" BorderThickness="0"
+                                           FocusVisualStyle="{x:Null}" Click="RuntimeRedetect_Click">
+                                    <TextBlock Text="我已安装，重新检测" Foreground="#0969F5" TextDecorations="Underline"/>
+                                </ui:Button>
+                                <ui:Button x:Name="RuntimeOfficialDownloadButton" Content="Microsoft 官方手动下载" Appearance="Transparent" Foreground="#0969F5" Padding="0" Margin="24,0,0,0" Visibility="Collapsed" Click="RuntimeOfficialDownload_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+
+                    <Grid x:Name="ProgressPage" Visibility="Collapsed">
+                        <StackPanel Margin="0,43,0,0">
+                            <TextBlock Text="正在安装蓝联" FontSize="31" FontWeight="Bold" /><TextBlock Text="请稍候，安装向导正在将蓝联安装到您的电脑。" Foreground="{StaticResource Muted}" FontSize="16" Margin="0,11,0,24" />
+                            <Border Background="#F8FAFF" BorderBrush="#CDD8EB" BorderThickness="1" CornerRadius="12" Padding="22,20"><StackPanel>
+                                <TextBlock x:Name="ProgressStatusText" Text="正在复制应用文件…" FontSize="16" FontWeight="SemiBold" />
+                                <Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="62" /></Grid.ColumnDefinitions><ProgressBar x:Name="InstallProgressBar" Height="8" Minimum="0" Maximum="100" Value="0" VerticalAlignment="Center"/><TextBlock x:Name="ProgressPercentageText" Grid.Column="1" Text="0%" FontSize="18" HorizontalAlignment="Right" VerticalAlignment="Center" /></Grid>
+                                <TextBlock x:Name="ProgressFolderText" Foreground="{StaticResource Muted}" FontSize="14" Margin="0,14,0,44" />
+                                <Grid><Border Height="2" Margin="92,18,92,0" Background="#CAD4E5" VerticalAlignment="Top" /><Border Height="2" Width="205" Margin="92,18,0,0" Background="{StaticResource Primary}" HorizontalAlignment="Left" VerticalAlignment="Top" /><UniformGrid Columns="4"><StackPanel HorizontalAlignment="Center"><Border Width="38" Height="38" Background="{StaticResource Primary}" CornerRadius="19"><TextBlock Text="✓" Foreground="White" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="准备安装" FontSize="13" Margin="0,7,0,0" /></StackPanel><StackPanel HorizontalAlignment="Center"><Border Width="38" Height="38" Background="White" BorderBrush="{StaticResource Primary}" BorderThickness="2" CornerRadius="19"><TextBlock Text="2" Foreground="{StaticResource Primary}" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="复制文件" FontSize="13" Margin="0,7,0,0" /><TextBlock x:Name="StagePercentText" Text="0%" Foreground="{StaticResource Primary}" FontSize="13" HorizontalAlignment="Center" /></StackPanel><StackPanel HorizontalAlignment="Center"><Border Width="38" Height="38" Background="White" BorderBrush="#BAC6DB" BorderThickness="1" CornerRadius="19"><TextBlock Text="3" Foreground="{StaticResource Muted}" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="创建快捷方式" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,7,0,0" /></StackPanel><StackPanel HorizontalAlignment="Center"><Border Width="38" Height="38" Background="White" BorderBrush="#BAC6DB" BorderThickness="1" CornerRadius="19"><TextBlock Text="4" Foreground="{StaticResource Muted}" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="完成" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,7,0,0" /></StackPanel></UniformGrid></Grid>
+                                <Border Height="11" />
+                            </StackPanel></Border>
+                            <TextBlock Text="ⓘ  安装完成后将创建默认接收文件夹 Download" Foreground="{StaticResource Muted}" FontSize="14" Margin="2,18,0,0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="CompletePage" Visibility="Collapsed">
+                        <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"><Border Background="#0BCB69" CornerRadius="38" Width="76" Height="76"><TextBlock Text="✓" Foreground="White" FontSize="42" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock x:Name="CompleteTitleText" Text="蓝联安装完成" FontSize="32" FontWeight="Bold" Margin="24,0,0,0" VerticalAlignment="Center" /></StackPanel>
+                            <TextBlock Text="现在可以通过蓝牙与附近设备安全聊天和传输文件。" Foreground="{StaticResource Muted}" FontSize="16" Margin="0,17,0,22" /><Border Height="1" Background="#DDE4EF" />
+                            <Grid Margin="0,18,0,8"><Grid.RowDefinitions><RowDefinition Height="70" /><RowDefinition Height="70" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="64" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" /></Grid.ColumnDefinitions><Border Width="48" Height="48" Background="#E4EBFF" CornerRadius="10"><TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" Foreground="#718CEB" FontSize="29" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="安装位置" FontSize="14" FontWeight="SemiBold" /><TextBlock x:Name="CompleteInstallPathText" Foreground="{StaticResource Muted}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" /></StackPanel><ui:Button Grid.Column="2" Content="&#xE8C8;" FontFamily="Segoe MDL2 Assets" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Primary}" FontSize="20" ToolTip="复制安装位置" Click="CopyInstallPath_Click" /><Border Grid.Row="1" Width="48" Height="48" Background="#E4EBFF" CornerRadius="10"><TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" Foreground="#718CEB" FontSize="29" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><StackPanel Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="默认接收文件夹" FontSize="14" FontWeight="SemiBold" /><TextBlock x:Name="CompleteDownloadPathText" Foreground="{StaticResource Muted}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" /></StackPanel><ui:Button Grid.Row="1" Grid.Column="2" Content="&#xE8C8;" FontFamily="Segoe MDL2 Assets" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Primary}" FontSize="20" ToolTip="复制接收目录" Click="CopyDownloadPath_Click" /></Grid>
+                            <Border Height="1" Background="#DDE4EF" Margin="0,2,0,12" /><CheckBox x:Name="LaunchAfterCheckBox" Content="立即启动蓝联" IsChecked="True" /><CheckBox x:Name="DesktopShortcutCheckBox" Content="在桌面创建快捷方式" IsChecked="True" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="UninstallPage" Visibility="Collapsed">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="卸载蓝联" FontSize="32" FontWeight="Bold" />
+                            <TextBlock Text="将从此电脑删除蓝联程序。" FontSize="16" Foreground="{StaticResource Muted}" Margin="0,10,0,24" />
+                            <Border Background="White" BorderBrush="#D8E1EF" BorderThickness="1" CornerRadius="14" Padding="22,18">
+                                <StackPanel>
+                                    <TextBlock Text="将删除" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Text="程序文件、开始菜单和桌面快捷方式、自启动项" Foreground="{StaticResource Muted}" Margin="0,7,0,16" />
+                                    <TextBlock Text="将保留" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Text="聊天记录、蓝联设置，以及 Download 中已经接收的文件" Foreground="{StaticResource Muted}" Margin="0,7,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="FailurePage" Visibility="Collapsed"><StackPanel VerticalAlignment="Center"><Border Background="#FFF0F0" CornerRadius="38" Width="76" Height="76" HorizontalAlignment="Left"><TextBlock Text="!" Foreground="#D74242" FontSize="40" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="操作未完成" FontSize="31" FontWeight="Bold" Margin="0,22,0,0" /><TextBlock x:Name="FailureText" Foreground="#9A4B4B" FontSize="15" TextWrapping="Wrap" LineHeight="24" Margin="0,12,0,0" /></StackPanel></Grid>
+                </Grid>
+
+                <Border Grid.Row="1" BorderBrush="#DDE4EF" BorderThickness="0,1,0,0" Padding="54,14">
+                    <Grid>
+                        <TextBlock x:Name="FooterInfoText" Text="版本 0.2.9  ·  Windows 10/11 x64" Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Center" />
+                        <StackPanel x:Name="NavigationButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><ui:Button x:Name="BackButton" Content="上一步" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,12,0" Visibility="Collapsed" Click="Back_Click" /><ui:Button x:Name="CancelButton" Content="取消" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,12,0" Click="Close_Click" /><ui:Button x:Name="NextButton" Content="下一步" Style="{StaticResource PrimaryButton}" MinWidth="130" Click="Next_Click" /></StackPanel>
+                        <StackPanel x:Name="CompletionButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,20" Visibility="Collapsed"><ui:Button Content="打开接收文件夹" Style="{StaticResource SecondaryButton}" MinWidth="162" Margin="0,0,14,0" Click="OpenDownload_Click" /><ui:Button x:Name="FinishButton" Content="完成" Style="{StaticResource PrimaryButton}" MinWidth="138" Click="Finish_Click" /></StackPanel>
+                        <StackPanel x:Name="RuntimeButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"><ui:Button Content="取消" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,14,0" Click="RuntimeCancel_Click"/><ui:Button Content="下载并安装" Style="{StaticResource PrimaryButton}" MinWidth="146" Click="RuntimeInstall_Click"/></StackPanel>
+                        <StackPanel x:Name="UninstallButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"><ui:Button Content="取消" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,14,0" Click="Close_Click"/><ui:Button Content="卸载" Appearance="Danger" Style="{StaticResource PrimaryButton}" MinWidth="130" Click="RemoveApplication_Click"/></StackPanel>
+                        <ui:Button x:Name="CloseButton" Content="关闭" Style="{StaticResource PrimaryButton}" MinWidth="130" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed" Click="Close_Click" />
+                    </Grid>
+                </Border>
+            </Grid>
+            <Border x:Name="DialogOverlay" Grid.Row="1" Grid.ColumnSpan="2" Panel.ZIndex="90"
+                    Background="#660B1220" Visibility="Collapsed" IsHitTestVisible="True" />
+        </Grid>
+    </Border>
+</ui:FluentWindow>

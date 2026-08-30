@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <BlueLinkVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</BlueLinkVersion>
+    <Version>$(BlueLinkVersion)</Version>
+    <FileVersion>$(BlueLinkVersion).0</FileVersion>
+    <AssemblyVersion>$(BlueLinkVersion).0</AssemblyVersion>
+  </PropertyGroup>
+</Project>

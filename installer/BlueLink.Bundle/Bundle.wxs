@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+  <Bundle Name="$(var.BundleName)"
+          Manufacturer="BlueLink"
+          Version="$(var.ProductVersion)"
+          UpgradeCode="$(var.BundleUpgradeCode)"
+          ProviderKey="$(var.BundleProviderKey)"
+          Compressed="yes"
+          IconSourceFile="$(var.IconPath)">
+    <BootstrapperApplication>
+      <Payload Name="WixToolset.Mba.Host.config" SourceFile="$(var.BaOutput)\BlueLink.SetupUI.BootstrapperCore.config" />
+      <Payload SourceFile="$(var.BaOutput)\BlueLink.SetupUI.dll" />
+      <Payload SourceFile="$(var.BaOutput)\mbanative.dll" />
+      <Payload SourceFile="$(var.BaOutput)\System.Buffers.dll" />
+      <Payload SourceFile="$(var.BaOutput)\System.Memory.dll" />
+      <Payload SourceFile="$(var.BaOutput)\System.Numerics.Vectors.dll" />
+      <Payload SourceFile="$(var.BaOutput)\System.Runtime.CompilerServices.Unsafe.dll" />
+      <Payload SourceFile="$(var.BaOutput)\WixToolset.Mba.Core.dll" />
+      <Payload SourceFile="$(var.BaOutput)\Wpf.Ui.Abstractions.dll" />
+      <Payload SourceFile="$(var.BaOutput)\Wpf.Ui.dll" />
+      <bal:WixManagedBootstrapperApplicationHost />
+    </BootstrapperApplication>
+
+    <Variable Name="InstallFolder" Type="string" Value="[LocalAppDataFolder]Programs\BlueLink" Persisted="yes" bal:Overridable="yes" />
+    <Variable Name="CreateDesktopShortcut" Type="numeric" Value="1" Persisted="yes" bal:Overridable="yes" />
+    <Variable Name="AutoStart" Type="numeric" Value="0" Persisted="yes" bal:Overridable="yes" />
+    <Variable Name="SetupSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="SetupSnapshotPage" Type="string" Value="welcome" bal:Overridable="yes" />
+    <Variable Name="SetupOverwriteCancelSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="DesktopRuntimePackageVersion" Type="string" Value="$(var.RuntimeVersion)" />
+    <Variable Name="DesktopRuntimePackageSize" Type="string" Value="$(var.RuntimeSize)" />
+    <Variable Name="ProductRegistryKey" Type="string" Value="$(var.ProductRegistryKey)" Hidden="yes" />
+    <Variable Name="PackageUpgradeCode" Type="string" Value="$(var.PackageUpgradeCode)" Hidden="yes" />
+    <Variable Name="EmbeddedRelatedBundleSafeVersion" Type="string" Value="0.2.12" Hidden="yes" />
+
+    <netfx:DotNetCoreSearch Id="DesktopRuntime8X64Search"
+                            Variable="DesktopRuntime8Version"
+                            RuntimeType="desktop"
+                            Platform="x64"
+                            MajorVersion="8" />
+
+    <Chain>
+      <PackageGroupRef Id="NetFx48WebAsPrereq" />
+<?if $(var.IncludePrerequisites) = yes ?>
+      <ExePackage Id="DesktopRuntime8X64"
+                  SourceFile="$(var.RuntimePayload)"
+                  DownloadUrl="$(var.RuntimeDownloadUrl)"
+                  Compressed="no"
+                  Cache="remove"
+                  PerMachine="$(var.RuntimePerMachine)"
+                  Permanent="yes"
+                  Vital="yes"
+                  DetectCondition="DesktopRuntime8Version"
+                  InstallArguments="/install /quiet /norestart"
+                  RepairArguments="/repair /quiet /norestart"
+                  UninstallArguments="/uninstall /quiet /norestart" />
+<?endif ?>
+      <MsiPackage Id="BlueLinkMsi" SourceFile="$(var.MsiPath)" Compressed="yes" Vital="yes" Visible="no">
+        <MsiProperty Name="INSTALLFOLDER" Value="[InstallFolder]" />
+        <MsiProperty Name="CREATE_DESKTOP_SHORTCUT" Value="[CreateDesktopShortcut]" />
+        <MsiProperty Name="AUTOSTART" Value="[AutoStart]" />
+        <MsiProperty Name="BLUELINK_BUNDLE_PROVIDER_KEY" Value="[WixBundleProviderKey]" />
+        <MsiProperty Name="ARPINSTALLLOCATION" Value="[InstallFolder]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

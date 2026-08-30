@@ -1,0 +1,102 @@
+<Window x:Class="BlueLink.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="蓝联设置" Width="820" Height="650" MinWidth="720" MinHeight="560"
+        Icon="/BlueLink;component/Assets/bluelink.ico"
+        Background="{StaticResource CanvasBrush}" WindowStartupLocation="CenterOwner">
+    <Grid Margin="22">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <Image Width="54" Height="54" Source="/BlueLink;component/Assets/bluelink-logo.png"/>
+            <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="设置" FontSize="24" FontWeight="Bold" Foreground="{StaticResource InkBrush}"/>
+                <TextBlock Text="连接、文件、本地数据与应用信息" Foreground="{StaticResource MutedBrush}"/>
+            </StackPanel>
+        </StackPanel>
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
+            <TabItem Header="连接">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="自动连接与后台会话" Style="{StaticResource SettingsTitleStyle}"/>
+                        <CheckBox x:Name="AutoConnectBox" Content="自动连接已信任设备" Margin="0,10,0,4"/>
+                        <CheckBox x:Name="ScanStartupBox" Content="启动时扫描附近设备" Margin="0,4"/>
+                        <CheckBox x:Name="BackgroundSessionsBox" Content="窗口隐藏后保持后台会话" Margin="0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0"><TextBlock Text="最大同时连接数" VerticalAlignment="Center"/><ComboBox x:Name="MaxConnectionsBox" Width="90" Margin="16,0,0,0"/></StackPanel>
+                    </StackPanel></Border>
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="信任管理" Style="{StaticResource SettingsTitleStyle}"/>
+                        <TextBlock Text="移除后再次连接需要重新核对安全码。" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,10"/>
+                        <ItemsControl ItemsSource="{Binding Conversations}"><ItemsControl.ItemTemplate><DataTemplate>
+                            <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel><TextBlock Text="{Binding PeerName}" FontWeight="SemiBold"/><TextBlock Text="{Binding PeerId}" Foreground="{StaticResource MutedBrush}" FontSize="10" TextTrimming="CharacterEllipsis"/></StackPanel>
+                                <Button Grid.Column="1" Content="移除" Click="ForgetPeer_Click" Margin="8,0,0,0"/>
+                            </Grid>
+                        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    </StackPanel></Border>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="文件与存储">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="接收策略" Style="{StaticResource SettingsTitleStyle}"/>
+                        <CheckBox x:Name="AutoDownloadBox" Content="自动下载接收文件" Margin="0,10,0,4"/>
+                        <CheckBox x:Name="ReceiveLimitBox" Content="限制单个接收文件大小" Margin="0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0"><TextBlock Text="大小上限（MiB）" VerticalAlignment="Center"/><TextBox x:Name="ReceiveLimitText" Width="120" Margin="14,0,0,0"/></StackPanel>
+                        <CheckBox x:Name="ThumbnailsBox" Content="在聊天中显示图片缩略图" Margin="0,10,0,0"/>
+                    </StackPanel></Border>
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="保存位置" Style="{StaticResource SettingsTitleStyle}"/>
+                        <TextBlock Text="默认位于安装目录下的 Download；自定义目录必须可写。" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,10"/>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBox x:Name="DownloadPathText" Padding="9" TextChanged="DownloadPath_Changed"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                                <Button Content="默认" Click="DefaultDownload_Click" Margin="0,0,6,0"/><Button Content="浏览" Click="BrowseDownload_Click"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="StorageSpaceText" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/>
+                        <Border Background="{StaticResource LavenderBrush}" CornerRadius="12" Padding="12" Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock Text="存储空间使用情况" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}"/>
+                                <TextBlock x:Name="StorageUsageText" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="打开下载目录" Click="OpenDownload_Click"/>
+                            <Button Content="清理缩略图缓存" Click="ClearCache_Click" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel></Border>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="隐私与数据">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="仅保存在本机" Style="{StaticResource SettingsTitleStyle}"/>
+                        <CheckBox x:Name="SaveChatBox" Content="保存聊天记录" Margin="0,10,0,4"/>
+                        <CheckBox x:Name="SaveTransfersBox" Content="保存文件传输记录" Margin="0,4"/>
+                        <CheckBox x:Name="DiagnosticsBox" Content="启用脱敏诊断日志" Margin="0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0"><TextBlock Text="记录保留期限" VerticalAlignment="Center"/><ComboBox x:Name="RetentionBox" Width="130" Margin="16,0,0,0"/></StackPanel>
+                        <TextBlock Text="本机身份指纹" FontWeight="SemiBold" Margin="0,14,0,4"/><TextBlock Text="{Binding IdentityFingerprint}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                        <Button Content="导出脱敏诊断日志" Click="ExportDiagnostics_Click" Margin="0,12,0,0" HorizontalAlignment="Left"/>
+                    </StackPanel></Border>
+                    <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
+                        <TextBlock Text="清除数据" Style="{StaticResource SettingsTitleStyle}"/>
+                        <Button Content="清除聊天记录" Click="ClearChat_Click" Margin="0,10,0,6"/>
+                        <Button Content="清除传输记录" Click="ClearTransfers_Click"/>
+                        <TextBlock Text="已接收文件不会随记录一起删除。" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/>
+                    </StackPanel></Border>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="关于">
+                <Border Style="{StaticResource SettingsCardStyle}" Margin="8"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image Width="150" Height="150" Source="/BlueLink;component/Assets/bluelink-logo.png"/>
+                    <TextBlock x:Name="ProductVersionText" Text="蓝联 BlueLink" FontSize="22" FontWeight="Bold" Foreground="{StaticResource InkBrush}"/>
+                    <TextBlock Text="Bluetooth Only · BTX/1.1 · 端到端加密" Foreground="{StaticResource BlueBrush}" Margin="0,6"/>
+                    <TextBlock Text="不使用服务器，不申请网络权限。检查更新仅支持本地签名安装包。" Foreground="{StaticResource MutedBrush}" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="430"/>
+                </StackPanel></Border>
+            </TabItem>
+        </TabControl>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="取消" Click="Cancel_Click" Margin="0,0,8,0"/><Button Content="保存设置" Click="Save_Click" Style="{StaticResource PrimaryButtonStyle}"/>
+        </StackPanel>
+    </Grid>
+</Window>
