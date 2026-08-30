@@ -19,6 +19,7 @@ namespace BlueLink.SetupUI
         private Dispatcher dispatcher;
         private InstallerWindow window;
         private bool installed;
+        private bool existingInstallation;
         private bool closing;
         private bool uninstalling;
         private bool cancelRequested;
@@ -32,8 +33,19 @@ namespace BlueLink.SetupUI
         private string productRegistryKey;
         private string packageUpgradeCode;
         private string firstEmbeddedSafeVersion;
+        private string displayProductVersion;
+        private string expectedMsiProductCode;
+        private string expectedPayloadFingerprint;
+        private LaunchAction plannedLaunchAction;
+        private bool blueLinkMsiPlanObserved;
+        private bool blueLinkMsiShouldExecute;
+        private ActionState blueLinkMsiAction;
         private readonly Dictionary<string, string> relatedBundleVersions =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> plannedRelatedBundles =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> plannedRelatedBundleRestores =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private DispatcherTimer progressWatchdog;
         private DateTime lastEngineActivityUtc;
         private int lastOverallPercentage;
@@ -52,6 +64,7 @@ namespace BlueLink.SetupUI
             this.PlanRelatedBundle += this.OnPlanRelatedBundle;
             this.PlanRestoreRelatedBundle += this.OnPlanRestoreRelatedBundle;
             this.PlanPackageBegin += this.OnPlanPackageBegin;
+            this.PlanMsiPackage += this.OnPlanMsiPackage;
             this.PlanComplete += this.OnPlanComplete;
             this.Progress += this.OnProgress;
             this.ExecutePackageBegin += this.OnExecutePackageBegin;
@@ -69,9 +82,13 @@ namespace BlueLink.SetupUI
             this.productRegistryKey = this.GetString("ProductRegistryKey", @"Software\BlueLink");
             this.packageUpgradeCode = this.GetString("PackageUpgradeCode", "{BE8A6A43-710C-4B6E-92DC-07C4FAFC22B9}");
             this.firstEmbeddedSafeVersion = this.GetString("EmbeddedRelatedBundleSafeVersion", "0.2.12");
+            this.displayProductVersion = this.GetString("DisplayProductVersion", "未知");
+            this.expectedMsiProductCode = this.GetString("ExpectedMsiProductCode", String.Empty);
+            this.expectedPayloadFingerprint = this.GetString("ExpectedPayloadFingerprint", String.Empty);
             var defaultFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "BlueLink");
             var requestedFolder = this.GetFormattedString("InstallFolder", defaultFolder);
             this.installFolder = this.ResolveExistingInstallFolder(requestedFolder);
+            this.existingInstallation = ContainsInstalledApplication(this.installFolder);
             // Burn variables can contain formatted folder tokens.  Resolve the
             // token once and persist the concrete path before every plan so
             // quiet installs and later repairs never pass the literal
@@ -85,6 +102,7 @@ namespace BlueLink.SetupUI
             };
             this.progressWatchdog.Tick += this.OnProgressWatchdog;
             this.window = new InstallerWindow();
+            this.window.SetDisplayVersion(this.displayProductVersion);
             this.window.SetInstallFolder(this.installFolder);
             this.window.InstallRequested += this.Install;
             this.window.RemoveApplicationRequested += () =>
@@ -112,7 +130,13 @@ namespace BlueLink.SetupUI
             this.engine.Quit(exitCode);
         }
 
-        private void OnDetectBegin(object sender, DetectBeginEventArgs e) => this.installed = e.RegistrationType == RegistrationType.Full;
+        private void OnDetectBegin(object sender, DetectBeginEventArgs e)
+        {
+            // Registration is not final until DetectComplete. WixBundleInstalled
+            // is refreshed by Burn during detect and is the authoritative state
+            // for deciding between a first install and an exact-bundle repair.
+            this.installed = false;
+        }
 
         private void OnDetectRelatedBundle(object sender, DetectRelatedBundleEventArgs e)
         {
@@ -131,6 +155,10 @@ namespace BlueLink.SetupUI
                 this.window.ShowFailure("无法检测现有安装，错误代码：0x" + e.Status.ToString("X8"));
                 return;
             }
+
+            this.installed = this.GetNumeric("WixBundleInstalled", 0) != 0;
+            this.engine.Log(LogLevel.Standard,
+                "BlueLink BA: current bundle installed after detect: " + this.installed + ".");
 
             this.runtimeVersion = this.GetString("DesktopRuntimePackageVersion", "8.0.x");
             this.runtimeSize = this.GetString("DesktopRuntimePackageSize", "读取实际包大小");
@@ -182,7 +210,11 @@ namespace BlueLink.SetupUI
 
             if (this.command.Display != Display.Full)
             {
-                var action = this.command.Action == LaunchAction.Unknown ? (this.installed ? LaunchAction.Repair : LaunchAction.Install) : this.command.Action;
+                var action = this.command.Action == LaunchAction.Unknown
+                    ? LaunchAction.Install : this.command.Action;
+                if (InstallerExecutionPolicy.ShouldConvertInstallToRepair(
+                        this.installed, action.ToString()))
+                    action = LaunchAction.Repair;
                 this.uninstalling = action == LaunchAction.Uninstall;
                 var status = action == LaunchAction.Uninstall ? "正在卸载蓝联…" : action == LaunchAction.Repair ? "正在修复蓝联…" : "正在安装蓝联…";
                 if (action == LaunchAction.Install || action == LaunchAction.Repair)
@@ -205,11 +237,6 @@ namespace BlueLink.SetupUI
                 this.uninstalling = true;
                 this.window.ShowUninstall();
             }
-            else if (this.installed)
-            {
-                this.window.SetInstallFolder(this.installFolder);
-                this.window.ShowOverwriteContext();
-            }
             else
             {
                 this.window.SetInstallFolder(this.installFolder);
@@ -222,17 +249,20 @@ namespace BlueLink.SetupUI
             string detectedVersion;
             this.relatedBundleVersions.TryGetValue(e.BundleId, out detectedVersion);
             var canRunEmbedded = this.CanExecuteRelatedBundle(detectedVersion);
+            var firstPlanForBundle = this.plannedRelatedBundles.Add(e.BundleId);
 
             // Bundles before 0.2.12 contain a BA which reaches ApplyComplete in
             // embedded mode but never exits. Invoking one from this transaction
             // permanently blocks the parent Burn engine. MSI MajorUpgrade owns
             // the transactional payload replacement; only bundles whose BA has
             // the embedded-exit fix may use Burn's recommended related plan.
-            e.State = canRunEmbedded ? e.RecommendedState : RequestState.None;
+            e.State = InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan(canRunEmbedded, firstPlanForBundle)
+                ? e.RecommendedState : RequestState.None;
             this.engine.Log(LogLevel.Standard,
                 "BlueLink BA: related bundle " + e.BundleId + ", version " +
                 (detectedVersion ?? "unknown") + ", requested state " + e.State +
-                (canRunEmbedded ? "." : "; legacy embedded execution suppressed to prevent upgrade deadlock."));
+                (!firstPlanForBundle ? "; duplicate related-bundle plan suppressed." :
+                 canRunEmbedded ? "." : "; legacy embedded execution suppressed to prevent upgrade deadlock."));
         }
 
         private void OnPlanRestoreRelatedBundle(object sender, PlanRestoreRelatedBundleEventArgs e)
@@ -240,11 +270,14 @@ namespace BlueLink.SetupUI
             string detectedVersion;
             this.relatedBundleVersions.TryGetValue(e.BundleId, out detectedVersion);
             var canRunEmbedded = this.CanExecuteRelatedBundle(detectedVersion);
-            e.State = canRunEmbedded ? e.RecommendedState : RequestState.None;
+            var firstRestoreForBundle = this.plannedRelatedBundleRestores.Add(e.BundleId);
+            e.State = InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan(canRunEmbedded, firstRestoreForBundle)
+                ? e.RecommendedState : RequestState.None;
             this.engine.Log(LogLevel.Standard,
                 "BlueLink BA: related bundle rollback restore " + e.BundleId +
                 ", version " + (detectedVersion ?? "unknown") + ", requested state " + e.State +
-                (canRunEmbedded ? "." : "; legacy restore suppressed to prevent rollback deadlock."));
+                (!firstRestoreForBundle ? "; duplicate related-bundle restore suppressed." :
+                 canRunEmbedded ? "." : "; legacy restore suppressed to prevent rollback deadlock."));
         }
 
         private bool CanExecuteRelatedBundle(string detectedVersion) =>
@@ -255,6 +288,20 @@ namespace BlueLink.SetupUI
         {
             if (this.runtimeOnlyPlan && e.PackageId.Equals("BlueLinkMsi", StringComparison.OrdinalIgnoreCase))
                 e.State = RequestState.None;
+        }
+
+        private void OnPlanMsiPackage(object sender, PlanMsiPackageEventArgs e)
+        {
+            if (!e.PackageId.Equals("BlueLinkMsi", StringComparison.OrdinalIgnoreCase)) return;
+            this.blueLinkMsiPlanObserved = true;
+            if (e.ShouldExecute && e.Action != ActionState.None)
+            {
+                this.blueLinkMsiShouldExecute = true;
+                this.blueLinkMsiAction = e.Action;
+            }
+            this.engine.Log(LogLevel.Standard,
+                "BlueLink BA: planned BlueLinkMsi, should execute: " + e.ShouldExecute +
+                ", action: " + e.Action + ".");
         }
 
         private void InstallRuntimePrerequisite()
@@ -274,7 +321,8 @@ namespace BlueLink.SetupUI
             this.engine.SetVariableNumeric("AutoStart", autoStart ? 1 : 0);
             this.uninstalling = false;
             var action = this.installed ? LaunchAction.Repair : LaunchAction.Install;
-            this.PrepareAndPlan(action, this.installed ? "正在重新安装蓝联…" : "正在安装蓝联…");
+            this.PrepareAndPlan(action, this.existingInstallation || this.installed
+                ? "正在重新安装蓝联…" : "正在安装蓝联…");
         }
 
         private void PrepareAndPlan(LaunchAction action, string status)
@@ -384,6 +432,13 @@ namespace BlueLink.SetupUI
 
         private void Plan(LaunchAction action, string status)
         {
+            this.plannedLaunchAction = action;
+            this.plannedRelatedBundles.Clear();
+            this.plannedRelatedBundleRestores.Clear();
+            this.blueLinkMsiPlanObserved = false;
+            this.blueLinkMsiShouldExecute = false;
+            this.blueLinkMsiAction = ActionState.None;
+            this.lastError = null;
             this.currentExecutePhase = null;
             this.lastOverallPercentage = 0;
             this.stalledProgressReported = false;
@@ -400,6 +455,25 @@ namespace BlueLink.SetupUI
             {
                 this.result = e.Status;
                 this.window.ShowFailure("无法准备安装操作，错误代码：0x" + e.Status.ToString("X8"));
+                return;
+            }
+
+            var requireMsiExecution = !this.runtimeOnlyPlan && !this.uninstalling &&
+                (this.plannedLaunchAction == LaunchAction.Install ||
+                 this.plannedLaunchAction == LaunchAction.Repair);
+            if (!InstallerExecutionPolicy.IsMsiExecutionPlanValid(
+                    requireMsiExecution,
+                    this.blueLinkMsiPlanObserved,
+                    this.blueLinkMsiShouldExecute,
+                    this.blueLinkMsiAction.ToString()))
+            {
+                this.result = 1603;
+                var message = "安装引擎没有计划执行蓝联程序文件包，已停止本次操作，避免出现安装成功但文件未更新。";
+                this.engine.Log(LogLevel.Error, "BlueLink BA: refusing apply because BlueLinkMsi plan is not executable. " +
+                    "Observed=" + this.blueLinkMsiPlanObserved + ", ShouldExecute=" +
+                    this.blueLinkMsiShouldExecute + ", Action=" + this.blueLinkMsiAction + ".");
+                if (this.command.Display == Display.None) this.CloseWindow();
+                else this.window.ShowFailure(message);
                 return;
             }
 
@@ -525,6 +599,22 @@ namespace BlueLink.SetupUI
                     return;
                 }
             }
+            if (e.Status >= 0 && !this.uninstalling)
+            {
+                string verificationError;
+                if (!this.VerifyInstallPostconditions(out verificationError))
+                {
+                    this.result = 1603;
+                    this.engine.Log(LogLevel.Error, "BlueLink BA: install postcondition verification failed: " + verificationError);
+                    if (this.command.Display == Display.None)
+                    {
+                        this.CloseWindow();
+                        return;
+                    }
+                    this.window.ShowFailure(verificationError);
+                    return;
+                }
+            }
             if (this.command.Display == Display.None)
             {
                 this.CloseWindow();
@@ -578,6 +668,39 @@ namespace BlueLink.SetupUI
             return false;
         }
 
+        private bool VerifyInstallPostconditions(out string error)
+        {
+            error = null;
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                string registeredProductCode = null;
+                try
+                {
+                    using (var key = Registry.CurrentUser.OpenSubKey(this.productRegistryKey))
+                        registeredProductCode = key?.GetValue("MsiProductCode") as string;
+                }
+                catch (Exception failure)
+                {
+                    error = "无法读取安装后的 MSI 注册信息：" + failure.Message;
+                }
+
+                if (!String.IsNullOrWhiteSpace(this.expectedMsiProductCode) &&
+                    String.Equals(registeredProductCode, this.expectedMsiProductCode,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    InstallDirectoryOwnership.VerifyInstalledPayload(
+                        this.installFolder,
+                        InstallerExecutionPolicy.GetDisplayVersion(this.displayProductVersion),
+                        this.expectedPayloadFingerprint,
+                        out error))
+                    return true;
+
+                if (String.IsNullOrWhiteSpace(error))
+                    error = "安装完成后的 MSI 产品标识与当前安装包不一致。程序文件未被正确替换。";
+                Thread.Sleep(150);
+            }
+            return false;
+        }
+
         private static bool OwnedProgramFilesRemain(string root)
         {
             if (String.IsNullOrWhiteSpace(root)) return true;
@@ -604,6 +727,12 @@ namespace BlueLink.SetupUI
                 var value = this.engine.GetVariableString(name);
                 return String.IsNullOrWhiteSpace(value) ? fallback : value;
             }
+            catch { return fallback; }
+        }
+
+        private long GetNumeric(string name, long fallback)
+        {
+            try { return this.engine.GetVariableNumeric(name); }
             catch { return fallback; }
         }
 

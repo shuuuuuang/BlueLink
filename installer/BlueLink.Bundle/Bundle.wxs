@@ -29,6 +29,9 @@
     <Variable Name="SetupSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
     <Variable Name="SetupSnapshotPage" Type="string" Value="welcome" bal:Overridable="yes" />
     <Variable Name="SetupOverwriteCancelSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="DisplayProductVersion" Type="string" Value="$(var.ProductVersion)" />
+    <Variable Name="ExpectedMsiProductCode" Type="string" Value="$(var.ProductCode)" Hidden="yes" />
+    <Variable Name="ExpectedPayloadFingerprint" Type="string" Value="$(var.PayloadFingerprint)" Hidden="yes" />
     <Variable Name="DesktopRuntimePackageVersion" Type="string" Value="$(var.RuntimeVersion)" />
     <Variable Name="DesktopRuntimePackageSize" Type="string" Value="$(var.RuntimeSize)" />
     <Variable Name="ProductRegistryKey" Type="string" Value="$(var.ProductRegistryKey)" Hidden="yes" />

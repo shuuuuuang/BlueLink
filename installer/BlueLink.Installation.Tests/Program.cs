@@ -47,6 +47,7 @@ namespace BlueLink.Installation.Tests
                         "deployed double-space manifest fixture");
 
                 TestWhitespaceVariants(source, testRoot);
+                TestPayloadVerification(source, testRoot);
                 TestDownloadIsUserOwned(source, testRoot);
                 TestForeignContentIsRejected(source, testRoot);
                 TestUnsafeManifestIsRejected(source, testRoot);
@@ -106,6 +107,35 @@ namespace BlueLink.Installation.Tests
             Directory.CreateDirectory(Path.GetDirectoryName(nested));
             File.WriteAllBytes(nested, new byte[] { 1, 2, 3, 4 });
             AssertKind(root, InstallDirectoryKind.CurrentStructure, "arbitrary Download content");
+        }
+
+        private static void TestPayloadVerification(string source, string testRoot)
+        {
+            var inspection = InstallDirectoryOwnership.Inspect(source);
+            var manifest = inspection.Manifest;
+            Assert(manifest != null && manifest.PayloadFiles != null && manifest.PayloadFiles.Count > 0,
+                "generated manifest contains payload verification entries");
+
+            string error;
+            Assert(InstallDirectoryOwnership.VerifyInstalledPayload(source,
+                    manifest.ApplicationVersion, manifest.PayloadFingerprint, out error),
+                "generated stage payload hashes verify: " + error);
+            Assert(!InstallDirectoryOwnership.VerifyInstalledPayload(source,
+                    "99.99.99", manifest.PayloadFingerprint, out error) && error.Contains("应用版本"),
+                "version mismatch is rejected");
+            Assert(!InstallDirectoryOwnership.VerifyInstalledPayload(source,
+                    manifest.ApplicationVersion, new string('0', 64), out error) && error.Contains("载荷标识"),
+                "payload fingerprint mismatch is rejected");
+
+            var tamperedRoot = CreateFixture(source, Path.Combine(testRoot, "tampered-payload"));
+            var tamperedRelative = manifest.PayloadFiles.First().Path.Replace('/', Path.DirectorySeparatorChar);
+            using (var stream = new FileStream(Path.Combine(tamperedRoot, tamperedRelative),
+                       FileMode.Append, FileAccess.Write, FileShare.None))
+                stream.WriteByte(0x5A);
+            Assert(!InstallDirectoryOwnership.VerifyInstalledPayload(tamperedRoot,
+                    manifest.ApplicationVersion, manifest.PayloadFingerprint, out error) &&
+                    (error.Contains("大小") || error.Contains("校验失败")),
+                "tampered installed payload is rejected");
         }
 
         private static void TestForeignContentIsRejected(string source, string testRoot)
@@ -182,6 +212,12 @@ namespace BlueLink.Installation.Tests
                 "standalone uninstall never removes a different related bundle");
             Assert(!InstallerExecutionPolicy.ShouldPlanRelatedBundleRemoval(false, "unknown", "0.2.12"),
                 "unknown legacy version fails safe without invoking its BA");
+            Assert(InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan(true, true),
+                "first safe related-bundle plan is executed");
+            Assert(!InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan(true, false),
+                "duplicate related-bundle plan is suppressed");
+            Assert(!InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan(false, true),
+                "unsafe related-bundle plan remains suppressed");
 
             Assert(InstallerExecutionPolicy.GetExecutePhase("BlueLinkMsi", false, false, false)
                     .Contains("新版程序文件"),
@@ -189,6 +225,32 @@ namespace BlueLink.Installation.Tests
             Assert(InstallerExecutionPolicy.GetExecutePhase("{OLD-BUNDLE}", false, false, true)
                     .Contains("旧安装注册"),
                 "related bundle execution is not labelled as file copy");
+
+            Assert(InstallerExecutionPolicy.GetDisplayVersion("0.2.13+0424e45") == "0.2.13",
+                "display version strips source revision metadata");
+            Assert(InstallerExecutionPolicy.GetDisplayVersion("0.2.13-preview") == "0.2.13",
+                "display version strips prerelease metadata");
+            Assert(InstallerExecutionPolicy.GetDisplayVersion("not-a-version") == "未知",
+                "invalid display version fails closed");
+
+            Assert(InstallerExecutionPolicy.IsMsiExecutionPlanValid(true, true, true, "Install"),
+                "install plan with executable MSI is accepted");
+            Assert(InstallerExecutionPolicy.IsMsiExecutionPlanValid(true, true, true, "Repair"),
+                "repair plan with executable MSI is accepted");
+            Assert(!InstallerExecutionPolicy.IsMsiExecutionPlanValid(true, true, false, "None"),
+                "no-op MSI plan is rejected");
+            Assert(!InstallerExecutionPolicy.IsMsiExecutionPlanValid(true, false, false, null),
+                "missing MSI plan is rejected");
+            Assert(InstallerExecutionPolicy.IsMsiExecutionPlanValid(false, false, false, null),
+                "runtime-only plan does not require application MSI execution");
+            Assert(InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Install"),
+                "installed bundle converts command-line install to repair");
+            Assert(InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Unknown"),
+                "installed bundle converts unknown default action to repair");
+            Assert(!InstallerExecutionPolicy.ShouldConvertInstallToRepair(false, "Install"),
+                "fresh install remains install");
+            Assert(!InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Uninstall"),
+                "uninstall is never converted to repair");
         }
 
         private static string CreateFixture(string source, string destination)

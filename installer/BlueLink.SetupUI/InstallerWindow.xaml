@@ -47,8 +47,7 @@
         </Style>
     </ui:FluentWindow.Resources>
 
-    <Border x:Name="WindowSurface" Background="#FBFCFF" CornerRadius="18"
-            BorderBrush="#AEB8C8" BorderThickness="1" SizeChanged="WindowSurface_SizeChanged">
+    <Border x:Name="WindowSurface" Background="#FBFCFF">
         <Grid x:Name="RootGrid">
             <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <Grid.ColumnDefinitions><ColumnDefinition x:Name="BrandColumn" Width="396" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -61,7 +60,7 @@
                     </StackPanel>
                 </ui:TitleBar.Header>
             </ui:TitleBar>
-            <Border x:Name="BrandPanel" Grid.Row="1" Grid.Column="0" CornerRadius="0,0,0,18">
+            <Border x:Name="BrandPanel" Grid.Row="1" Grid.Column="0">
                 <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#082D95" Offset="0" /><GradientStop Color="#075DDF" Offset="0.48" /><GradientStop Color="#031F73" Offset="1" /></LinearGradientBrush></Border.Background>
                 <Grid ClipToBounds="True">
                     <Ellipse Width="560" Height="560" Fill="#0C52C8" Opacity="0.55" Margin="-260,-280,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" />
@@ -183,7 +182,7 @@
 
                 <Border Grid.Row="1" BorderBrush="#DDE4EF" BorderThickness="0,1,0,0" Padding="54,14">
                     <Grid>
-                        <TextBlock x:Name="FooterInfoText" Text="版本 0.2.9  ·  Windows 10/11 x64" Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock x:Name="FooterInfoText" Text="版本未知  ·  Windows 10/11 x64" Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Center" />
                         <StackPanel x:Name="NavigationButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><ui:Button x:Name="BackButton" Content="上一步" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,12,0" Visibility="Collapsed" Click="Back_Click" /><ui:Button x:Name="CancelButton" Content="取消" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,12,0" Click="Close_Click" /><ui:Button x:Name="NextButton" Content="下一步" Style="{StaticResource PrimaryButton}" MinWidth="130" Click="Next_Click" /></StackPanel>
                         <StackPanel x:Name="CompletionButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,20" Visibility="Collapsed"><ui:Button Content="打开接收文件夹" Style="{StaticResource SecondaryButton}" MinWidth="162" Margin="0,0,14,0" Click="OpenDownload_Click" /><ui:Button x:Name="FinishButton" Content="完成" Style="{StaticResource PrimaryButton}" MinWidth="138" Click="Finish_Click" /></StackPanel>
                         <StackPanel x:Name="RuntimeButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"><ui:Button Content="取消" Style="{StaticResource SecondaryButton}" MinWidth="118" Margin="0,0,14,0" Click="RuntimeCancel_Click"/><ui:Button Content="下载并安装" Style="{StaticResource PrimaryButton}" MinWidth="146" Click="RuntimeInstall_Click"/></StackPanel>

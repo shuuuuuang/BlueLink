@@ -5,7 +5,6 @@ namespace BlueLink.SetupUI
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
-    using System.Reflection;
     using System.Windows;
     using System.Windows.Controls;
     using System.Windows.Input;
@@ -32,8 +31,6 @@ namespace BlueLink.SetupUI
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Programs", "BlueLink");
             this.InstallFolderBox.TextChanged += (s, e) => this.UpdateFolderLabels();
-            var productVersion = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion;
-            this.FooterInfoText.Text = "版本 " + (String.IsNullOrWhiteSpace(productVersion) ? "0.2.9" : productVersion) + "  ·  Windows 10/11 x64";
             this.FallbackFolderText.Text = "若所选目录不可写，将使用 " + Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "BlueLink");
             this.UpdateFolderLabels();
@@ -72,6 +69,13 @@ namespace BlueLink.SetupUI
                 this.InstallFolderBox.Text = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 this.InstallFolderBox.CaretIndex = this.InstallFolderBox.Text.Length;
             });
+        }
+
+        public void SetDisplayVersion(string version)
+        {
+            var displayVersion = InstallerExecutionPolicy.GetDisplayVersion(version);
+            this.Dispatcher.Invoke(() =>
+                this.FooterInfoText.Text = "版本 " + displayVersion + "  ·  Windows 10/11 x64");
         }
 
         public void ShowFreshInstall()
@@ -470,13 +474,6 @@ namespace BlueLink.SetupUI
         {
             if (e.ClickCount == 2) this.WindowState = this.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
             else this.DragMove();
-        }
-
-        private void WindowSurface_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            var width = Math.Max(0, this.WindowSurface.ActualWidth);
-            var height = Math.Max(0, this.WindowSurface.ActualHeight);
-            this.WindowSurface.Clip = new RectangleGeometry(new Rect(0, 0, width, height), 18, 18);
         }
 
         private void Minimize_Click(object sender, RoutedEventArgs e) => this.WindowState = WindowState.Minimized;

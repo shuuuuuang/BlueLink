@@ -7,6 +7,7 @@ namespace BlueLink.Shared
     using System.Linq;
     using System.Runtime.Serialization;
     using System.Runtime.Serialization.Json;
+    using System.Security.Cryptography;
     using System.Text;
 
     internal enum InstallDirectoryKind
@@ -53,6 +54,28 @@ namespace BlueLink.Shared
 
         [DataMember(Name = "OwnedPaths", IsRequired = true)]
         public List<string> OwnedPaths { get; set; }
+
+        [DataMember(Name = "BuildId", IsRequired = false)]
+        public string BuildId { get; set; }
+
+        [DataMember(Name = "PayloadFingerprint", IsRequired = false)]
+        public string PayloadFingerprint { get; set; }
+
+        [DataMember(Name = "PayloadFiles", IsRequired = false)]
+        public List<InstallPayloadFile> PayloadFiles { get; set; }
+    }
+
+    [DataContract]
+    internal sealed class InstallPayloadFile
+    {
+        [DataMember(Name = "Path", IsRequired = true)]
+        public string Path { get; set; }
+
+        [DataMember(Name = "Length", IsRequired = true)]
+        public long Length { get; set; }
+
+        [DataMember(Name = "Sha256", IsRequired = true)]
+        public string Sha256 { get; set; }
     }
 
     internal static class InstallDirectoryOwnership
@@ -140,6 +163,82 @@ namespace BlueLink.Shared
                     String.Equals(product.FileDescription, "BlueLink", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
+        }
+
+        internal static bool VerifyInstalledPayload(string root, string expectedVersion,
+            string expectedFingerprint, out string error)
+        {
+            var inspection = Inspect(root);
+            if (inspection.Kind != InstallDirectoryKind.CurrentStructure || inspection.Manifest == null)
+            {
+                error = inspection.Message ?? "安装完成后未检测到有效的蓝联程序结构。";
+                return false;
+            }
+
+            var manifest = inspection.Manifest;
+            if (!String.Equals(manifest.ApplicationVersion, expectedVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "安装完成后检测到的应用版本仍为 " + manifest.ApplicationVersion +
+                    "，预期为 " + expectedVersion + "。程序文件未被正确替换。";
+                return false;
+            }
+            if (String.IsNullOrWhiteSpace(expectedFingerprint) ||
+                !String.Equals(manifest.PayloadFingerprint, expectedFingerprint, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "安装完成后的程序载荷标识与当前安装包不一致。程序文件未被正确替换。";
+                return false;
+            }
+            if (manifest.PayloadFiles == null || manifest.PayloadFiles.Count == 0)
+            {
+                error = "安装归属清单缺少程序文件校验信息，无法确认覆盖安装结果。";
+                return false;
+            }
+
+            string invalidPath;
+            var verificationPaths = NormalizeOwnedPaths(root,
+                manifest.PayloadFiles.Select(file => file == null ? null : file.Path), out invalidPath);
+            var ownedPaths = NormalizeOwnedPaths(root, manifest.OwnedPaths, out invalidPath);
+            if (verificationPaths == null || ownedPaths == null)
+            {
+                error = "安装归属清单包含不安全或重复的程序校验路径：" + invalidPath + "。";
+                return false;
+            }
+
+            foreach (var payload in manifest.PayloadFiles)
+            {
+                var relative = payload.Path.Replace('/', Path.DirectorySeparatorChar)
+                    .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+                if (!ownedPaths.Contains(relative) ||
+                    relative.Equals(".bluelink-install.json", StringComparison.OrdinalIgnoreCase) ||
+                    relative.Equals("Download", StringComparison.OrdinalIgnoreCase) ||
+                    relative.StartsWith("Download\\", StringComparison.OrdinalIgnoreCase) ||
+                    payload.Length < 0 || !IsSha256(payload.Sha256))
+                {
+                    error = "安装归属清单中的程序校验项无效：" + payload.Path + "。";
+                    return false;
+                }
+
+                var fullPath = Path.Combine(root, relative);
+                var file = new FileInfo(fullPath);
+                if (!file.Exists || file.Length != payload.Length)
+                {
+                    error = "安装完成后的程序文件缺失或大小不一致：" + payload.Path + "。";
+                    return false;
+                }
+
+                string actualHash;
+                using (var stream = file.OpenRead())
+                using (var sha = SHA256.Create())
+                    actualHash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", String.Empty);
+                if (!actualHash.Equals(payload.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "安装完成后的程序文件校验失败：" + payload.Path + "。";
+                    return false;
+                }
+            }
+
+            error = null;
+            return true;
         }
 
         private static InstallDirectoryInspection InspectCurrentStructure(string root,
@@ -295,6 +394,9 @@ namespace BlueLink.Shared
                 path.StartsWith("app\\", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("bootstrap\\", StringComparison.OrdinalIgnoreCase);
         }
+
+        private static bool IsSha256(string value) =>
+            !String.IsNullOrWhiteSpace(value) && value.Length == 64 && value.All(Uri.IsHexDigit);
 
         private static bool CollectProgramFiles(string root, DirectoryInfo directory,
             ISet<string> files, out string unsafeEntry)

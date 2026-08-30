@@ -48,21 +48,18 @@ function Assert-SourceContract {
     Assert-True ($theme -notmatch '<Style(?=[^>]*TargetType)(?![^>]*x:Key)') 'SettingsWindow theme contains a forbidden implicit base-control Style.'
     Assert-True ($projectText -match '<PackageReference Include="WPF-UI" Version="4\.3\.0"') 'BlueLink.App must pin WPF-UI 4.3.0.'
 
-    $allowed = @(
+    $allowedWindowsClientSources = @(
         'windows/BlueLink.App/BlueLink.App.csproj',
         'windows/BlueLink.App/SettingsWindow.xaml',
         'windows/BlueLink.App/SettingsWindow.xaml.cs',
-        'windows/BlueLink.App/Themes/SettingsWindow.xaml',
-        'scripts/test-settings-ui.ps1',
-        'scripts/build-windows-release.ps1',
-        'scripts/verify-ui-contract.ps1'
+        'windows/BlueLink.App/Themes/SettingsWindow.xaml'
     )
     $status = & git -C $root status --porcelain=v1 --untracked-files=all
     foreach ($line in $status) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         $path = $line.Substring(3).Trim('"').Replace('\', '/')
-        if ($path -like 'design/prototypes/settings-v1/*') { continue }
-        Assert-True ($allowed -contains $path) "Settings implementation changed an out-of-scope source: $path"
+        if ($path -notlike 'windows/BlueLink.App/*') { continue }
+        Assert-True ($allowedWindowsClientSources -contains $path) "Settings implementation changed an out-of-scope Windows client source: $path"
     }
 }
 

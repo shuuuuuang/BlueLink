@@ -31,6 +31,9 @@ namespace BlueLink.Shared
             return detected >= firstSafe;
         }
 
+        public static bool ShouldExecuteRelatedBundlePlan(bool canExecuteEmbedded, bool firstPlanForBundle) =>
+            canExecuteEmbedded && firstPlanForBundle;
+
         public static string GetExecutePhase(
             string packageId,
             bool runtimeOnlyPlan,
@@ -44,6 +47,30 @@ namespace BlueLink.Shared
                 return "正在安装新版程序文件…";
             return "正在执行安装步骤…";
         }
+
+        public static string GetDisplayVersion(string value)
+        {
+            var normalized = NormalizeVersion(value);
+            Version parsed;
+            return Version.TryParse(normalized, out parsed) ? normalized : "未知";
+        }
+
+        public static bool IsMsiExecutionPlanValid(
+            bool executionRequired,
+            bool planObserved,
+            bool shouldExecute,
+            string action)
+        {
+            if (!executionRequired) return true;
+            return planObserved && shouldExecute &&
+                !String.IsNullOrWhiteSpace(action) &&
+                !String.Equals(action, "None", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool ShouldConvertInstallToRepair(bool currentBundleInstalled, string requestedAction) =>
+            currentBundleInstalled &&
+            (String.Equals(requestedAction, "Unknown", StringComparison.OrdinalIgnoreCase) ||
+             String.Equals(requestedAction, "Install", StringComparison.OrdinalIgnoreCase));
 
         private static string NormalizeVersion(string value)
         {

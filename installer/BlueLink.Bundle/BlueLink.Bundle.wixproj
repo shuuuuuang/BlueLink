@@ -4,6 +4,8 @@
     <Platform>x64</Platform>
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <ProductCode Condition="'$(ProductCode)' == ''">{00000000-0000-0000-0000-000000000000}</ProductCode>
+    <PayloadFingerprint Condition="'$(PayloadFingerprint)' == ''">unknown</PayloadFingerprint>
     <BundleName Condition="'$(BundleName)' == ''">蓝联 BlueLink</BundleName>
     <BundleUpgradeCode Condition="'$(BundleUpgradeCode)' == ''">{6B6EB4AB-16E2-4E54-BBBE-556061F7D4A7}</BundleUpgradeCode>
     <PackageUpgradeCode Condition="'$(PackageUpgradeCode)' == ''">{BE8A6A43-710C-4B6E-92DC-07C4FAFC22B9}</PackageUpgradeCode>
@@ -18,7 +20,7 @@
     <RuntimeSize Condition="'$(RuntimeSize)' == ''">读取实际包大小</RuntimeSize>
     <RuntimePerMachine Condition="'$(RuntimePerMachine)' == ''">yes</RuntimePerMachine>
     <IncludePrerequisites Condition="'$(IncludePrerequisites)' == ''">yes</IncludePrerequisites>
-    <DefineConstants>ProductVersion=$(ProductVersion);BundleName=$(BundleName);BundleUpgradeCode=$(BundleUpgradeCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleProviderKey=$(BundleProviderKey);ProductRegistryKey=$(ProductRegistryKey);MsiPath=$(MsiPath);BaOutput=$(BaOutput);IconPath=$(IconPath);RuntimePayload=$(RuntimePayload);RuntimeDownloadUrl=$(RuntimeDownloadUrl);RuntimeVersion=$(RuntimeVersion);RuntimeSize=$(RuntimeSize);RuntimePerMachine=$(RuntimePerMachine);IncludePrerequisites=$(IncludePrerequisites)</DefineConstants>
+    <DefineConstants>ProductVersion=$(ProductVersion);ProductCode=$(ProductCode);PayloadFingerprint=$(PayloadFingerprint);BundleName=$(BundleName);BundleUpgradeCode=$(BundleUpgradeCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleProviderKey=$(BundleProviderKey);ProductRegistryKey=$(ProductRegistryKey);MsiPath=$(MsiPath);BaOutput=$(BaOutput);IconPath=$(IconPath);RuntimePayload=$(RuntimePayload);RuntimeDownloadUrl=$(RuntimeDownloadUrl);RuntimeVersion=$(RuntimeVersion);RuntimeSize=$(RuntimeSize);RuntimePerMachine=$(RuntimePerMachine);IncludePrerequisites=$(IncludePrerequisites)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.Bal.wixext" Version="4.0.6" />

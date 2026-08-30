@@ -47,10 +47,37 @@ foreach ($file in Get-ChildItem -LiteralPath $appRoot -Recurse -File | Where-Obj
 foreach ($file in Get-ChildItem -LiteralPath $bootstrapRoot -Recurse -File | Where-Object Extension -ne '.pdb') {
     $owned.Add('bootstrap/' + (Get-RelativePath $bootstrapRoot $file.FullName).Replace('\', '/'))
 }
+$installRoot = [IO.Path]::GetFullPath((Split-Path -Parent $ManifestPath))
+$payloadFiles = @($owned | Where-Object { $_ -ne '.bluelink-install.json' } | Sort-Object -Unique | ForEach-Object {
+    $relativePath = [string]$_
+    $sourcePath = Join-Path $installRoot $relativePath.Replace('/', '\')
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "Owned payload file was not staged: $relativePath"
+    }
+    $item = Get-Item -LiteralPath $sourcePath
+    [ordered]@{
+        Path = $relativePath
+        Length = [long]$item.Length
+        Sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToUpperInvariant()
+    }
+})
+$fingerprintMaterial = ($payloadFiles | ForEach-Object {
+    "$($_.Path)|$($_.Length)|$($_.Sha256)"
+}) -join "`n"
+$fingerprintSha = [Security.Cryptography.SHA256]::Create()
+try {
+    $payloadFingerprint = ([BitConverter]::ToString(
+        $fingerprintSha.ComputeHash([Text.Encoding]::UTF8.GetBytes($fingerprintMaterial))
+    )).Replace('-', '')
+}
+finally { $fingerprintSha.Dispose() }
 $manifest = [ordered]@{
     ProductId = 'BlueLink.Desktop'
     StructureVersion = 2
     ApplicationVersion = $Version
+    BuildId = "$Version-$($payloadFingerprint.Substring(0, 16).ToLowerInvariant())"
+    PayloadFingerprint = $payloadFingerprint
+    PayloadFiles = $payloadFiles
     OwnedPaths = @($owned | Sort-Object -Unique)
 }
 $manifestDirectory = Split-Path -Parent $ManifestPath
@@ -114,4 +141,5 @@ try {
 finally { $writer.Dispose() }
 
 Write-Host "Generated manifest with $($manifest.OwnedPaths.Count) owned paths: $ManifestPath"
+Write-Host "Payload fingerprint: $payloadFingerprint"
 Write-Host "Generated $($componentIds.Count) WiX payload components: $OutputFile"

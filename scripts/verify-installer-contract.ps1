@@ -40,18 +40,22 @@ if ($xaml.Contains('ControlTemplate')) { throw 'Installer must not contain handw
 if ($xaml.Contains('MaintenancePage')) {
     throw 'The removed installed-product maintenance page has returned.'
 }
+if ($xaml -match 'x:Name="WindowSurface"[^>]*(CornerRadius|SizeChanged)' -or
+    $xaml -match 'x:Name="BrandPanel"[^>]*CornerRadius') {
+    throw 'Installer outer window content must not add a second rounded silhouette around FluentWindow.'
+}
 $setupProject = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\BlueLink.SetupUI.csproj') -Raw
 if (-not $setupProject.Contains('<PackageReference Include="WPF-UI" Version="4.3.0"')) {
     throw 'Installer must pin WPF-UI 4.3.0.'
 }
 
 $bundle = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.Bundle\Bundle.wxs') -Raw
-foreach ($token in @('WixManagedBootstrapperApplicationHost', 'InstallFolder', 'CreateDesktopShortcut', 'AutoStart', 'BlueLinkMsi', 'DotNetCoreSearch', 'RuntimeType="desktop"', 'Platform="x64"', 'MajorVersion="8"', 'DesktopRuntime8X64', 'Compressed="no"', 'Cache="remove"', 'Permanent="yes"', 'Vital="yes"', 'RuntimePerMachine', 'PackageUpgradeCode', 'ARPINSTALLLOCATION')) {
+foreach ($token in @('WixManagedBootstrapperApplicationHost', 'InstallFolder', 'CreateDesktopShortcut', 'AutoStart', 'BlueLinkMsi', 'DotNetCoreSearch', 'RuntimeType="desktop"', 'Platform="x64"', 'MajorVersion="8"', 'DesktopRuntime8X64', 'Compressed="no"', 'Cache="remove"', 'Permanent="yes"', 'Vital="yes"', 'RuntimePerMachine', 'PackageUpgradeCode', 'ARPINSTALLLOCATION', 'DisplayProductVersion', 'ExpectedMsiProductCode', 'ExpectedPayloadFingerprint')) {
     if (-not $bundle.Contains($token)) { throw "Burn bundle contract missing: $token" }
 }
 
 $bootstrapper = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\BlueLinkBootstrapper.cs') -Raw
-foreach ($token in @('GetFormattedString("InstallFolder"', 'SetVariableString("InstallFolder"', 'SetInstallFolder(this.installFolder)', 'ShowOverwriteContext', 'ShowUninstall', 'PlanRelatedBundle', 'PlanRestoreRelatedBundle', 'e.RecommendedState', 'InstallerExecutionPolicy.ShouldPlanRelatedBundleRemoval', 'Display.Embedded', 'RelationType.None', 'ResolveExistingInstallFolder', 'Registry.CurrentUser', 'MsiRelatedProductLocator.FindInstallFolders', 'StopInstalledApplication', 'InstalledApplicationController.Stop')) {
+foreach ($token in @('GetFormattedString("InstallFolder"', 'SetVariableString("InstallFolder"', 'SetInstallFolder(this.installFolder)', 'ShowFreshInstall', 'ShowOverwriteContext', 'ShowUninstall', 'GetNumeric("WixBundleInstalled"', 'PlanRelatedBundle', 'PlanRestoreRelatedBundle', 'plannedRelatedBundles.Add', 'InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan', 'PlanMsiPackage', 'e.ShouldExecute', 'InstallerExecutionPolicy.IsMsiExecutionPlanValid', 'VerifyInstallPostconditions', 'InstallDirectoryOwnership.VerifyInstalledPayload', 'e.RecommendedState', 'InstallerExecutionPolicy.ShouldPlanRelatedBundleRemoval', 'Display.Embedded', 'RelationType.None', 'ResolveExistingInstallFolder', 'Registry.CurrentUser', 'MsiRelatedProductLocator.FindInstallFolders', 'StopInstalledApplication', 'InstalledApplicationController.Stop')) {
     if (-not $bootstrapper.Contains($token)) { throw "Installer path propagation contract missing: $token" }
 }
 $processController = Get-Content -LiteralPath (Join-Path $root 'shared\InstalledApplicationController.cs') -Raw
@@ -60,11 +64,14 @@ foreach ($token in @('WindowsAppControlChannel.SignalExit', 'Process.GetProcesse
 }
 
 $installerWindow = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\InstallerWindow.xaml.cs') -Raw
-foreach ($token in @('NormalizeInstallFolder', 'ValidateInstallDirectoryContents', 'CleanupProductRollbackFiles', 'InstallDirectoryOwnership.ValidateInstallable', 'directory.Name.Equals("BlueLink"')) {
+foreach ($token in @('SetDisplayVersion', 'InstallerExecutionPolicy.GetDisplayVersion', 'NormalizeInstallFolder', 'ValidateInstallDirectoryContents', 'CleanupProductRollbackFiles', 'InstallDirectoryOwnership.ValidateInstallable', 'directory.Name.Equals("BlueLink"')) {
     if (-not $installerWindow.Contains($token)) { throw "Installer overwrite/path contract missing: $token" }
 }
+if ($installerWindow.Contains('FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion')) {
+    throw 'Installer welcome page must not expose SDK informational ProductVersion metadata.'
+}
 $ownership = Get-Content -LiteralPath (Join-Path $root 'shared\InstallDirectoryOwnership.cs') -Raw
-foreach ($token in @('DataContractJsonSerializer', 'TrimStart(''\uFEFF'')', 'OwnedPaths', 'NormalizeOwnedPaths', 'IsProductRollbackFile', 'Uri.IsHexDigit', 'Download\\', 'ForeignContent')) {
+foreach ($token in @('DataContractJsonSerializer', 'TrimStart(''\uFEFF'')', 'OwnedPaths', 'PayloadFingerprint', 'PayloadFiles', 'VerifyInstalledPayload', 'SHA256.Create', 'NormalizeOwnedPaths', 'IsProductRollbackFile', 'Uri.IsHexDigit', 'Download\\', 'ForeignContent')) {
     if (-not $ownership.Contains($token)) { throw "Installer ownership contract missing: $token" }
 }
 if ($installerWindow.Contains('IndexOf("\"ProductId\"') -or $ownership.Contains('IndexOf("\"ProductId\"')) {
@@ -85,7 +92,7 @@ foreach ($token in @('LauncherComponent', 'UninstallerComponent', 'InstallManife
 
 $build = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-release.ps1') -Raw
 if ($build -match '(?i)inno|iscc|BlueLink\.iss') { throw 'Windows release script still references Inno Setup.' }
-foreach ($token in @('BlueLink.SetupUI.csproj', 'BlueLink.Launcher.csproj', 'BlueLink.Uninstall.csproj', 'BlueLink.Package.wixproj', 'BlueLink.Bundle.wixproj', '--self-contained false', 'PublishSingleFile=false', 'PublishTrimmed=false', 'generate-wix-payload.ps1', 'Get-DeterministicGuid', 'BundleProviderKey')) {
+foreach ($token in @('BlueLink.SetupUI.csproj', 'BlueLink.Launcher.csproj', 'BlueLink.Uninstall.csproj', 'BlueLink.Package.wixproj', 'BlueLink.Bundle.wixproj', '--self-contained false', 'PublishSingleFile=false', 'PublishTrimmed=false', 'generate-wix-payload.ps1', 'Get-DeterministicGuid', 'BundleProviderKey', 'release-payload-lock.json', 'PayloadFingerprint', 'Increment VERSION')) {
     if (-not $build.Contains($token)) { throw "Release pipeline does not build: $token" }
 }
 

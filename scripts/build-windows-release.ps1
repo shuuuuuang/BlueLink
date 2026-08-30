@@ -192,6 +192,25 @@ $generatedWix = Join-Path $projectRoot 'installer\BlueLink.Package\Package.Gener
 & (Join-Path $projectRoot 'scripts\generate-wix-payload.ps1') `
     -AppPublishDir $appStage -BootstrapDir $bootstrapStage -ManifestPath $manifestPath `
     -OutputFile $generatedWix -Version $version
+$generatedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$payloadFingerprint = [string]$generatedManifest.PayloadFingerprint
+if ($payloadFingerprint -notmatch '^[0-9A-Fa-f]{64}$') {
+    throw 'Generated install manifest does not contain a valid payload fingerprint.'
+}
+$releaseIdentityPath = Join-Path $projectRoot 'installer\release-payload-lock.json'
+if (Test-Path -LiteralPath $releaseIdentityPath) {
+    $lockedIdentity = Get-Content -LiteralPath $releaseIdentityPath -Raw | ConvertFrom-Json
+    $currentVersion = [Version]$version
+    $lockedVersion = [Version]([string]$lockedIdentity.Version)
+    if ($currentVersion -lt $lockedVersion) {
+        throw "Release version $version is older than the locked release version $lockedVersion."
+    }
+    if ($currentVersion -eq $lockedVersion -and
+        -not $payloadFingerprint.Equals([string]$lockedIdentity.PayloadFingerprint,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release $version already identifies a different payload. Increment VERSION before building another distributable installer."
+    }
+}
 
 & $dotnet build $ownershipTestsProject -c $Configuration --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'Install ownership test compilation failed.' }
@@ -273,7 +292,8 @@ if ($LASTEXITCODE -ne 0) { throw 'WiX MSI compilation failed.' }
 $msi = Join-Path $projectRoot "installer\BlueLink.Package\bin\x64\$Configuration\BlueLink.Package.msi"
 $baOutput = Join-Path $projectRoot "installer\BlueLink.SetupUI\bin\$Configuration\net472\win-x64"
 & $dotnet build $bundleProject -c $Configuration --no-restore -t:Rebuild `
-    "-p:ProductVersion=$version" "-p:BundleProviderKey=$bundleProviderKey" "-p:MsiPath=$msi" "-p:BaOutput=$baOutput" `
+    "-p:ProductVersion=$version" "-p:ProductCode=$productCode" "-p:PayloadFingerprint=$payloadFingerprint" `
+    "-p:BundleProviderKey=$bundleProviderKey" "-p:MsiPath=$msi" "-p:BaOutput=$baOutput" `
     "-p:RuntimePayload=$runtimePayload" "-p:RuntimeDownloadUrl=$($runtimeFile.url)" `
     "-p:RuntimeVersion=$runtimeVersion" "-p:RuntimeSize=$runtimeDisplaySize"
 if ($LASTEXITCODE -ne 0) { throw 'WiX Burn bundle compilation failed.' }
@@ -297,5 +317,12 @@ if ($overwrite.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $overwriteSnapsho
     throw 'Official WPF-UI overwrite MessageBox UI Automation smoke failed.'
 }
 
+[ordered]@{
+    Version = $version
+    ProductCode = $productCode
+    PayloadFingerprint = $payloadFingerprint
+} | ConvertTo-Json | Set-Content -LiteralPath $releaseIdentityPath -Encoding utf8
+
 Write-Host "Custom WiX installer output: $installer"
+Write-Host "Release payload fingerprint: $payloadFingerprint"
 Write-Host "Microsoft Desktop Runtime ${runtimeVersion}: $runtimeLength bytes, SHA512 $actualRuntimeHash"

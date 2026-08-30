@@ -94,7 +94,17 @@ foreach ($forbidden in @('coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'clrjit
 }
 $manifestValue = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
 if ($manifestValue.ProductId -ne 'BlueLink.Desktop' -or $manifestValue.StructureVersion -ne 2 -or
+    [string]::IsNullOrWhiteSpace([string]$manifestValue.PayloadFingerprint) -or
+    @($manifestValue.PayloadFiles).Count -eq 0 -or
     @($manifestValue.OwnedPaths) -contains 'Download') { throw 'Installed ownership manifest is invalid or claims Download.' }
+foreach ($payload in @($manifestValue.PayloadFiles)) {
+    $payloadPath = Join-Path $InstallDir ([string]$payload.Path).Replace('/', '\')
+    if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $payloadPath).Length -ne [long]$payload.Length -or
+        (Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash -ne [string]$payload.Sha256) {
+        throw "Installed payload verification failed: $($payload.Path)"
+    }
+}
 if (Test-Path -LiteralPath (Join-Path $InstallDir 'unins000.exe')) {
     throw 'Legacy Inno uninstaller was unexpectedly installed.'
 }
