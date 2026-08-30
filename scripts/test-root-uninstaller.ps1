@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$Installer,
     [string]$InstallDir = (Join-Path (Split-Path -Parent $PSScriptRoot) '.acceptance\root-uninstall'),
     [ValidatePattern('^[A-Za-z0-9]+$')]
@@ -12,6 +12,7 @@ $installFullPath = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
 if (-not $installFullPath.StartsWith($acceptanceRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to install outside $acceptanceRoot"
 }
+$InstallDir = $installFullPath
 
 function Wait-Element([scriptblock]$resolve, [int]$timeoutSeconds, [string]$description) {
     $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
@@ -80,6 +81,26 @@ $windowProcess = Wait-Element {
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $mainWindow = Wait-Element { Find-Window '卸载蓝联' } 30 'the root uninstaller window'
+Add-Type -AssemblyName System.Drawing
+$uninstallerSnapshot = Join-Path $root 'artifacts\acceptance\uninstaller-main.png'
+$snapshotDirectory = Split-Path -Parent $uninstallerSnapshot
+New-Item -ItemType Directory -Path $snapshotDirectory -Force | Out-Null
+$windowBounds = $mainWindow.Current.BoundingRectangle
+$snapshot = New-Object Drawing.Bitmap([Math]::Max(1, [int][Math]::Ceiling($windowBounds.Width)),
+    [Math]::Max(1, [int][Math]::Ceiling($windowBounds.Height)))
+$graphics = [Drawing.Graphics]::FromImage($snapshot)
+try {
+    $graphics.CopyFromScreen([int][Math]::Floor($windowBounds.X), [int][Math]::Floor($windowBounds.Y),
+        0, 0, $snapshot.Size, [Drawing.CopyPixelOperation]::SourceCopy)
+    $snapshot.Save($uninstallerSnapshot, [Drawing.Imaging.ImageFormat]::Png)
+}
+finally {
+    $graphics.Dispose()
+    $snapshot.Dispose()
+}
+if ((Get-Item -LiteralPath $uninstallerSnapshot).Length -lt 20000) {
+    throw 'The current root uninstaller screenshot was not captured correctly.'
+}
 Invoke-Button (Find-Button $mainWindow '卸载') 'the visible root uninstaller button'
 
 # WPF UI MessageBox is exposed as an owned Window inside the owner's
@@ -132,6 +153,7 @@ $resultPath = Join-Path $root 'artifacts\acceptance\root-uninstaller-result.txt'
     'Program files removed=True'
     'Exact registration removed=True'
     'Download fixture preserved=True'
+    "Current UI screenshot=$uninstallerSnapshot"
 ) | Set-Content -LiteralPath $resultPath -Encoding UTF8
 
 Remove-Item -LiteralPath $InstallDir -Recurse -Force

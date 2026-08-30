@@ -16,10 +16,12 @@ import com.bluelink.android.domain.ConnectionPhase
 import com.bluelink.android.domain.ConnectionState
 import com.bluelink.android.domain.ConversationSummary
 import com.bluelink.android.domain.DeviceAvailability
+import com.bluelink.android.domain.DeviceProjectionPolicy
 import com.bluelink.android.domain.DiagnosticEntry
 import com.bluelink.android.domain.DiagnosticLevel
 import com.bluelink.android.domain.MessageStatus
 import com.bluelink.android.domain.ManagedSessionState
+import com.bluelink.android.domain.NearbyDevice
 import com.bluelink.android.domain.PeerPlatform
 import com.bluelink.android.domain.TransferItem
 import com.bluelink.android.domain.TrustPrompt
@@ -97,6 +99,8 @@ class BlueLinkRuntime(
     val trustPrompt: StateFlow<TrustPrompt?> = _trustPrompt.asStateFlow()
     private val _conversations = MutableStateFlow<List<ConversationSummary>>(emptyList())
     val conversations: StateFlow<List<ConversationSummary>> = _conversations.asStateFlow()
+    private val _devices = MutableStateFlow<List<NearbyDevice>>(emptyList())
+    val devices: StateFlow<List<NearbyDevice>> = _devices.asStateFlow()
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
     private val messagesBySession = ConcurrentHashMap<UUID, List<ChatItem>>()
@@ -136,6 +140,18 @@ class BlueLinkRuntime(
             }
         }
         scope.launch {
+            combine(repository.peers, sessions, bluetooth.devices) { peers, active, nearby ->
+                val trusted = peers.filter { it.trustState == "TRUSTED" }
+                DeviceProjectionPolicy.nearbyCandidates(
+                    devices = nearby,
+                    activePeerIds = active.mapNotNull { it.peerId }.toSet(),
+                    trustedPeerIds = trusted.map { it.peerId }.toSet(),
+                    activeAddresses = active.map { it.transportAddress }.filter { it.isNotBlank() }.toSet(),
+                    trustedAddresses = trusted.map { it.transportAddress }.filter { it.isNotBlank() }.toSet(),
+                )
+            }.collect { _devices.value = it }
+        }
+        scope.launch {
             combine(repository.peers, repository.conversations, sessions, bluetooth.devices) { peers, stored, active, nearby ->
                 val conversationsByPeer = stored.associateBy { it.peerId }
                 val sessionsByPeer = active.filter { it.peerId != null && it.phase == ConnectionPhase.CONNECTED }
@@ -153,7 +169,11 @@ class BlueLinkRuntime(
                     }
                     ConversationSummary(peer.peerId, peer.displayName.ifBlank { "已信任设备" },
                         runCatching { PeerPlatform.valueOf(peer.platform) }.getOrDefault(PeerPlatform.UNKNOWN),
-                        when { session != null -> DeviceAvailability.CONNECTED; visible -> DeviceAvailability.CONNECTABLE; else -> DeviceAvailability.OFFLINE },
+                        DeviceProjectionPolicy.availability(
+                            connected = session != null,
+                            trusted = peer.trustState == "TRUSTED",
+                            nearby = visible,
+                        ),
                         session?.sessionId, peer.transportAddress, conversationsByPeer[peer.peerId]?.unreadCount ?: 0,
                         conversationsByPeer[peer.peerId]?.lastActivityAt ?: peer.lastSeenAt)
                 }.sortedWith(compareBy<ConversationSummary> { when (it.availability) {

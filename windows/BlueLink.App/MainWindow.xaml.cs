@@ -12,7 +12,7 @@ using BlueLink.Session;
 
 namespace BlueLink;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly MainViewModel _model;
     private bool _disposed;

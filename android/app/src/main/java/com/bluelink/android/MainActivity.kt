@@ -497,15 +497,6 @@ private fun DevicesScreen(
     val canonicalConversations = conversations.distinctBy { it.peerId.lowercase() }
     val connected = canonicalConversations.filter { it.availability == DeviceAvailability.CONNECTED }
     val offline = canonicalConversations.filter { it.availability != DeviceAvailability.CONNECTED }
-    val knownAddresses = canonicalConversations.map { it.transportAddress.trim().uppercase() }
-        .filter { it.isNotBlank() }.toSet()
-    val knownPeerIds = canonicalConversations.map { it.peerId.lowercase() }
-    val fresh = devices.distinctBy { device ->
-        device.discoveryId.lowercase().ifBlank { device.address.trim().uppercase() }
-    }.filterNot { device ->
-        device.address.trim().uppercase() in knownAddresses ||
-            (device.discoveryId.isNotBlank() && knownPeerIds.any { it.startsWith(device.discoveryId.lowercase()) })
-    }
     LazyColumn(modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Ink), shape = RoundedCornerShape(24.dp)) {
@@ -538,13 +529,13 @@ private fun DevicesScreen(
                     onLongClick = { longPressConversation(summary) })
             }
         }
-        if (fresh.isNotEmpty()) {
+        if (devices.isNotEmpty()) {
             item { DeviceGroupTitle("附近新设备", "尚未建立信任的 BlueLink 设备") }
-            items(fresh, key = { "nearby-${it.address}" }) { device ->
+            items(devices, key = { "nearby-${it.stableKey}" }) { device ->
                 NearbyDeviceCard(device, connect, onLongClick = { longPressNearby(device) })
             }
         }
-        if (connected.isEmpty() && offline.isEmpty() && fresh.isEmpty())
+        if (connected.isEmpty() && offline.isEmpty() && devices.isEmpty())
             item { EmptyCard("尚未发现设备", discoveryState.detail) }
         item { Spacer(Modifier.height(12.dp)) }
     }
@@ -557,6 +548,16 @@ private fun DeviceGroupTitle(title: String, detail: String) {
             style = MaterialTheme.typography.titleMedium)
         Text(detail, color = Muted, style = MaterialTheme.typography.labelMedium)
     }
+}
+
+@Composable
+private fun BlueLinkProgress(progress: Float, modifier: Modifier = Modifier) {
+    LinearProgressIndicator(
+        progress = { progress.coerceIn(0f, 1f) },
+        modifier = modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
+        color = Blue,
+        trackColor = Color(0xFFE3EAF5),
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -592,8 +593,7 @@ private fun ConversationDeviceCard(summary: ConversationSummary, transfer: Trans
                 }, CircleShape))
             }
             if (transfer != null) {
-                LinearProgressIndicator(progress = { transfer.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(), color = Blue)
+                BlueLinkProgress(transfer.progress)
                 Text("正在${if (transfer.outgoing) "发送" else "接收"} ${transfer.name} · ${(transfer.progress * 100).toInt()}%",
                     color = Muted, style = MaterialTheme.typography.labelSmall,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -651,7 +651,7 @@ private fun NearbyScreen(modifier: Modifier, devices: List<NearbyDevice>, state:
         }
         item { Text("附近设备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink) }
         if (devices.isEmpty()) item { EmptyCard("尚未发现设备", "请确认对端已打开蓝联并允许附近设备权限。") }
-        items(devices, key = { it.address }) { device ->
+        items(devices, key = { it.stableKey }) { device ->
             val sessionBusy = state.phase == ConnectionPhase.CONNECTING ||
                 state.phase == ConnectionPhase.SECURE_HANDSHAKE || state.phase == ConnectionPhase.TRUST_REQUIRED ||
                 state.phase == ConnectionPhase.CONNECTED
@@ -922,7 +922,7 @@ private fun AttachmentCard(attachment: ChatAttachment, showImageThumbnail: Boole
                 }
             }
             if (attachment.isTransferActive)
-                LinearProgressIndicator(progress = { attachment.progress }, modifier = Modifier.fillMaxWidth(), color = Blue)
+                BlueLinkProgress(attachment.progress)
         }
     }
 }
@@ -1019,7 +1019,7 @@ private fun TransferScreen(modifier: Modifier, transfers: List<TransferItem>, re
                 })) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row { Text(transfer.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(if (transfer.outgoing) "发送" else "接收", color = Blue) }
-                    LinearProgressIndicator(progress = { transfer.progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Blue)
+                    BlueLinkProgress(transfer.progress)
                     val speed = if (transfer.bytesPerSecond > 0) " · ${formatBytes(transfer.bytesPerSecond.toLong())}/s" else ""
                     val remaining = transfer.remainingSeconds?.let { seconds -> " · 约 ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}" }.orEmpty()
                     Text("${formatBytes(transfer.completedBytes)} / ${formatBytes(transfer.totalBytes)} · ${transferStatusText(transfer.status)}$speed$remaining", color = Muted, style = MaterialTheme.typography.bodySmall)

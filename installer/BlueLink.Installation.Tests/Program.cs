@@ -259,6 +259,22 @@ namespace BlueLink.Installation.Tests
                 "runtime-only flow plans a missing runtime");
             Assert(!InstallerExecutionPolicy.ShouldPlanRuntimePackage(false, false, true),
                 "BlueLink uninstall never plans the shared runtime");
+
+            Assert(InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                    false, true, "0.2.11", "0.2.12"),
+                "successful upgrade cleans a pre-embedded-safe legacy bundle registration");
+            Assert(!InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                    false, false, "0.2.11", "0.2.12"),
+                "failed upgrade preserves the legacy bundle for rollback");
+            Assert(!InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                    true, true, "0.2.11", "0.2.12"),
+                "standalone uninstall does not start a second legacy cleanup");
+            Assert(!InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                    false, true, "0.2.12", "0.2.12"),
+                "embedded-safe bundles remain owned by the Burn related plan");
+            Assert(!InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                    false, true, "unknown", "0.2.12"),
+                "unknown bundle versions are never launched by fallback cleanup");
         }
 
         private static string CreateFixture(string source, string destination)

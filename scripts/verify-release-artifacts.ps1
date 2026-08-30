@@ -1,3 +1,5 @@
+param([switch]$AllowUnsignedDevelopmentArtifacts)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
@@ -6,8 +8,9 @@ $windowsExe = Join-Path $root 'artifacts\windows\win-x64\BlueLink.exe'
 $windowsClient = Join-Path $root 'artifacts\windows\win-x64\app\BlueLink.exe'
 $uninstaller = Join-Path $root 'artifacts\windows\win-x64\Uninstall.exe'
 $apk = Join-Path $root "artifacts\android\BlueLink-$version-android-debug.apk"
+$releaseApk = Join-Path $root "artifacts\android\BlueLink-$version-android-release-unsigned.apk"
 
-foreach ($artifact in @($installer, $windowsExe, $windowsClient, $uninstaller, $apk)) {
+foreach ($artifact in @($installer, $windowsExe, $windowsClient, $uninstaller, $apk, $releaseApk)) {
     if (-not (Test-Path -LiteralPath $artifact)) { throw "Release artifact missing: $artifact" }
     if ((Get-Item -LiteralPath $artifact).Length -lt 100KB) { throw "Release artifact is unexpectedly small: $artifact" }
 }
@@ -36,6 +39,24 @@ if ($badging -notmatch "application-label:'$([regex]::Escape($expectedLabel))'")
 if ($badging -match 'android.permission.INTERNET') { throw 'APK unexpectedly requests INTERNET.' }
 & $apksigner verify --verbose $apk | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
+$releaseBadging = (& $aapt dump badging $releaseApk) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $releaseBadging -notmatch "versionName='$([regex]::Escape($version))'") {
+    throw 'Android release APK metadata is invalid.'
+}
+
+if (-not $AllowUnsignedDevelopmentArtifacts) {
+    foreach ($windowsArtifact in @($installer, $windowsExe, $uninstaller)) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $windowsArtifact
+        if ($signature.Status.ToString() -ne 'Valid') {
+            throw "Release signing gate failed for $windowsArtifact`: $($signature.Status)."
+        }
+    }
+    & $apksigner verify --verbose $releaseApk | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Release signing gate failed for the Android release APK.' }
+}
+else {
+    Write-Warning 'Unsigned development artifacts were allowed explicitly; release signing is NOT verified.'
+}
 
 foreach ($snapshot in @('windows-ui-expanded.png', 'windows-ui-collapsed.png', 'windows-ui-compact.png')) {
     $path = Join-Path $root "artifacts\acceptance\$snapshot"
@@ -59,9 +80,10 @@ foreach ($snapshot in $criticalSnapshots) {
     $path = Join-Path $root "artifacts\acceptance\$snapshot"
     if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -lt 20000) { throw "Critical UI snapshot missing or invalid: $snapshot" }
 }
-foreach ($artifact in @($installer, $windowsExe, $windowsClient, $uninstaller, $apk)) {
+foreach ($artifact in @($installer, $windowsExe, $windowsClient, $uninstaller, $apk, $releaseApk)) {
     $file = Get-Item -LiteralPath $artifact
     $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash
     Write-Host "[PASS] $($file.FullName) | $($file.Length) bytes | SHA256 $hash"
 }
-Write-Host "Release artifact verification passed for $version."
+Write-Host "Release artifact verification passed for $version" `
+    $(if ($AllowUnsignedDevelopmentArtifacts) { '(unsigned development mode).' } else { '(signed release mode).' })

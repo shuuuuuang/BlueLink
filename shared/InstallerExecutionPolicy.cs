@@ -78,6 +78,23 @@ namespace BlueLink.Shared
             bool uninstalling) =>
             !uninstalling && (runtimeOnlyPlan || !runtimeAvailable);
 
+        public static bool ShouldCleanLegacyBundleAfterApply(
+            bool uninstalling,
+            bool applySucceeded,
+            string detectedVersion,
+            string firstEmbeddedSafeVersion)
+        {
+            if (uninstalling || !applySucceeded) return false;
+
+            Version detected;
+            Version firstSafe;
+            if (!Version.TryParse(NormalizeVersion(detectedVersion), out detected) ||
+                !Version.TryParse(NormalizeVersion(firstEmbeddedSafeVersion), out firstSafe))
+                return false;
+
+            return detected < firstSafe;
+        }
+
         private static string NormalizeVersion(string value)
         {
             if (String.IsNullOrWhiteSpace(value)) return String.Empty;

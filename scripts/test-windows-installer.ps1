@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Installer,
     [string]$InstallDir = (Join-Path (Split-Path -Parent $PSScriptRoot) '.acceptance\windows-install'),
     [switch]$IsolatedAcceptance,
@@ -31,6 +31,80 @@ $productionFingerprint = Get-ProgramFingerprint $productionRoot
 function Assert-ProductionUnchanged {
     if ((Get-ProgramFingerprint $productionRoot) -ne $productionFingerprint) {
         throw "Isolated acceptance modified the protected production directory: $productionRoot"
+    }
+}
+
+function Get-InstallerProcessTreeIds([int]$RootProcessId) {
+    $ids = New-Object 'System.Collections.Generic.HashSet[int]'
+    [void]$ids.Add($RootProcessId)
+    do {
+        $added = $false
+        foreach ($processInfo in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+            if ($ids.Contains([int]$processInfo.ParentProcessId) -and
+                $ids.Add([int]$processInfo.ProcessId)) { $added = $true }
+        }
+    } while ($added)
+    return @($ids)
+}
+
+function Invoke-OverwriteCancelUiAutomation(
+    [string]$InstallerPath, [string]$SnapshotPath, [string[]]$Arguments) {
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    if (Test-Path -LiteralPath $SnapshotPath) { Remove-Item -LiteralPath $SnapshotPath -Force }
+    $installerProcess = Start-Process -FilePath $InstallerPath `
+        -ArgumentList ($Arguments + "SetupOverwriteCancelSnapshotPath=$SnapshotPath") -PassThru
+    $clicked = $false
+    try {
+        $dialogDeadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $processIds = @(Get-InstallerProcessTreeIds $installerProcess.Id)
+            $windowCondition = [Windows.Automation.PropertyCondition]::new(
+                [Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [Windows.Automation.ControlType]::Window)
+            $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [Windows.Automation.TreeScope]::Children, $windowCondition)
+            foreach ($window in $windows) {
+                if ($processIds -notcontains [int]$window.Current.ProcessId) { continue }
+                $cancelNameCondition = [Windows.Automation.PropertyCondition]::new(
+                    [Windows.Automation.AutomationElement]::NameProperty, '取消')
+                $continueNameCondition = [Windows.Automation.PropertyCondition]::new(
+                    [Windows.Automation.AutomationElement]::NameProperty, '关闭并继续安装')
+                $cancel = $window.FindFirst(
+                    [Windows.Automation.TreeScope]::Descendants, $cancelNameCondition)
+                $continue = $window.FindFirst(
+                    [Windows.Automation.TreeScope]::Descendants, $continueNameCondition)
+                if ($null -eq $cancel -or $null -eq $continue -or
+                    -not (Test-Path -LiteralPath $SnapshotPath)) { continue }
+                $bounds = $cancel.Current.BoundingRectangle
+                if ($cancel.Current.IsOffscreen -or -not $cancel.Current.IsEnabled -or
+                    $bounds.Width -lt 60 -or $bounds.Height -lt 24) {
+                    throw 'The visible overwrite cancel button is not actionable.'
+                }
+                $pattern = [Windows.Automation.InvokePattern]$cancel.GetCurrentPattern(
+                    [Windows.Automation.InvokePattern]::Pattern)
+                $pattern.Invoke()
+                $clicked = $true
+                break
+            }
+            if (-not $clicked) { Start-Sleep -Milliseconds 200 }
+        } while (-not $clicked -and [DateTime]::UtcNow -lt $dialogDeadline -and -not $installerProcess.HasExited)
+        if (-not $clicked) { throw 'Timed out locating the real overwrite cancel button.' }
+        $exitDeadline = [DateTime]::UtcNow.AddSeconds(45)
+        while (-not $installerProcess.HasExited -and [DateTime]::UtcNow -lt $exitDeadline) {
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not $installerProcess.HasExited) { throw 'Installer did not exit after overwrite cancellation.' }
+        return $installerProcess.ExitCode
+    }
+    finally {
+        if (-not $installerProcess.HasExited) {
+            foreach ($childProcessId in @(Get-InstallerProcessTreeIds $installerProcess.Id) |
+                Sort-Object -Descending) {
+                Stop-Process -Id $childProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $installerProcess.Dispose()
     }
 }
 $resolvedParent = [System.IO.Path]::GetFullPath((Split-Path -Parent $InstallDir))
@@ -144,9 +218,10 @@ if ($runningApplication.HasExited) { throw "Installed application exited before 
 $beforeCancelHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
 $beforeCancelManifestHash = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash
 $cancelSnapshot = Join-Path $acceptanceRoot 'installer-overwrite-cancel.png'
-$cancelOverwrite = Start-Process -FilePath $Installer `
-    -ArgumentList @('-repair', "SetupOverwriteCancelSnapshotPath=$cancelSnapshot") -Wait -PassThru
-if ($cancelOverwrite.ExitCode -ne 0) { throw "Canceled overwrite test exited with code $($cancelOverwrite.ExitCode)." }
+$cancelExitCode = Invoke-OverwriteCancelUiAutomation `
+    -InstallerPath $Installer -SnapshotPath $cancelSnapshot -Arguments @('-repair')
+Assert-ProductionUnchanged
+if ($cancelExitCode -ne 0) { throw "Canceled overwrite test exited with code $cancelExitCode." }
 if (-not (Test-Path -LiteralPath $cancelSnapshot) -or (Get-Item -LiteralPath $cancelSnapshot).Length -lt 5000) {
     throw 'The WPF UI overwrite confirmation snapshot was not produced.'
 }

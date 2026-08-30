@@ -6,7 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val runtime = (application as BlueLinkApplication).runtime
-    val devices = runtime.bluetooth.devices
+    val devices = runtime.devices
     val discovery = runtime.bluetooth.discovery
     val connection = runtime.connection
     val messages = runtime.messages

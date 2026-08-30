@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Configuration = 'Release',
     [switch]$SkipInstaller
 )
@@ -20,6 +20,83 @@ function Get-DeterministicGuid([string]$purpose, [string]$value) {
     $bytes[7] = ($bytes[7] -band 0x0F) -bor 0x50
     $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80
     return ([Guid]::new([byte[]]$bytes)).ToString('B').ToUpperInvariant()
+}
+
+function Get-DescendantProcessIds([int]$RootProcessId) {
+    $ids = New-Object 'System.Collections.Generic.HashSet[int]'
+    [void]$ids.Add($RootProcessId)
+    do {
+        $added = $false
+        foreach ($processInfo in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+            if ($ids.Contains([int]$processInfo.ParentProcessId) -and
+                $ids.Add([int]$processInfo.ProcessId)) { $added = $true }
+        }
+    } while ($added)
+    return @($ids)
+}
+
+function Invoke-OverwriteDialogAutomation([string]$InstallerPath, [string]$SnapshotPath) {
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    if (Test-Path -LiteralPath $SnapshotPath) { Remove-Item -LiteralPath $SnapshotPath -Force }
+    $installerProcess = Start-Process -FilePath $InstallerPath `
+        -ArgumentList "SetupOverwriteCancelSnapshotPath=$SnapshotPath" -PassThru
+    $clicked = $false
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $processIds = @(Get-DescendantProcessIds $installerProcess.Id)
+            $windowCondition = [Windows.Automation.PropertyCondition]::new(
+                [Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [Windows.Automation.ControlType]::Window)
+            $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [Windows.Automation.TreeScope]::Children, $windowCondition)
+            foreach ($window in $windows) {
+                if ($processIds -notcontains [int]$window.Current.ProcessId) { continue }
+                $buttonTypeCondition = [Windows.Automation.PropertyCondition]::new(
+                    [Windows.Automation.AutomationElement]::ControlTypeProperty,
+                    [Windows.Automation.ControlType]::Button)
+                $cancelNameCondition = [Windows.Automation.PropertyCondition]::new(
+                    [Windows.Automation.AutomationElement]::NameProperty, '取消')
+                $cancelCondition = [Windows.Automation.AndCondition]::new(
+                    $buttonTypeCondition, $cancelNameCondition)
+                $cancel = $window.FindFirst(
+                    [Windows.Automation.TreeScope]::Descendants, $cancelCondition)
+                $continueNameCondition = [Windows.Automation.PropertyCondition]::new(
+                    [Windows.Automation.AutomationElement]::NameProperty, '关闭并继续安装')
+                $continue = $window.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                    $continueNameCondition)
+                if ($null -eq $cancel -or $null -eq $continue -or
+                    -not (Test-Path -LiteralPath $SnapshotPath)) { continue }
+                $bounds = $cancel.Current.BoundingRectangle
+                if ($cancel.Current.IsOffscreen -or -not $cancel.Current.IsEnabled -or
+                    $bounds.Width -lt 60 -or $bounds.Height -lt 24) {
+                    throw 'The visible overwrite cancel button is not actionable.'
+                }
+                $pattern = [Windows.Automation.InvokePattern]$cancel.GetCurrentPattern(
+                    [Windows.Automation.InvokePattern]::Pattern)
+                $pattern.Invoke()
+                $clicked = $true
+                break
+            }
+            if (-not $clicked) { Start-Sleep -Milliseconds 200 }
+        } while (-not $clicked -and [DateTime]::UtcNow -lt $deadline -and -not $installerProcess.HasExited)
+        if (-not $clicked) { throw 'Timed out locating the real overwrite cancel button.' }
+        $exitDeadline = [DateTime]::UtcNow.AddSeconds(45)
+        while (-not $installerProcess.HasExited -and [DateTime]::UtcNow -lt $exitDeadline) {
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not $installerProcess.HasExited) { throw 'Installer did not exit after the real cancel button was invoked.' }
+        if ($installerProcess.ExitCode -ne 0) { throw "Overwrite UI Automation smoke exited with code $($installerProcess.ExitCode)." }
+    }
+    finally {
+        if (-not $installerProcess.HasExited) {
+            foreach ($processId in @(Get-DescendantProcessIds $installerProcess.Id) | Sort-Object -Descending) {
+                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $installerProcess.Dispose()
+    }
 }
 
 $productCode = Get-DeterministicGuid 'MsiProduct' $version
@@ -108,7 +185,7 @@ foreach ($source in @($launcherOutput, $uninstallOutput)) {
     }
 }
 
-if ($uiMigrationScope -eq 'SettingsOnly') {
+if ($uiMigrationScope -in @('SettingsOnly', 'Full')) {
     $settingsPublishAcceptance = Join-Path $acceptanceDir 'settings-published-current'
     $resolvedSettingsAcceptance = [IO.Path]::GetFullPath($settingsPublishAcceptance)
     $resolvedAcceptanceRoot = [IO.Path]::GetFullPath($acceptanceDir).TrimEnd('\') + '\'
@@ -249,13 +326,7 @@ $visualTests = @(
     @{ Name = 'windows-image-preview.png'; MinBytes = 40000; Arguments = @("--preview-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-image-preview.png')", "--preview-source=$(Join-Path $projectRoot 'design\brand\final\bluelink-final-logo.png')") }
 )
 if ($uiMigrationScope -eq 'Full') {
-    $visualTests += @(
-        @{ Name = 'windows-settings-connection.png'; MinBytes = 30000; Arguments = @("--settings-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-settings-connection.png')", '--settings-page=connection') },
-        @{ Name = 'windows-settings-files.png'; MinBytes = 30000; Arguments = @("--settings-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-settings-files.png')", '--settings-page=files') },
-        @{ Name = 'windows-settings-privacy.png'; MinBytes = 30000; Arguments = @("--settings-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-settings-privacy.png')", '--settings-page=privacy') },
-        @{ Name = 'windows-device-info-dialog.png'; MinBytes = 15000; Arguments = @("--dialog-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-device-info-dialog.png')") },
-        @{ Name = 'windows-trust-confirmation.png'; MinBytes = 25000; Arguments = @("--trust-dialog-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-trust-confirmation.png')") }
-    )
+    # Settings and dialogs are verified below through real UI Automation.
 }
 foreach ($visualTest in $visualTests) {
     $visual = Start-Process -FilePath (Join-Path $appStage 'BlueLink.exe') -ArgumentList $visualTest.Arguments -Wait -PassThru
@@ -264,6 +335,14 @@ foreach ($visualTest in $visualTests) {
 }
 
 if ($uiMigrationScope -eq 'Full') {
+    foreach ($dialogMode in @('General', 'Trust')) {
+        $dialogAcceptance = Join-Path $acceptanceDir ("dialog-published-" + $dialogMode.ToLowerInvariant())
+        & (Join-Path $projectRoot 'scripts\test-dialog-ui.ps1') `
+            -Configuration $Configuration -ExecutablePath (Join-Path $appStage 'BlueLink.exe') `
+            -Mode $dialogMode -ArtifactRoot $dialogAcceptance
+        if ($LASTEXITCODE -ne 0) { throw "Published $dialogMode dialog UI Automation acceptance failed." }
+    }
+
     $controlTemplateReport = Join-Path $acceptanceDir 'windows-control-template-runtime.json'
     $controlTemplateProbe = Start-Process -FilePath (Join-Path $appStage 'BlueLink.exe') `
         -ArgumentList "--control-template-smoke-test=$controlTemplateReport" -Wait -PassThru
@@ -312,8 +391,8 @@ foreach ($page in @('welcome', 'location', 'runtime', 'progress', 'complete', 'u
     }
 }
 $overwriteSnapshot = Join-Path $acceptanceDir 'installer-overwrite-wpfui-uia.png'
-$overwrite = Start-Process -FilePath $installer -ArgumentList "SetupOverwriteCancelSnapshotPath=$overwriteSnapshot" -Wait -PassThru
-if ($overwrite.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $overwriteSnapshot) -or (Get-Item -LiteralPath $overwriteSnapshot).Length -lt 20000) {
+Invoke-OverwriteDialogAutomation $installer $overwriteSnapshot
+if (-not (Test-Path -LiteralPath $overwriteSnapshot) -or (Get-Item -LiteralPath $overwriteSnapshot).Length -lt 20000) {
     throw 'Official WPF-UI overwrite MessageBox UI Automation smoke failed.'
 }
 

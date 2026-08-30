@@ -11,7 +11,7 @@
     <AssemblyName>BlueLink</AssemblyName>
     <RootNamespace>BlueLink</RootNamespace>
     <ApplicationIcon>..\..\design\brand\app-icons\windows\bluelink.ico</ApplicationIcon>
-    <BlueLinkWpfUiMigrationScope>SettingsOnly</BlueLinkWpfUiMigrationScope>
+    <BlueLinkWpfUiMigrationScope>Full</BlueLinkWpfUiMigrationScope>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />

@@ -17,9 +17,47 @@ data class NearbyDevice(
     val lastSeenEpochMs: Long = System.currentTimeMillis(),
     val rendezvousLastSeenEpochMs: Long = 0L,
     val connectableLastSeenEpochMs: Long = 0L,
+    val stableKey: String = "",
 )
 
 enum class PeerPlatform { ANDROID, WINDOWS, UNKNOWN }
+
+/** Keeps device precedence rules outside Compose. */
+object DeviceProjectionPolicy {
+    fun availability(connected: Boolean, trusted: Boolean, nearby: Boolean): DeviceAvailability = when {
+        connected -> DeviceAvailability.CONNECTED
+        trusted -> DeviceAvailability.OFFLINE
+        nearby -> DeviceAvailability.CONNECTABLE
+        else -> DeviceAvailability.OFFLINE
+    }
+
+    fun nearbyCandidates(
+        devices: List<NearbyDevice>,
+        activePeerIds: Set<String>,
+        trustedPeerIds: Set<String>,
+        activeAddresses: Set<String>,
+        trustedAddresses: Set<String>,
+    ): List<NearbyDevice> {
+        val blockedIdentities = (activePeerIds + trustedPeerIds).mapNotNull(::normalizeIdentity).toSet()
+        val blockedAddresses = (activeAddresses + trustedAddresses).mapNotNull(::normalizeAddress).toSet()
+        return devices.filterNot { device ->
+            normalizeIdentity(device.discoveryId)?.let(blockedIdentities::contains) == true ||
+                normalizeAddress(device.address)?.let(blockedAddresses::contains) == true
+        }
+    }
+
+    fun normalizeIdentity(value: String): String? {
+        val compact = value.filter(Char::isLetterOrDigit).uppercase()
+        if (compact.length < 12 || compact.any { it !in '0'..'9' && it !in 'A'..'F' }) return null
+        return compact.take(12)
+    }
+
+    fun normalizeAddress(value: String): String? {
+        val compact = value.filter(Char::isLetterOrDigit).uppercase()
+        if (compact.length != 12 || compact.any { it !in '0'..'9' && it !in 'A'..'F' }) return null
+        return compact
+    }
+}
 
 data class DiscoveryState(
     val scanning: Boolean = false,

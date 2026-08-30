@@ -5,7 +5,9 @@ namespace BlueLink.SetupUI
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
+    using System.Text.RegularExpressions;
     using System.Threading;
+    using System.Threading.Tasks;
     using Microsoft.Win32;
     using System.Windows;
     using System.Windows.Interop;
@@ -551,10 +553,10 @@ namespace BlueLink.SetupUI
             this.engine.Log(LogLevel.Error, e.ErrorMessage ?? "Unknown installer error");
         }
 
-        private void OnApplyComplete(object sender, ApplyCompleteEventArgs e)
+        private async void OnApplyComplete(object sender, ApplyCompleteEventArgs e)
         {
             this.applyInProgress = false;
-            this.dispatcher.BeginInvoke(new Action(() => this.progressWatchdog.Stop()));
+            _ = this.dispatcher.BeginInvoke(new Action(() => this.progressWatchdog.Stop()));
             this.result = e.Status;
 
             var embeddedRelatedExecution = InstallerExecutionPolicy.IsEmbeddedRelatedExecution(
@@ -632,6 +634,35 @@ namespace BlueLink.SetupUI
                     this.window.ShowFailure(verificationError);
                     return;
                 }
+
+                this.ReportEngineActivity(this.lastOverallPercentage, "正在清理旧安装注册…");
+                var cleanup = await Task.Run(() => this.CleanupLegacyRelatedBundles());
+                if (!cleanup.Success)
+                {
+                    this.result = 1603;
+                    this.engine.Log(LogLevel.Error,
+                        "BlueLink BA: legacy bundle cleanup failed: " + cleanup.Error);
+                    if (this.command.Display == Display.None)
+                    {
+                        this.CloseWindow();
+                        return;
+                    }
+                    this.window.ShowFailure(cleanup.Error);
+                    return;
+                }
+                if (!this.VerifyInstallPostconditions(out verificationError))
+                {
+                    this.result = 1603;
+                    this.engine.Log(LogLevel.Error,
+                        "BlueLink BA: legacy cleanup changed the verified payload: " + verificationError);
+                    if (this.command.Display == Display.None)
+                    {
+                        this.CloseWindow();
+                        return;
+                    }
+                    this.window.ShowFailure("旧安装注册清理后，新版程序文件校验失败：" + verificationError);
+                    return;
+                }
             }
             if (this.command.Display == Display.None)
             {
@@ -641,6 +672,126 @@ namespace BlueLink.SetupUI
 
             if (e.Status >= 0) this.window.ShowCompleted(this.uninstalling, this.installFolder);
             else this.window.ShowFailure((this.lastError ?? "安装操作失败。") + "\n错误代码：0x" + e.Status.ToString("X8"));
+        }
+
+        private LegacyCleanupResult CleanupLegacyRelatedBundles()
+        {
+            foreach (var related in this.relatedBundleVersions)
+            {
+                if (!InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply(
+                        this.uninstalling, true, related.Value, this.firstEmbeddedSafeVersion))
+                    continue;
+
+                string executable;
+                string arguments;
+                string error;
+                if (!TryResolveRegisteredBundle(related.Key, out executable, out arguments, out error))
+                {
+                    if (String.IsNullOrWhiteSpace(error)) continue;
+                    return LegacyCleanupResult.Fail(error);
+                }
+
+                try
+                {
+                    this.engine.Log(LogLevel.Standard,
+                        "BlueLink BA: starting exact legacy bundle cleanup for " + related.Key +
+                        ", version " + related.Value + ".");
+                    using (var process = Process.Start(new ProcessStartInfo(executable, arguments)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    }))
+                    {
+                        if (process == null)
+                            return LegacyCleanupResult.Fail("无法启动旧版蓝联的精确卸载入口，旧安装注册尚未清理。");
+                        if (!process.WaitForExit(60000))
+                        {
+                            try { process.Kill(); } catch { }
+                            return LegacyCleanupResult.Fail("清理旧版蓝联安装注册超时，已停止本次完成流程。");
+                        }
+                        if (process.ExitCode != 0 && process.ExitCode != 1605 && process.ExitCode != 3010)
+                            this.engine.Log(LogLevel.Error,
+                                "BlueLink BA: legacy cleanup process returned 0x" +
+                                process.ExitCode.ToString("X8") +
+                                "; verifying the exact registration and installed payload before deciding the result.");
+                    }
+                }
+                catch (Exception failure)
+                {
+                    return LegacyCleanupResult.Fail("无法清理旧版蓝联安装注册：" + failure.Message);
+                }
+
+                for (var attempt = 0; attempt < 20; attempt++)
+                {
+                    using (var key = Registry.CurrentUser.OpenSubKey(
+                               @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + related.Key))
+                    {
+                        if (key == null) break;
+                    }
+                    Thread.Sleep(100);
+                }
+                using (var remaining = Registry.CurrentUser.OpenSubKey(
+                           @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + related.Key))
+                {
+                    if (remaining != null)
+                        return LegacyCleanupResult.Fail("旧版蓝联的 Burn 安装注册仍然存在，未将覆盖安装标记为成功。");
+                }
+            }
+            return LegacyCleanupResult.Ok();
+        }
+
+        private static bool TryResolveRegisteredBundle(
+            string bundleId, out string executable, out string arguments, out string error)
+        {
+            executable = null;
+            arguments = null;
+            error = null;
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(
+                           @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + bundleId))
+                {
+                    if (key == null) return false;
+                    var quiet = key.GetValue("QuietUninstallString") as string;
+                    var match = Regex.Match(quiet ?? String.Empty,
+                        "^\\s*\"(?<path>[^\"]+)\"\\s*(?<args>.*)$",
+                        RegexOptions.CultureInvariant);
+                    if (!match.Success ||
+                        match.Groups["args"].Value.IndexOf("/uninstall", StringComparison.OrdinalIgnoreCase) < 0 ||
+                        match.Groups["args"].Value.IndexOf("/quiet", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        error = "旧版蓝联注册中没有可验证的静默卸载入口。";
+                        return false;
+                    }
+                    var candidate = Path.GetFullPath(match.Groups["path"].Value);
+                    var cacheRoot = Path.GetFullPath(Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "Package Cache")).TrimEnd('\\') + "\\";
+                    if (!candidate.StartsWith(cacheRoot, StringComparison.OrdinalIgnoreCase) ||
+                        !File.Exists(candidate))
+                    {
+                        error = "旧版蓝联的缓存卸载入口缺失或不在受控的 Package Cache 中。";
+                        return false;
+                    }
+                    executable = candidate;
+                    arguments = match.Groups["args"].Value;
+                    return true;
+                }
+            }
+            catch (Exception failure)
+            {
+                error = "读取旧版蓝联精确卸载注册失败：" + failure.Message;
+                return false;
+            }
+        }
+
+        private sealed class LegacyCleanupResult
+        {
+            public bool Success { get; private set; }
+            public string Error { get; private set; }
+            public static LegacyCleanupResult Ok() => new LegacyCleanupResult { Success = true };
+            public static LegacyCleanupResult Fail(string error) =>
+                new LegacyCleanupResult { Success = false, Error = error };
         }
 
         private void ReportEngineActivity(int percentage, string phase)

@@ -26,6 +26,7 @@ import android.content.pm.PackageManager
 import android.os.ParcelUuid
 import com.bluelink.android.domain.DiscoveryState
 import com.bluelink.android.domain.DiagnosticLevel
+import com.bluelink.android.domain.DeviceProjectionPolicy
 import com.bluelink.android.domain.NearbyDevice
 import com.bluelink.android.domain.PeerPlatform
 import com.bluelink.core.BtxConstants
@@ -61,6 +62,7 @@ class BluetoothRepository(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _devices = MutableStateFlow<List<NearbyDevice>>(emptyList())
     val devices: StateFlow<List<NearbyDevice>> = _devices.asStateFlow()
+    private val nearbyTracker = NearbyDeviceTracker()
     private val _discovery = MutableStateFlow(DiscoveryState())
     val discovery: StateFlow<DiscoveryState> = _discovery.asStateFlow()
     private var server: BluetoothServerSocket? = null
@@ -232,7 +234,7 @@ class BluetoothRepository(
 
     fun startDiscovery() {
         val bluetooth = adapter ?: run {
-            _devices.value = emptyList()
+            publishDevices(nearbyTracker.unavailable())
             log(DiagnosticLevel.ERROR, "此设备不支持蓝牙，无法启动扫描")
             updateDiscovery(false, "此设备不支持蓝牙")
             return
@@ -240,13 +242,13 @@ class BluetoothRepository(
         when {
             !hasPermission(Manifest.permission.BLUETOOTH_SCAN) ||
                 !hasPermission(Manifest.permission.BLUETOOTH_CONNECT) -> {
-                _devices.value = emptyList()
+                publishDevices(nearbyTracker.unavailable())
                 log(DiagnosticLevel.WARNING, "缺少蓝牙扫描或连接权限")
                 updateDiscovery(false, "需要蓝牙扫描和连接权限")
                 return
             }
             !bluetooth.isEnabled -> {
-                _devices.value = emptyList()
+                publishDevices(nearbyTracker.unavailable())
                 log(DiagnosticLevel.WARNING, "蓝牙未开启，无法启动扫描")
                 updateDiscovery(false, "请先打开蓝牙")
                 return
@@ -254,7 +256,7 @@ class BluetoothRepository(
         }
         val scanner = bluetooth.bluetoothLeScanner
         if (scanner == null) {
-            _devices.value = emptyList()
+            publishDevices(nearbyTracker.unavailable())
             log(DiagnosticLevel.ERROR, "BLE 扫描器不可用")
             updateDiscovery(false, "BLE 扫描器不可用")
             return
@@ -262,7 +264,7 @@ class BluetoothRepository(
 
         scanJob?.cancel()
         runCatching { scanner.stopScan(scanCallback) }
-        _devices.value = emptyList()
+        publishDevices(nearbyTracker.beginScan())
         log(DiagnosticLevel.INFO, "开始 BLE 扫描")
         scanJob = scope.launch {
             val filters = listOf(
@@ -296,7 +298,7 @@ class BluetoothRepository(
                     expireDevices()
                 }
                 runCatching { scanner.stopScan(scanCallback) }
-                expireDevices()
+                publishDevices(nearbyTracker.completeScanWindow(System.currentTimeMillis()))
                 updateDiscovery(false,
                     if (_devices.value.isEmpty()) "附近没有发现运行蓝联的设备" else "发现 ${_devices.value.size} 台附近设备")
                 delay(SCAN_PAUSE_MS)
@@ -323,9 +325,7 @@ class BluetoothRepository(
         }
         val peerName = offer.name.ifBlank { device.name }
         log(DiagnosticLevel.INFO, "已读取 Transport Offer，设备名=$peerName，Classic=${redact(offer.classicAddress)}")
-        _devices.value = _devices.value.map { current ->
-            if (current.address.equals(device.address, true)) current.copy(name = peerName) else current
-        }
+        publishDevices(nearbyTracker.rename(device.address, peerName))
         onStage("正在请求配对并连接 RFCOMM")
         val socket = bluetooth.getRemoteDevice(offer.classicAddress)
             .createRfcommSocketToServiceRecord(BtxConstants.RFCOMM_SERVICE_UUID)
@@ -399,61 +399,48 @@ class BluetoothRepository(
             ?: runCatching { result.device.name }.getOrNull()
             ?: if (observedPlatform == PeerPlatform.WINDOWS) "Windows 设备 $suffix"
             else "BlueLink ${observedPlatform.name.lowercase(Locale.ROOT)} $suffix"
-        val previous = _devices.value.firstOrNull {
+        val normalizedIdentity = DeviceProjectionPolicy.normalizeIdentity(discoveryId)
+        val previous = nearbyTracker.snapshot().firstOrNull {
             it.address.equals(presenceAddress, true) ||
-                (discoveryId.isNotBlank() && it.discoveryId.equals(discoveryId, true))
+                (normalizedIdentity != null &&
+                    DeviceProjectionPolicy.normalizeIdentity(it.discoveryId) == normalizedIdentity)
         }
-        val platform = when {
-            observedPlatform != PeerPlatform.UNKNOWN -> observedPlatform
-            previous != null -> previous.platform
-            else -> PeerPlatform.UNKNOWN
-        }
-        val name = if (previous != null && !isPlaceholderName(previous.name) && isPlaceholderName(observedName))
-            previous.name else observedName
-        val bonded = previous?.bonded == true ||
+        val bonded =
             adapter?.bondedDevices.orEmpty().any { it.address.equals(presenceAddress, true) }
-        val rendezvousSeenAt = if (rendezvous) now else previous?.rendezvousLastSeenEpochMs ?: 0L
-        val connectableSeenAt = if (rendezvous && result.isConnectable) now
-            else previous?.connectableLastSeenEpochMs ?: 0L
-        val value = NearbyDevice(name, presenceAddress, bonded, discoveryId, result.rssi.toShort(), platform,
-            rendezvousAvailable = isRecent(now, rendezvousSeenAt),
-            connectable = isRecent(now, connectableSeenAt),
-            lastSeenEpochMs = now,
-            rendezvousLastSeenEpochMs = rendezvousSeenAt,
-            connectableLastSeenEpochMs = connectableSeenAt)
-        _devices.value = (_devices.value.filterNot {
+        val values = nearbyTracker.observe(NearbyDeviceTracker.Observation(
+            name = observedName,
+            address = presenceAddress,
+            bonded = bonded,
+            discoveryId = discoveryId,
+            rssi = result.rssi.toShort(),
+            platform = observedPlatform,
+            rendezvousAvailable = rendezvous,
+            connectable = rendezvous && result.isConnectable,
+            observedAtEpochMs = now,
+        ))
+        publishDevices(values)
+        val value = values.firstOrNull {
             it.address.equals(presenceAddress, true) ||
-                (discoveryId.isNotBlank() && it.discoveryId.equals(discoveryId, true))
-        } + value)
-            .sortedWith(compareByDescending<NearbyDevice> { it.rssi ?: Short.MIN_VALUE }.thenBy { it.name.lowercase() })
+                (normalizedIdentity != null &&
+                    DeviceProjectionPolicy.normalizeIdentity(it.discoveryId) == normalizedIdentity)
+        } ?: return
         updateDiscovery(true, "正在扫描 · 已发现 ${_devices.value.size} 台 BlueLink 设备")
         if (previous == null) {
             log(DiagnosticLevel.INFO,
-                "发现 $platform 设备 $name（${redact(presenceAddress)}，${result.rssi} dBm，connectable=${value.connectable}）")
+                "发现 ${value.platform} 设备 ${value.name}（${redact(presenceAddress)}，${result.rssi} dBm，connectable=${value.connectable}）")
         } else if (previous.name != value.name || previous.connectable != value.connectable) {
-            log(DiagnosticLevel.INFO, "设备信息已更新：$name，connectable=${value.connectable}")
+            log(DiagnosticLevel.INFO, "设备信息已更新：${value.name}，connectable=${value.connectable}")
         }
     }
 
     @Synchronized
     private fun expireDevices() {
-        val now = System.currentTimeMillis()
-        val cutoff = now - RESULT_TTL_MS
-        _devices.value = _devices.value.mapNotNull { device ->
-            if (device.lastSeenEpochMs < cutoff) null
-            else device.copy(
-                rendezvousAvailable = isRecent(now, device.rendezvousLastSeenEpochMs),
-                connectable = isRecent(now, device.connectableLastSeenEpochMs),
-            )
-        }
+        publishDevices(nearbyTracker.expire(System.currentTimeMillis()))
     }
 
-    private fun isRecent(now: Long, observedAt: Long): Boolean =
-        observedAt > 0L && now >= observedAt && now - observedAt <= CAPABILITY_TTL_MS
-
-    private fun isPlaceholderName(value: String): Boolean =
-        value.startsWith("BlueLink ", ignoreCase = true) ||
-            value.startsWith("Windows 设备", ignoreCase = true)
+    private fun publishDevices(values: List<NearbyDevice>) {
+        _devices.value = values
+    }
 
     private fun hasPermission(permission: String): Boolean =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
@@ -638,8 +625,6 @@ class BluetoothRepository(
         const val COMPANY_ID = 0xFFFF
         private const val SCAN_WINDOW_SECONDS = 10
         private const val SCAN_PAUSE_MS = 5_000L
-        private const val RESULT_TTL_MS = 20_000L
-        private const val CAPABILITY_TTL_MS = 20_000L
         private val PRESENCE_PREFIX = byteArrayOf(0x42, 0x4c, BtxConstants.PROTOCOL_MAJOR.toByte())
         private val PRESENCE_PREFIX_MASK = byteArrayOf(0xff.toByte(), 0xff.toByte(), 0xff.toByte())
         private val RENDEZVOUS_PREFIX = byteArrayOf(BtxConstants.PROTOCOL_MAJOR.toByte(), 2)

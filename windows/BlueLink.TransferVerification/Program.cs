@@ -1,11 +1,37 @@
+using System;
+using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Text.Json.Nodes;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using BlueLink;
 using BlueLink.Security;
 using BlueLink.Storage;
 using BlueLink.Protocol;
 using BlueLink.Transfer;
 using BlueLink.Domain;
 using BlueLink.Files;
+
+var previewSourceArgument = args.FirstOrDefault(value =>
+    value.StartsWith("--preview-source=", StringComparison.OrdinalIgnoreCase));
+var previewSource = previewSourceArgument?["--preview-source=".Length..];
+
+if (args.Contains("--image-preview-only", StringComparer.OrdinalIgnoreCase))
+{
+    new ImagePreviewViewportVerification().Run(previewSource);
+    return;
+}
+
+if (args.Contains("--chat-scrollbar-only", StringComparer.OrdinalIgnoreCase))
+{
+    new ChatScrollBarVerification().Run();
+    return;
+}
 
 var verification = new TransferReceiverVerification();
 await verification.RunAsync();
@@ -15,6 +41,235 @@ new BtxProtocolVerification().Run();
 new FileDragDropVerification().Run();
 new ChatTimeVerification().Run();
 await new OutgoingSnapshotVerification().RunAsync();
+new ChatScrollBarVerification().Run();
+new ImagePreviewViewportVerification().Run(previewSource);
+
+internal sealed class ImagePreviewViewportVerification
+{
+    private int _checks;
+
+    public void Run(string? sourcePath = null)
+    {
+        var rotated = ImagePreviewViewportMath.RotatedExtent(new(400, 300), 90, 2);
+        Check(Close(rotated.Width, 600) && Close(rotated.Height, 800), "90-degree rotated extent");
+
+        var fit = ImagePreviewViewportMath.FitScale(new(1000, 800), 0,
+            new(500, 500), 50, 0.05, 8);
+        Check(Close(fit, 0.4), "fit scale respects viewport padding");
+
+        var fitBounds = ImagePreviewViewportMath.TransformedBounds(
+            new(1000, 800),
+            ImagePreviewViewportMath.CreateImageMatrix(
+                new(1000, 800), 0, fit, new(500, 500), new()));
+        Check(Close(fitBounds.Left, 50) && Close(fitBounds.Top, 90) &&
+              Close(fitBounds.Right, 450) && Close(fitBounds.Bottom, 410),
+            "fit matrix keeps every image edge inside the viewport");
+
+        var rotatedFit = ImagePreviewViewportMath.FitScale(new(1000, 800), 90,
+            new(500, 500), 50, 0.05, 8);
+        var rotatedBounds = ImagePreviewViewportMath.TransformedBounds(
+            new(1000, 800),
+            ImagePreviewViewportMath.CreateImageMatrix(
+                new(1000, 800), 90, rotatedFit, new(500, 500), new()));
+        Check(Close(rotatedBounds.Left, 90) && Close(rotatedBounds.Top, 50) &&
+              Close(rotatedBounds.Right, 410) && Close(rotatedBounds.Bottom, 450),
+            "quarter-turn fit matrix keeps every image edge inside the viewport");
+
+        var clamped = ImagePreviewViewportMath.ClampOffset(new(500, -500),
+            new(800, 600), new(500, 400));
+        Check(Close(clamped.X, 150) && Close(clamped.Y, -100), "pan offset clamps to image edges");
+
+        var zoomed = ImagePreviewViewportMath.ZoomAround(new(0, 0), new(750, 400),
+            new(1000, 800), 1, 2);
+        Check(Close(zoomed.X, -250) && Close(zoomed.Y, 0), "pointer-centered zoom preserves anchor");
+
+        var crop = ImagePreviewViewportMath.VisibleMapRect(new(1000, 800),
+            new(500, 400), new(0, 0), new(0, 0, 100, 80));
+        Check(Close(crop.X, 25) && Close(crop.Y, 20) &&
+              Close(crop.Width, 50) && Close(crop.Height, 40), "navigator crop maps visible viewport");
+
+        Check(ImagePreviewViewportMath.NormalizeAngle(-90) == 270,
+            "negative rotation normalizes to a stable quarter turn");
+
+        VerifyDpiInvariantPixelGeometry();
+        if (!string.IsNullOrWhiteSpace(sourcePath)) VerifyExactSource(sourcePath);
+        Console.WriteLine($"BlueLink image preview viewport verification passed: {_checks} checks");
+    }
+
+    private void VerifyDpiInvariantPixelGeometry()
+    {
+        var viewport = new Size(1100, 680);
+        foreach (var dpiScale in new[] { 1d, 1.25d, 1.5d })
+        {
+            var dpi = new DpiScale(dpiScale, dpiScale);
+            var imageSize = ImagePreviewViewportMath.PixelSizeInDips(1254, 1254, dpi);
+            Check(Close(imageSize.Width * dpiScale, 1254) &&
+                  Close(imageSize.Height * dpiScale, 1254),
+                $"{dpiScale:P0} actual-size maps one source pixel to one physical pixel");
+
+            foreach (var angle in new[] { 0d, 90d, 180d, 270d })
+            {
+                var scale = ImagePreviewViewportMath.FitScale(
+                    imageSize, angle, viewport, 28, 0.05, 8);
+                var bounds = ImagePreviewViewportMath.TransformedBounds(
+                    imageSize,
+                    ImagePreviewViewportMath.CreateImageMatrix(
+                        imageSize, angle, scale, viewport, new Point()));
+                Check(bounds.Left >= 27.999 && bounds.Top >= 27.999 &&
+                      bounds.Right <= viewport.Width - 27.999 &&
+                      bounds.Bottom <= viewport.Height - 27.999,
+                    $"{dpiScale:P0} {angle:0}-degree fit keeps every source edge inside the viewport");
+            }
+        }
+
+        var rectangular = new Size(1254, 837);
+        foreach (var angle in new[] { 0d, 90d, 180d, 270d })
+        {
+            var scale = ImagePreviewViewportMath.FitScale(
+                rectangular, angle, viewport, 28, 0.05, 8);
+            var bounds = ImagePreviewViewportMath.TransformedBounds(
+                rectangular,
+                ImagePreviewViewportMath.CreateImageMatrix(
+                    rectangular, angle, scale, viewport, new Point()));
+            Check(bounds.Left >= 27.999 && bounds.Top >= 27.999 &&
+                  bounds.Right <= viewport.Width - 27.999 &&
+                  bounds.Bottom <= viewport.Height - 27.999,
+                $"rectangular {angle:0}-degree fit keeps every source edge inside the viewport");
+        }
+    }
+
+    private void VerifyExactSource(string sourcePath)
+    {
+        var resolved = Path.GetFullPath(sourcePath);
+        Check(File.Exists(resolved), "exact preview source exists");
+        using var stream = File.OpenRead(resolved);
+        var hash = Convert.ToHexString(SHA256.HashData(stream));
+        Check(hash.Equals(
+                "CA9BF460758A117259D352B104E42EEEB73569639D2EC206BA699DB4B10B1EF2",
+                StringComparison.OrdinalIgnoreCase),
+            "exact preview source SHA-256");
+        stream.Position = 0;
+        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat,
+            BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames[0];
+        Check(frame.PixelWidth == 1254 && frame.PixelHeight == 1254,
+            "exact preview source is 1254 by 1254 pixels");
+        Check(frame.Format.BitsPerPixel == 32,
+            "exact preview source retains a 32-bit alpha-capable pixel format");
+        Console.WriteLine(
+            $"Exact preview source: {resolved}; {frame.PixelWidth}x{frame.PixelHeight}; " +
+            $"{frame.Format}; SHA256={hash}");
+    }
+
+    private static bool Close(double actual, double expected) => Math.Abs(actual - expected) < 0.001;
+
+    private void Check(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+        _checks++;
+    }
+}
+
+internal sealed class ChatScrollBarVerification
+{
+    public void Run()
+    {
+        Exception? failure = null;
+        var measuredGap = 0d;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var app = new App();
+                app.InitializeComponent();
+                var window = new MainWindow(initializeRuntime: false)
+                {
+                    Width = 1180,
+                    Height = 720,
+                    ShowInTaskbar = false,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -32000,
+                    Top = -32000
+                };
+                try
+                {
+                    var fixture = typeof(MainWindow).GetMethod(
+                        "LoadVisualFixture", BindingFlags.Instance | BindingFlags.NonPublic);
+                    fixture?.Invoke(window, [true]);
+                    var messageList = window.FindName("MessageList") as ListBox ??
+                        throw new InvalidOperationException("MessageList was not found.");
+                    messageList.Height = 118;
+                    window.Show();
+                    window.UpdateLayout();
+                    messageList.UpdateLayout();
+
+                    var scrollViewer = FindVisualChild<ScrollViewer>(messageList) ??
+                        throw new InvalidOperationException("Message ScrollViewer was not created.");
+                    var scrollBar = FindVisualChild<ScrollBar>(
+                        messageList, value => value.Orientation == Orientation.Vertical &&
+                                              value.Visibility == Visibility.Visible) ??
+                        throw new InvalidOperationException("Vertical message scrollbar did not become visible.");
+                    var firstItem = messageList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+                    if (firstItem is null)
+                    {
+                        messageList.ScrollIntoView(messageList.Items[0]);
+                        window.UpdateLayout();
+                        firstItem = messageList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+                    }
+                    if (firstItem is null)
+                        throw new InvalidOperationException("Visible message item was not generated.");
+
+                    var itemOrigin = firstItem.TransformToAncestor(messageList).Transform(new Point());
+                    var barOrigin = scrollBar.TransformToAncestor(messageList).Transform(new Point());
+                    measuredGap = barOrigin.X - (itemOrigin.X + firstItem.ActualWidth);
+                    if (measuredGap < 8)
+                        throw new InvalidOperationException(
+                            $"Message/scrollbar safety gap is only {measuredGap:0.##} px.");
+
+                    scrollViewer.ScrollToTop();
+                    window.UpdateLayout();
+                    var before = scrollViewer.VerticalOffset;
+                    scrollViewer.ScrollToEnd();
+                    window.UpdateLayout();
+                    if (scrollViewer.ScrollableHeight <= 0 ||
+                        scrollViewer.VerticalOffset <= before ||
+                        Math.Abs(scrollViewer.VerticalOffset - scrollViewer.ScrollableHeight) > 0.5)
+                        throw new InvalidOperationException("Message scrollbar could not scroll to the end.");
+                }
+                finally
+                {
+                    window.Close();
+                    app.Shutdown();
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        if (!thread.Join(TimeSpan.FromSeconds(20)))
+            throw new TimeoutException("Chat scrollbar WPF verification timed out.");
+        if (failure is not null) throw new InvalidOperationException(
+            "Chat scrollbar WPF verification failed.", failure);
+        Console.WriteLine(
+            $"BlueLink chat scrollbar verification passed: SafetyGap={measuredGap:0.##} px; ScrollToEnd=True");
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject root, Predicate<T>? predicate = null)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match && (predicate is null || predicate(match))) return match;
+            var nested = FindVisualChild(child, predicate);
+            if (nested is not null) return nested;
+        }
+        return null;
+    }
+}
 
 internal sealed class ChatTimeVerification
 {
@@ -27,7 +282,7 @@ internal sealed class ChatTimeVerification
               $"{now.Year - 1}年12月31日 07:05", "previous year label");
         var olderThisYear = new DateTimeOffset(new DateTime(now.Year, 1, 2, 6, 4, 0), now.Offset);
         if (olderThisYear.Date < now.Date.AddDays(-7))
-            Check(Create(olderThisYear).GroupTimeText == "01月02日 06:04", "same year label");
+            Check(Create(olderThisYear).GroupTimeText == "1月2日 06:04", "same year label without zero padding");
         Console.WriteLine("BlueLink Windows chat timestamp verification passed");
     }
 

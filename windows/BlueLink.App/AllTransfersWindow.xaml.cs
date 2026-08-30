@@ -7,7 +7,7 @@ using BlueLink.Files;
 
 namespace BlueLink;
 
-public partial class AllTransfersWindow : Window
+public partial class AllTransfersWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly MainViewModel _model;
     private readonly ICollectionView _view;

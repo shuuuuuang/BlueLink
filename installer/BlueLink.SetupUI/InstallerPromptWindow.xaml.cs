@@ -3,7 +3,6 @@ namespace BlueLink.SetupUI
     using System;
     using System.IO;
     using System.Windows;
-    using System.Windows.Automation;
     using System.Windows.Controls;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
@@ -15,7 +14,6 @@ namespace BlueLink.SetupUI
     {
         public static bool Confirm(Window owner, string title, string message, string autoCancelSnapshotPath = null)
         {
-            Exception automationFailure = null;
             var overwrite = title.Equals("蓝联正在运行", StringComparison.Ordinal);
             var dialog = new Wpf.Ui.Controls.MessageBox
             {
@@ -56,38 +54,27 @@ namespace BlueLink.SetupUI
                     {
                         timer.Stop();
                         SaveSnapshot(owner, dialog, autoCancelSnapshotPath);
-                        var dialogHandle = new System.Windows.Interop.WindowInteropHelper(dialog).Handle;
-                        // InvokePattern synchronously marshals to the target UI
-                        // thread. Calling it from this DispatcherTimer tick would
-                        // ask the dialog thread to invoke itself and deadlock.
-                        // Run UI Automation from a worker while the real dialog
-                        // dispatcher remains free to process the visible click.
-                        Task.Run(() =>
-                        {
-                            try { InvokeVisibleButton(dialogHandle, "取消"); }
-                            catch (Exception failure)
-                            {
-                                automationFailure = failure;
-                                try
-                                {
-                                    File.WriteAllText(autoCancelSnapshotPath + ".uia-error.txt",
-                                        failure.ToString());
-                                }
-                                catch { }
-                                dialog.Dispatcher.BeginInvoke(new Action(() =>
-                                    ((Window)dialog).Close()));
-                            }
-                        });
                     };
                     timer.Start();
                 };
             }
-            var result = dialog.ShowDialogAsync().GetAwaiter().GetResult();
-            if (automationFailure != null)
-                throw new InvalidOperationException("覆盖安装弹窗 UI Automation 点击失败。", automationFailure);
+            var result = WaitForDialogResult(dialog.ShowDialogAsync(), dialog.Dispatcher);
             return overwrite
                 ? result == Wpf.Ui.Controls.MessageBoxResult.Secondary
                 : result == Wpf.Ui.Controls.MessageBoxResult.Primary;
+        }
+
+        private static Wpf.Ui.Controls.MessageBoxResult WaitForDialogResult(
+            Task<Wpf.Ui.Controls.MessageBoxResult> task, Dispatcher dispatcher)
+        {
+            while (!task.IsCompleted)
+            {
+                var frame = new DispatcherFrame();
+                task.ContinueWith(completed => dispatcher.BeginInvoke(
+                    new Action(() => frame.Continue = false)), TaskScheduler.Default);
+                Dispatcher.PushFrame(frame);
+            }
+            return task.GetAwaiter().GetResult();
         }
 
         private static FrameworkElement BuildContent(string message, bool overwrite)
@@ -226,18 +213,6 @@ namespace BlueLink.SetupUI
                 if (match != null) yield return match;
                 foreach (var descendant in FindVisualChildren<T>(child)) yield return descendant;
             }
-        }
-
-        private static void InvokeVisibleButton(IntPtr handle, string buttonName)
-        {
-            var root = AutomationElement.FromHandle(handle);
-            var button = root?.FindFirst(TreeScope.Descendants,
-                new AndCondition(
-                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-                    new PropertyCondition(AutomationElement.NameProperty, buttonName)));
-            if (button == null || !button.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern))
-                throw new InvalidOperationException("UI Automation 未找到可见的‘" + buttonName + "’按钮。");
-            ((InvokePattern)pattern).Invoke();
         }
 
         private static void SaveSnapshot(Window owner, Window dialog, string path)

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 $required = @(
@@ -55,7 +55,7 @@ foreach ($token in @('WixManagedBootstrapperApplicationHost', 'InstallFolder', '
 }
 
 $bootstrapper = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\BlueLinkBootstrapper.cs') -Raw
-foreach ($token in @('GetFormattedString("InstallFolder"', 'SetVariableString("InstallFolder"', 'SetInstallFolder(this.installFolder)', 'ShowFreshInstall', 'ShowOverwriteContext', 'ShowUninstall', 'GetNumeric("WixBundleInstalled"', 'PlanRelatedBundle', 'PlanRestoreRelatedBundle', 'plannedRelatedBundles.Add', 'InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan', 'PlanMsiPackage', 'e.ShouldExecute', 'InstallerExecutionPolicy.IsMsiExecutionPlanValid', 'InstallerExecutionPolicy.ShouldPlanRuntimePackage', 'suppressing .NET Desktop Runtime package', 'VerifyInstallPostconditions', 'InstallDirectoryOwnership.VerifyInstalledPayload', 'e.RecommendedState', 'InstallerExecutionPolicy.ShouldPlanRelatedBundleRemoval', 'Display.Embedded', 'RelationType.None', 'ResolveExistingInstallFolder', 'Registry.CurrentUser', 'MsiRelatedProductLocator.FindInstallFolders', 'StopInstalledApplication', 'InstalledApplicationController.Stop')) {
+foreach ($token in @('GetFormattedString("InstallFolder"', 'SetVariableString("InstallFolder"', 'SetInstallFolder(this.installFolder)', 'ShowFreshInstall', 'ShowOverwriteContext', 'ShowUninstall', 'GetNumeric("WixBundleInstalled"', 'PlanRelatedBundle', 'PlanRestoreRelatedBundle', 'plannedRelatedBundles.Add', 'InstallerExecutionPolicy.ShouldExecuteRelatedBundlePlan', 'PlanMsiPackage', 'e.ShouldExecute', 'InstallerExecutionPolicy.IsMsiExecutionPlanValid', 'InstallerExecutionPolicy.ShouldPlanRuntimePackage', 'suppressing .NET Desktop Runtime package', 'VerifyInstallPostconditions', 'InstallDirectoryOwnership.VerifyInstalledPayload', 'e.RecommendedState', 'InstallerExecutionPolicy.ShouldPlanRelatedBundleRemoval', 'InstallerExecutionPolicy.ShouldCleanLegacyBundleAfterApply', 'CleanupLegacyRelatedBundles', 'QuietUninstallString', 'Package Cache', 'Display.Embedded', 'RelationType.None', 'ResolveExistingInstallFolder', 'Registry.CurrentUser', 'MsiRelatedProductLocator.FindInstallFolders', 'StopInstalledApplication', 'InstalledApplicationController.Stop')) {
     if (-not $bootstrapper.Contains($token)) { throw "Installer path propagation contract missing: $token" }
 }
 $processController = Get-Content -LiteralPath (Join-Path $root 'shared\InstalledApplicationController.cs') -Raw
@@ -78,7 +78,7 @@ if ($installerWindow.Contains('IndexOf("\"ProductId\"') -or $ownership.Contains(
     throw 'Installer must parse the ownership manifest semantically instead of matching JSON formatting.'
 }
 $installerPrompt = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs') -Raw
-foreach ($token in @('new Wpf.Ui.Controls.MessageBox', 'Application.Current?.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox))', 'AutomationElement.FromHandle', 'InvokePattern.Pattern')) {
+foreach ($token in @('new Wpf.Ui.Controls.MessageBox', 'Application.Current?.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox))', 'SaveSnapshot(owner, dialog, autoCancelSnapshotPath)', 'WaitForDialogResult', 'Dispatcher.PushFrame(frame)')) {
     if (-not $installerPrompt.Contains($token)) { throw "Installer official MessageBox contract missing: $token" }
 }
 if ($installerPrompt.Contains('TestableMessageBox') -or $installerPrompt.Contains('InvokeCloseButton')) {
@@ -94,6 +94,9 @@ $build = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-releas
 if ($build -match '(?i)inno|iscc|BlueLink\.iss') { throw 'Windows release script still references Inno Setup.' }
 foreach ($token in @('BlueLink.SetupUI.csproj', 'BlueLink.Launcher.csproj', 'BlueLink.Uninstall.csproj', 'BlueLink.Package.wixproj', 'BlueLink.Bundle.wixproj', '--self-contained false', 'PublishSingleFile=false', 'PublishTrimmed=false', 'generate-wix-payload.ps1', 'Get-DeterministicGuid', 'BundleProviderKey', 'release-payload-lock.json', 'PayloadFingerprint', 'Increment VERSION')) {
     if (-not $build.Contains($token)) { throw "Release pipeline does not build: $token" }
+}
+foreach ($token in @('Invoke-OverwriteDialogAutomation', 'AutomationElement]::RootElement.FindAll', 'InvokePattern]$cancel.GetCurrentPattern', 'AddSeconds(45)', '关闭并继续安装')) {
+    if (-not $build.Contains($token)) { throw "External overwrite UI Automation contract missing: $token" }
 }
 
 Write-Host 'Custom WiX installer contract verified.'

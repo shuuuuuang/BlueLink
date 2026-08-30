@@ -9,6 +9,7 @@ import java.time.Instant
 
 object CrashReporter {
     private const val FILE_NAME = "pending-crashes.log"
+    private const val MAX_REPORT_BYTES = 128 * 1024L
     private const val PREFS_NAME = "bluelink_crash_reporter"
     private const val LAST_EXIT_TIMESTAMP = "last_exit_timestamp"
     private val lock = Any()
@@ -49,9 +50,11 @@ object CrashReporter {
         val trace = cause.stackTrace.take(10).joinToString(" <- ") {
             "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
         }
-        val message = sanitize(cause.message ?: "无错误详情")
-        val line = "${Instant.now()}\t${sanitize(component)}\t${cause.javaClass.simpleName}\t$message\t$trace"
-        synchronized(lock) { file.appendText(line + System.lineSeparator()) }
+        val line = "${Instant.now()}\t${sanitize(component)}\t${cause.javaClass.simpleName}\tdetails-redacted\t$trace"
+        synchronized(lock) {
+            if (file.length() >= MAX_REPORT_BYTES) file.writeText("")
+            file.appendText(line + System.lineSeparator())
+        }
     }
 
     private fun previousExitSummary(context: Context): String? {

@@ -26,13 +26,19 @@ function Assert-SourceContract {
     $settingsXaml = Join-Path $root 'windows\BlueLink.App\SettingsWindow.xaml'
     $settingsCode = Join-Path $root 'windows\BlueLink.App\SettingsWindow.xaml.cs'
     $settingsTheme = Join-Path $root 'windows\BlueLink.App\Themes\SettingsWindow.xaml'
+    $appXaml = Join-Path $root 'windows\BlueLink.App\App.xaml'
+    $componentsTheme = Join-Path $root 'windows\BlueLink.App\Themes\Components.xaml'
+    $previewXaml = Join-Path $root 'windows\BlueLink.App\ImagePreviewWindow.xaml'
     $project = Join-Path $root 'windows\BlueLink.App\BlueLink.App.csproj'
-    foreach ($path in @($settingsXaml, $settingsCode, $settingsTheme, $project)) {
+    foreach ($path in @($settingsXaml, $settingsCode, $settingsTheme, $appXaml, $componentsTheme, $previewXaml, $project)) {
         Assert-True (Test-Path -LiteralPath $path) "Required settings source is missing: $path"
     }
 
     $xaml = Get-Content -LiteralPath $settingsXaml -Raw -Encoding UTF8
     $theme = Get-Content -LiteralPath $settingsTheme -Raw -Encoding UTF8
+    $app = Get-Content -LiteralPath $appXaml -Raw -Encoding UTF8
+    $components = Get-Content -LiteralPath $componentsTheme -Raw -Encoding UTF8
+    $preview = Get-Content -LiteralPath $previewXaml -Raw -Encoding UTF8
     $projectText = Get-Content -LiteralPath $project -Raw -Encoding UTF8
     [xml]$xaml | Out-Null
     [xml]$theme | Out-Null
@@ -46,13 +52,41 @@ function Assert-SourceContract {
     Assert-True ($xaml -notmatch '<\s*ControlTemplate\b') 'SettingsWindow contains a forbidden ControlTemplate.'
     Assert-True ($theme -notmatch '<\s*ControlTemplate\b') 'SettingsWindow theme contains a forbidden ControlTemplate.'
     Assert-True ($theme -notmatch '<Style(?=[^>]*TargetType)(?![^>]*x:Key)') 'SettingsWindow theme contains a forbidden implicit base-control Style.'
+    Assert-True ($app -match '<ui:ThemesDictionary Theme="Light"\s*/>') 'App must load the WPF UI theme dictionary globally.'
+    Assert-True ($app -match '<ui:ControlsDictionary\s*/>') 'App must load the WPF UI controls dictionary globally.'
+    Assert-True ($theme -notmatch '<ui:(ThemesDictionary|ControlsDictionary)') 'Settings must not shadow WPF UI dictionaries in window scope.'
+    Assert-True ($theme -match 'BasedOn="\{StaticResource DefaultUiToggleSwitchStyle\}"') 'ToggleSwitch must inherit the official named WPF UI style.'
+    Assert-True ($theme -match 'BasedOn="\{StaticResource DefaultComboBoxStyle\}"') 'ComboBox must inherit the official named WPF UI style.'
+    Assert-True ($theme -match 'VerticalContentAlignment" Value="Center"') 'ComboBox content must be vertically centered.'
+    Assert-True ($components -notmatch 'BlueLinkScrollThumbStyle|BlueLinkScrollRepeatStyle') 'Legacy hand-written ScrollBar helper styles must be absent.'
+    Assert-True ($components -match '<Style TargetType="ScrollBar" BasedOn="\{StaticResource \{x:Type ScrollBar\}\}"') 'ScrollBar composition must inherit the official WPF UI style.'
+    Assert-True ($components -notmatch '<\s*ControlTemplate\b') 'Business component styles must not contain a hand-written base ControlTemplate.'
+    Assert-True ($preview -notmatch '<ScrollViewer\b|#101624|#0D1320') 'Image preview must not use black ScrollViewer-based navigation.'
+    Assert-True ($preview -match 'x:Name="Navigator"' -and $preview -match 'x:Name="NavigatorCrop"') 'Image preview must expose its navigator and visible crop rectangle.'
+    Assert-True ($preview -notmatch '<\s*ControlTemplate\b') 'Image preview must not contain a hand-written base ControlTemplate.'
     Assert-True ($projectText -match '<PackageReference Include="WPF-UI" Version="4\.3\.0"') 'BlueLink.App must pin WPF-UI 4.3.0.'
 
     $allowedWindowsClientSources = @(
         'windows/BlueLink.App/BlueLink.App.csproj',
+        'windows/BlueLink.App/App.xaml',
+        'windows/BlueLink.App/App.xaml.cs',
+        'windows/BlueLink.App/AllTransfersWindow.xaml',
+        'windows/BlueLink.App/AllTransfersWindow.xaml.cs',
+        'windows/BlueLink.App/BlueLinkDialog.xaml',
+        'windows/BlueLink.App/BlueLinkDialog.xaml.cs',
+        'windows/BlueLink.App/ImagePreviewViewportMath.cs',
+        'windows/BlueLink.App/ImagePreviewWindow.xaml',
+        'windows/BlueLink.App/ImagePreviewWindow.xaml.cs',
+        'windows/BlueLink.App/ShellFileLocator.cs',
         'windows/BlueLink.App/SettingsWindow.xaml',
         'windows/BlueLink.App/SettingsWindow.xaml.cs',
-        'windows/BlueLink.App/Themes/SettingsWindow.xaml'
+        'windows/BlueLink.App/MainWindow.xaml',
+        'windows/BlueLink.App/MainWindow.xaml.cs',
+        'windows/BlueLink.App/Themes/Components.xaml',
+        'windows/BlueLink.App/Themes/Controls.xaml',
+        'windows/BlueLink.App/Themes/SettingsWindow.xaml',
+        'windows/BlueLink.App/TrustConfirmationWindow.xaml',
+        'windows/BlueLink.App/TrustConfirmationWindow.xaml.cs'
     )
     $status = & git -C $root status --porcelain=v1 --untracked-files=all
     foreach ($line in $status) {
@@ -135,12 +169,24 @@ public static class BlueLinkSettingsUiNative
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
 
+    public static void MoveTo(int x, int y)
+    {
+        SetCursorPos(x, y);
+    }
+
+    public static void WheelAt(int x, int y, int delta)
+    {
+        SetCursorPos(x, y);
+        mouse_event(0x0800, 0, 0, unchecked((uint)delta), UIntPtr.Zero);
+    }
+
     public static IntPtr FindTopLevelWindow(int requestedProcessId)
     {
         IntPtr found = IntPtr.Zero;
         EnumWindows((hwnd, state) =>
         {
-            GetWindowThreadProcessId(hwnd, out uint processId);
+            uint processId;
+            GetWindowThreadProcessId(hwnd, out processId);
             if (processId != requestedProcessId) return true;
             var title = new StringBuilder(256);
             GetWindowText(hwnd, title, title.Capacity);
@@ -258,6 +304,34 @@ function Find-ActionableByName($rootElement, [string]$name) {
     return $null
 }
 
+function Find-ToggleByName($rootElement, [string]$name) {
+    $items = Find-AllByName $rootElement $name
+    foreach ($item in $items) {
+        try {
+            $null = $item.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+            return $item
+        } catch { }
+    }
+    return $null
+}
+
+function Find-VerticalScrollBar($rootElement) {
+    $condition = New-Object Windows.Automation.PropertyCondition(
+        [Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [Windows.Automation.ControlType]::ScrollBar)
+    $items = $rootElement.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
+    foreach ($item in $items) {
+        $bounds = $item.Current.BoundingRectangle
+        if ($item.Current.IsOffscreen -or $bounds.Height -le $bounds.Width -or $bounds.Height -lt 80) { continue }
+        try {
+            $pattern = [Windows.Automation.RangeValuePattern]$item.GetCurrentPattern(
+                [Windows.Automation.RangeValuePattern]::Pattern)
+            if ($pattern.Current.Maximum -gt $pattern.Current.Minimum) { return $item }
+        } catch { }
+    }
+    return $null
+}
+
 function Invoke-Element($element, [string]$description) {
     if ($null -eq $element) { throw "UI Automation did not find $description." }
     try {
@@ -306,6 +380,35 @@ function Capture-Window($window, [string]$path) {
     }
 }
 
+function Capture-ControlVisual($element, [string]$path, [string]$description) {
+    $bounds = $element.Current.BoundingRectangle
+    $left = [int][Math]::Floor($bounds.Left)
+    $top = [int][Math]::Floor($bounds.Top)
+    $width = [Math]::Max(1, [int][Math]::Ceiling($bounds.Width))
+    $height = [Math]::Max(1, [int][Math]::Ceiling($bounds.Height))
+    Assert-True ($width -ge 32 -and $height -ge 16) "$description has collapsed bounds: ${width}x${height}"
+    $bitmap = New-Object Drawing.Bitmap($width, $height)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($left, $top, 0, 0, $bitmap.Size)
+        $minimum = 255
+        $maximum = 0
+        for ($x = 0; $x -lt $width; $x++) {
+            for ($y = 0; $y -lt $height; $y++) {
+                $color = $bitmap.GetPixel($x, $y)
+                $minimum = [Math]::Min($minimum, [Math]::Min($color.R, [Math]::Min($color.G, $color.B)))
+                $maximum = [Math]::Max($maximum, [Math]::Max($color.R, [Math]::Max($color.G, $color.B)))
+            }
+        }
+        Assert-True (($maximum - $minimum) -ge 24) "$description became visually flat or transparent."
+        $bitmap.Save($path, [Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
 function Open-Settings($mainWindow, [int]$processId) {
     $button = Wait-Element { Find-ActionableByName $mainWindow '设置' } 10 'the real main-window Settings button'
     Invoke-Element $button 'the real main-window Settings button'
@@ -339,6 +442,21 @@ try {
     $footerNames = @('恢复默认值', '取消设置', '保存设置')
     foreach ($footerName in $footerNames) { $null = Assert-VisibleElement $settingsWindow $footerName }
 
+    Select-SettingsPage $settingsWindow '通用' '关闭主窗口时'
+    $startupToggle = Wait-Element { Find-ToggleByName $settingsWindow '启动时扫描附近设备' } 8 'the startup scan ToggleSwitch'
+    $windowBounds = $settingsWindow.Current.BoundingRectangle
+    [BlueLinkSettingsUiNative]::MoveTo(
+        [int][Math]::Round($windowBounds.Left + 20),
+        [int][Math]::Round($windowBounds.Top + 20))
+    Start-Sleep -Milliseconds 250
+    Capture-ControlVisual $startupToggle (Join-Path $ArtifactRoot 'toggle-normal.png') 'ToggleSwitch normal state'
+    $toggleBounds = $startupToggle.Current.BoundingRectangle
+    [BlueLinkSettingsUiNative]::MoveTo(
+        [int][Math]::Round($toggleBounds.Left + $toggleBounds.Width / 2),
+        [int][Math]::Round($toggleBounds.Top + $toggleBounds.Height / 2))
+    Start-Sleep -Milliseconds 450
+    Capture-ControlVisual $startupToggle (Join-Path $ArtifactRoot 'toggle-hover.png') 'ToggleSwitch hover state'
+
     $pages = @(
         @{ Navigation = '通用'; Visible = '关闭主窗口时'; File = '01-general' },
         @{ Navigation = '连接与设备'; Visible = '重新扫描附近设备'; File = '02-connection-devices' },
@@ -355,6 +473,37 @@ try {
         $capture = Join-Path $ArtifactRoot ("{0}-{1}pct.png" -f $page.File, $scalePercent)
         Capture-Window $settingsWindow $capture
     }
+
+    Select-SettingsPage $settingsWindow '文件与存储' '文件保存位置'
+    $scrollBar = Wait-Element { Find-VerticalScrollBar $settingsWindow } 8 'a functional vertical settings ScrollBar'
+    $scrollPattern = [Windows.Automation.RangeValuePattern]$scrollBar.GetCurrentPattern(
+        [Windows.Automation.RangeValuePattern]::Pattern)
+    $beforeScroll = $scrollPattern.Current.Value
+    $targetScroll = [Math]::Min($scrollPattern.Current.Maximum,
+        $beforeScroll + [Math]::Max(1, $scrollPattern.Current.LargeChange))
+    if ([Math]::Abs($targetScroll - $beforeScroll) -lt 0.001) {
+        $targetScroll = [Math]::Max($scrollPattern.Current.Minimum,
+            $beforeScroll - [Math]::Max(1, $scrollPattern.Current.LargeChange))
+    }
+    $scrollPattern.SetValue($targetScroll)
+    Start-Sleep -Milliseconds 300
+    Assert-True ([Math]::Abs($scrollPattern.Current.Value - $beforeScroll) -gt 0.001) 'Settings ScrollBar did not change its value.'
+    $scrollPattern.SetValue($scrollPattern.Current.Minimum)
+    Start-Sleep -Milliseconds 200
+    $scrollBounds = $scrollBar.Current.BoundingRectangle
+    [BlueLinkSettingsUiNative]::ClickAt(
+        [int][Math]::Round($scrollBounds.Left + $scrollBounds.Width / 2),
+        [int][Math]::Round($scrollBounds.Bottom - 18))
+    Start-Sleep -Milliseconds 300
+    Assert-True ($scrollPattern.Current.Value -gt $scrollPattern.Current.Minimum) 'Clicking the ScrollBar track did not page the settings view.'
+    $scrollPattern.SetValue($scrollPattern.Current.Minimum)
+    Start-Sleep -Milliseconds 200
+    [BlueLinkSettingsUiNative]::WheelAt(
+        [int][Math]::Round($windowBounds.Left + $windowBounds.Width * 0.7),
+        [int][Math]::Round($windowBounds.Top + $windowBounds.Height * 0.55),
+        -120)
+    Start-Sleep -Milliseconds 300
+    Assert-True ($scrollPattern.Current.Value -gt $scrollPattern.Current.Minimum) 'Mouse wheel did not move the settings ScrollBar.'
 
     Select-SettingsPage $settingsWindow '文件与存储' '文件大小上限 MiB'
     $limitText = Assert-VisibleElement $settingsWindow '文件大小上限 MiB'
@@ -383,6 +532,10 @@ try {
         'Main settings button invoked=True',
         'Five navigation pages invoked=True',
         'Footer controls visible=True',
+        'Toggle normal and hover visual contrast=True',
+        'Vertical ScrollBar RangeValue changed=True',
+        'Vertical ScrollBar track click changed value=True',
+        'Mouse wheel changed ScrollBar value=True',
         'Invalid receive limit blocked=True',
         'Restore Defaults remained a draft until Save=True',
         'Cancel closed the dialog=True',

@@ -1,11 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using BlueLink.Shared;
@@ -35,12 +40,29 @@ public partial class App : System.Windows.Application
         const string uiSmokePrefix = "--ui-smoke-test=";
         const string previewSmokePrefix = "--preview-ui-smoke-test=";
         const string previewSourcePrefix = "--preview-source=";
+        const string previewInteractionArgument = "--preview-interaction-smoke-test";
+        const string controlTemplateProbePrefix = "--control-template-smoke-test=";
+        const string dialogSmokePrefix = "--dialog-ui-smoke-test=";
+        const string trustDialogSmokePrefix = "--trust-dialog-ui-smoke-test=";
         var uiSmokePath = e.Args.FirstOrDefault(value =>
             value.StartsWith(uiSmokePrefix, StringComparison.OrdinalIgnoreCase))?[uiSmokePrefix.Length..];
         var previewSmokePath = e.Args.FirstOrDefault(value =>
             value.StartsWith(previewSmokePrefix, StringComparison.OrdinalIgnoreCase))?[previewSmokePrefix.Length..];
         var previewSource = e.Args.FirstOrDefault(value =>
             value.StartsWith(previewSourcePrefix, StringComparison.OrdinalIgnoreCase))?[previewSourcePrefix.Length..];
+        var previewZoomed = e.Args.Any(value =>
+            string.Equals(value, "--preview-zoomed", StringComparison.OrdinalIgnoreCase));
+        var previewInteraction = e.Args.Any(value =>
+            string.Equals(value, previewInteractionArgument, StringComparison.OrdinalIgnoreCase));
+        var controlTemplateProbePath = e.Args.FirstOrDefault(value =>
+            value.StartsWith(controlTemplateProbePrefix, StringComparison.OrdinalIgnoreCase))?
+            [controlTemplateProbePrefix.Length..];
+        var dialogSmokePath = e.Args.FirstOrDefault(value =>
+            value.StartsWith(dialogSmokePrefix, StringComparison.OrdinalIgnoreCase))?
+            [dialogSmokePrefix.Length..];
+        var trustDialogSmokePath = e.Args.FirstOrDefault(value =>
+            value.StartsWith(trustDialogSmokePrefix, StringComparison.OrdinalIgnoreCase))?
+            [trustDialogSmokePrefix.Length..];
         var uiSmokeCollapsed = e.Args.Any(value =>
             string.Equals(value, "--ui-collapsed", StringComparison.OrdinalIgnoreCase));
         var uiSmokeCompact = e.Args.Any(value =>
@@ -51,7 +73,11 @@ public partial class App : System.Windows.Application
             string.Equals(value, "--control-channel-smoke-test", StringComparison.OrdinalIgnoreCase));
         var backgroundLaunch = e.Args.Any(value =>
             string.Equals(value, "--background", StringComparison.OrdinalIgnoreCase)) || acceptanceBackground || controlChannelSmoke;
-        var startupSmokeTest = controlChannelSmoke || acceptanceBackground || uiSmokePath is not null || previewSmokePath is not null || e.Args.Any(value =>
+        var startupSmokeTest = controlChannelSmoke || acceptanceBackground || uiSmokePath is not null ||
+            previewSmokePath is not null || previewInteraction ||
+            controlTemplateProbePath is not null || dialogSmokePath is not null ||
+            trustDialogSmokePath is not null ||
+            e.Args.Any(value =>
             string.Equals(value, "--startup-smoke-test", StringComparison.OrdinalIgnoreCase));
         _installRoot = WindowsAppControlChannel.CurrentInstallRoot();
         if (TryRunMaintenance(e.Args))
@@ -124,11 +150,35 @@ public partial class App : System.Windows.Application
             window.ShowInTaskbar = false;
             window.Left = -32000;
             window.Top = -32000;
-            if (previewSmokePath is not null)
+            if (controlTemplateProbePath is not null)
             {
                 window.ContentRendered += (_, _) => Dispatcher.BeginInvoke(
                     DispatcherPriority.ApplicationIdle,
-                    new Action(() => CapturePreviewSnapshot(window, previewSource, previewSmokePath)));
+                    new Action(() => CaptureControlTemplateProbe(window, controlTemplateProbePath)));
+            }
+            else if (dialogSmokePath is not null)
+            {
+                window.ContentRendered += (_, _) => Dispatcher.BeginInvoke(
+                    DispatcherPriority.ApplicationIdle,
+                    new Action(() => CaptureDialogSmoke(dialogSmokePath)));
+            }
+            else if (trustDialogSmokePath is not null)
+            {
+                window.ContentRendered += (_, _) => Dispatcher.BeginInvoke(
+                    DispatcherPriority.ApplicationIdle,
+                    new Action(() => CaptureTrustDialogSmoke(trustDialogSmokePath)));
+            }
+            else if (previewInteraction)
+            {
+                window.ContentRendered += (_, _) => Dispatcher.BeginInvoke(
+                    DispatcherPriority.ApplicationIdle,
+                    new Action(() => ShowPreviewInteraction(previewSource)));
+            }
+            else if (previewSmokePath is not null)
+            {
+                window.ContentRendered += (_, _) => Dispatcher.BeginInvoke(
+                    DispatcherPriority.ApplicationIdle,
+                    new Action(() => CapturePreviewSnapshot(window, previewSource, previewSmokePath, previewZoomed)));
             }
             else if (uiSmokePath is not null)
             {
@@ -157,7 +207,27 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private void CapturePreviewSnapshot(Window owner, string? sourcePath, string outputPath)
+    private void ShowPreviewInteraction(string? sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            WriteCrashLog(new FileNotFoundException("Preview interaction source was not found.", sourcePath));
+            Environment.ExitCode = 4;
+            RequestExit();
+            return;
+        }
+
+        var preview = new ImagePreviewWindow(sourcePath, Path.GetFileName(sourcePath))
+        {
+            ShowInTaskbar = true,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen
+        };
+        preview.Closed += (_, _) => RequestExit();
+        preview.Show();
+        preview.Activate();
+    }
+
+    private void CapturePreviewSnapshot(Window owner, string? sourcePath, string outputPath, bool zoomed)
     {
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
         {
@@ -178,12 +248,196 @@ public partial class App : System.Windows.Application
             DispatcherPriority.ApplicationIdle,
             new Action(() =>
             {
-                try { SaveWindowSnapshot(preview, outputPath); }
+                try
+                {
+                    if (zoomed) preview.LoadZoomedVisualFixture();
+                    SaveWindowSnapshot(preview, outputPath);
+                }
                 catch (Exception failure) { WriteCrashLog(failure); Environment.ExitCode = 4; }
                 preview.Close();
                 RequestExit();
             }));
         preview.Show();
+    }
+
+    private void CaptureDialogSmoke(string outputPath)
+    {
+        try
+        {
+            var confirmed = BlueLinkDialog.Confirm(
+                null,
+                "对话框运行验证",
+                "此窗口必须包含真实可见的官方 WPF UI 主按钮和取消按钮。",
+                BlueLinkDialogTone.Information);
+            var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(new
+            {
+                Confirmed = confirmed,
+                OfficialMessageBox = true,
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            if (!confirmed) Environment.ExitCode = 5;
+        }
+        catch (Exception failure)
+        {
+            WriteCrashLog(failure);
+            Environment.ExitCode = 4;
+        }
+        RequestExit();
+    }
+
+    private void CaptureTrustDialogSmoke(string outputPath)
+    {
+        try
+        {
+            var confirmed = new TrustConfirmationWindow(
+                "附近设备",
+                "482 719",
+                "8A2C156482A69173D6071833E6AF21B6",
+                "CC7D4E2F18A94355A0F6B1D2678C3E91")
+            {
+                Owner = null,
+            }.ShowDialog() == true;
+            var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(new
+            {
+                Confirmed = confirmed,
+                OfficialMessageBox = true,
+                TrustConfirmation = true,
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            if (!confirmed) Environment.ExitCode = 5;
+        }
+        catch (Exception failure)
+        {
+            WriteCrashLog(failure);
+            Environment.ExitCode = 4;
+        }
+        RequestExit();
+    }
+
+    private void CaptureControlTemplateProbe(Window owner, string outputPath)
+    {
+        var host = new Window
+        {
+            Width = 520,
+            Height = 900,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -32000,
+            Top = -32000,
+        };
+        host.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("Themes/SettingsWindow.xaml", UriKind.Relative),
+        });
+        Style? ResolveStyle(object key) =>
+            host.TryFindResource(key) as Style ?? TryFindResource(key) as Style;
+        var panel = new StackPanel();
+        host.Content = panel;
+        var contextMenu = new ContextMenu();
+        var menuItem = new MenuItem { Header = "菜单项" };
+        contextMenu.Items.Add(menuItem);
+        var controls = new List<(string Name, Control Control, object? StyleKey)>
+        {
+            ("Button", new Button { Content = "按钮" }, typeof(Button)),
+            ("WpfUiButton", new Wpf.Ui.Controls.Button { Content = "WPF UI 按钮" },
+                "SettingsButtonStyle"),
+            ("TextBox", new TextBox { Text = "输入框" }, typeof(TextBox)),
+            ("WpfUiTextBox", new Wpf.Ui.Controls.TextBox { Text = "WPF UI 输入框" },
+                "SettingsTextBoxStyle"),
+            ("ComboBox", new ComboBox { ItemsSource = new[] { "选项一", "选项二" }, SelectedIndex = 0 },
+                typeof(ComboBox)),
+            ("ComboBoxItem", new ComboBoxItem { Content = "下拉项" }, "BlueLinkComboBoxItemStyle"),
+            ("CheckBox", new CheckBox { Content = "复选框" }, typeof(CheckBox)),
+            ("RadioButton", new RadioButton { Content = "单选框" }, typeof(RadioButton)),
+            ("TabControl", new TabControl(), typeof(TabControl)),
+            ("TabItem", new TabItem { Header = "标签" }, typeof(TabItem)),
+            ("ListBoxItem", new ListBoxItem { Content = "列表项" }, "TransparentListItemStyle"),
+            ("ContextMenu", contextMenu, "BlueLinkContextMenuStyle"),
+            ("MenuItem", menuItem, "BlueLinkMenuItemStyle"),
+            ("ProgressBar", new ProgressBar { Value = 50 }, typeof(ProgressBar)),
+            ("ScrollBar", new ScrollBar { Orientation = Orientation.Vertical, Height = 120 },
+                typeof(ScrollBar)),
+            ("Slider", new Slider { Value = 50, Width = 160 }, typeof(Slider)),
+            ("TitleBar", new Wpf.Ui.Controls.TitleBar { Title = "标题栏" },
+                typeof(Wpf.Ui.Controls.TitleBar)),
+            ("ToggleSwitch", new Wpf.Ui.Controls.ToggleSwitch { Content = "开关" },
+                "SettingsToggleStyle"),
+        };
+        foreach (var entry in controls)
+        {
+            if (entry.StyleKey is not null && ResolveStyle(entry.StyleKey) is Style style)
+                entry.Control.Style = style;
+            if (entry.Control is not ContextMenu && entry.Control is not MenuItem)
+                panel.Children.Add(entry.Control);
+        }
+
+        var messageBox = new Wpf.Ui.Controls.MessageBox
+        {
+            Title = "模板探针",
+            Content = "官方 MessageBox",
+            PrimaryButtonText = "确定",
+            CloseButtonText = "取消",
+            FocusVisualStyle = null,
+        };
+        messageBox.Style = TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style;
+        controls.Add(("MessageBox", messageBox, typeof(Wpf.Ui.Controls.MessageBox)));
+
+        try
+        {
+            host.Owner = owner;
+            host.Show();
+            host.UpdateLayout();
+            contextMenu.PlacementTarget = host;
+            contextMenu.IsOpen = true;
+            contextMenu.UpdateLayout();
+
+            var report = new List<object>();
+            foreach (var entry in controls)
+            {
+                if (entry.Control.Style is null && entry.StyleKey is not null &&
+                    ResolveStyle(entry.StyleKey) is Style style)
+                    entry.Control.Style = style;
+                if (entry.Control is not Wpf.Ui.Controls.MessageBox)
+                {
+                    entry.Control.Measure(new System.Windows.Size(360, 90));
+                    entry.Control.Arrange(new Rect(0, 0,
+                        Math.Max(1, entry.Control.DesiredSize.Width),
+                        Math.Max(1, entry.Control.DesiredSize.Height)));
+                    entry.Control.UpdateLayout();
+                }
+                var applied = entry.Control.ApplyTemplate();
+                entry.Control.UpdateLayout();
+                var visualChildren = VisualTreeHelper.GetChildrenCount(entry.Control);
+                report.Add(new
+                {
+                    entry.Name,
+                    StyleResolved = entry.Control.Style is not null,
+                    TemplateResolved = entry.Control.Template is not null,
+                    TemplateApplied = applied || visualChildren > 0,
+                    VisualChildren = visualChildren,
+                    FocusVisualSuppressed = entry.Control.FocusVisualStyle is null,
+                });
+            }
+
+            var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(
+                new { controls = report },
+                new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception failure)
+        {
+            WriteCrashLog(failure);
+            Environment.ExitCode = 4;
+        }
+        finally
+        {
+            contextMenu.IsOpen = false;
+            host.Close();
+            RequestExit();
+        }
     }
 
     private static void SaveWindowSnapshot(Window window, string path)
