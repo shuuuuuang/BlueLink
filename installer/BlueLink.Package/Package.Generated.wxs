@@ -23,6 +23,12 @@
       <Component Id="PayloadComponent_18208160DF69028DC6AAEDC2" Guid="{42166175-AFAB-5233-A7F6-D94E46ED1E74}">
         <File Id="PayloadFile_18208160DF69028DC6AAEDC2" Source="E:\BlueLink\artifacts\windows\win-x64\app\WinRT.Runtime.dll" Name="WinRT.Runtime.dll" KeyPath="yes" />
       </Component>
+      <Component Id="PayloadComponent_0FE32FF8B9BFC9618AC55601" Guid="{3CDBEA1D-AA61-53B4-8CB4-088A262C23A4}">
+        <File Id="PayloadFile_0FE32FF8B9BFC9618AC55601" Source="E:\BlueLink\artifacts\windows\win-x64\app\Wpf.Ui.Abstractions.dll" Name="Wpf.Ui.Abstractions.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="PayloadComponent_0FD7F343D09CB8595E57F0A3" Guid="{C638D6B2-D3D2-5A70-8A82-82D1D8745D39}">
+        <File Id="PayloadFile_0FD7F343D09CB8595E57F0A3" Source="E:\BlueLink\artifacts\windows\win-x64\app\Wpf.Ui.dll" Name="Wpf.Ui.dll" KeyPath="yes" />
+      </Component>
     </DirectoryRef>
     <DirectoryRef Id="BOOTSTRAPFOLDER">
       <Component Id="PayloadComponent_3F4756F331F2D5B2F94A60A9" Guid="{91A75B79-3785-5977-8F56-8ADB512E1508}">
@@ -57,6 +63,8 @@
       <ComponentRef Id="PayloadComponent_85F79441BB2459B4AF1CD7D2" />
       <ComponentRef Id="PayloadComponent_785CCD899DC7977487BE2E94" />
       <ComponentRef Id="PayloadComponent_18208160DF69028DC6AAEDC2" />
+      <ComponentRef Id="PayloadComponent_0FE32FF8B9BFC9618AC55601" />
+      <ComponentRef Id="PayloadComponent_0FD7F343D09CB8595E57F0A3" />
       <ComponentRef Id="PayloadComponent_3F4756F331F2D5B2F94A60A9" />
       <ComponentRef Id="PayloadComponent_F248586957202EF3BA7F8013" />
       <ComponentRef Id="PayloadComponent_8C97BE4AE40145866DBF27C8" />

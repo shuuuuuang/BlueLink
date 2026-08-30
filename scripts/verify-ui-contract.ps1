@@ -1,4 +1,6 @@
 param(
+    [ValidateSet('Full', 'SettingsOnly')]
+    [string]$Scope = 'Full',
     [string]$RuntimeProbeReport = ''
 )
 
@@ -19,6 +21,45 @@ function Assert-NotContains([string]$Path, [string]$Pattern, [string]$Descriptio
     $content = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
     if ($content -match $Pattern) { throw "UI contract failed: $Description ($Path)" }
     Write-Host "[PASS] $Description"
+}
+
+if ($Scope -eq 'SettingsOnly') {
+    $settingsXaml = 'windows\BlueLink.App\SettingsWindow.xaml'
+    $settingsCode = 'windows\BlueLink.App\SettingsWindow.xaml.cs'
+    $settingsTheme = 'windows\BlueLink.App\Themes\SettingsWindow.xaml'
+    $settingsFiles = @($settingsXaml, $settingsTheme)
+    foreach ($path in @($settingsXaml, $settingsCode, $settingsTheme, 'windows\BlueLink.App\BlueLink.App.csproj')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $path))) { throw "Missing file: $path" }
+    }
+
+    $templateViolations = foreach ($path in $settingsFiles) {
+        Select-String -LiteralPath (Join-Path $root $path) -Pattern '<ControlTemplate\b|ControlTemplate\s*=' -AllMatches
+    }
+    if ($templateViolations) {
+        $details = ($templateViolations | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }) -join [Environment]::NewLine
+        throw "Hand-written base ControlTemplate is forbidden in settings XAML:`n$details"
+    }
+    Write-Host '[PASS] settings XAML contains zero hand-written ControlTemplate declarations'
+
+    Assert-Contains 'windows\BlueLink.App\BlueLink.App.csproj' '<PackageReference Include="WPF-UI" Version="4\.3\.0"' 'Windows client pins WPF-UI 4.3.0'
+    Assert-Contains 'windows\BlueLink.App\BlueLink.App.csproj' '<BlueLinkWpfUiMigrationScope>SettingsOnly</BlueLinkWpfUiMigrationScope>' 'Windows client declares the frozen SettingsOnly migration scope'
+    Assert-Contains $settingsXaml '^<ui:FluentWindow\b' 'Settings uses WPF UI FluentWindow'
+    Assert-Contains $settingsXaml '<ui:TitleBar\b' 'Settings uses the official WPF UI TitleBar'
+    Assert-Contains $settingsXaml '<ui:NavigationView\b' 'Settings uses WPF UI NavigationView'
+    Assert-Contains $settingsXaml '<ui:NavigationViewItem\b' 'Settings uses official WPF UI navigation items'
+    Assert-NotContains $settingsXaml '<Tab(Control|Item)\b|<ui:TabView\b' 'Settings does not regress to top tabs'
+    Assert-Contains $settingsXaml 'x:Name="SaveInfoBar"' 'Settings exposes non-blocking save feedback'
+    foreach ($page in @('general', 'connection', 'files', 'privacy', 'about')) {
+        Assert-Contains $settingsXaml ('TargetPageTag="' + $page + '"') "Settings exposes the $page navigation page"
+    }
+    Assert-NotContains $settingsTheme '<Style(?=[^>]*TargetType)(?![^>]*x:Key)' 'Settings theme contains no implicit base-control Style'
+    Assert-NotContains $settingsCode 'System\.Windows\.MessageBox|MessageBox\.Show\s*\(' 'Settings code contains no native/system MessageBox calls'
+
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeProbeReport)) {
+        throw 'SettingsOnly runtime verification is performed by scripts\test-settings-ui.ps1; a global control-template report is not accepted for this scope.'
+    }
+    Write-Host 'WPF UI SettingsOnly contract verification passed.'
+    return
 }
 
 $windowsPrototypeRoot = Join-Path $root 'design\prototypes\windows-v2'

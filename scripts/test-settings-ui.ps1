@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ExecutablePath,
     [string]$ArtifactRoot
 )
@@ -31,9 +31,9 @@ function Assert-SourceContract {
         Assert-True (Test-Path -LiteralPath $path) "Required settings source is missing: $path"
     }
 
-    $xaml = Get-Content -LiteralPath $settingsXaml -Raw
-    $theme = Get-Content -LiteralPath $settingsTheme -Raw
-    $projectText = Get-Content -LiteralPath $project -Raw
+    $xaml = Get-Content -LiteralPath $settingsXaml -Raw -Encoding UTF8
+    $theme = Get-Content -LiteralPath $settingsTheme -Raw -Encoding UTF8
+    $projectText = Get-Content -LiteralPath $project -Raw -Encoding UTF8
     [xml]$xaml | Out-Null
     [xml]$theme | Out-Null
     Assert-True ($xaml -match '^<ui:FluentWindow\b') 'SettingsWindow must use WPF UI FluentWindow.'
@@ -53,7 +53,9 @@ function Assert-SourceContract {
         'windows/BlueLink.App/SettingsWindow.xaml',
         'windows/BlueLink.App/SettingsWindow.xaml.cs',
         'windows/BlueLink.App/Themes/SettingsWindow.xaml',
-        'scripts/test-settings-ui.ps1'
+        'scripts/test-settings-ui.ps1',
+        'scripts/build-windows-release.ps1',
+        'scripts/verify-ui-contract.ps1'
     )
     $status = & git -C $root status --porcelain=v1 --untracked-files=all
     foreach ($line in $status) {

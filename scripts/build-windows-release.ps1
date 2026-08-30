@@ -32,7 +32,20 @@ $setupUiProject = Join-Path $projectRoot 'installer\BlueLink.SetupUI\BlueLink.Se
 $ownershipTestsProject = Join-Path $projectRoot 'installer\BlueLink.Installation.Tests\BlueLink.Installation.Tests.csproj'
 $packageProject = Join-Path $projectRoot 'installer\BlueLink.Package\BlueLink.Package.wixproj'
 $bundleProject = Join-Path $projectRoot 'installer\BlueLink.Bundle\BlueLink.Bundle.wixproj'
-$appUsesMigratedWpfUi = Select-String -LiteralPath $appProject -SimpleMatch '<PackageReference Include="WPF-UI" Version="4.3.0"' -Quiet
+$appProjectText = Get-Content -LiteralPath $appProject -Raw
+$appUsesWpfUi = $appProjectText -match '<PackageReference Include="WPF-UI" Version="4\.3\.0"'
+$scopeMatch = [regex]::Match($appProjectText, '<BlueLinkWpfUiMigrationScope>\s*([^<]+)\s*</BlueLinkWpfUiMigrationScope>')
+$uiMigrationScope = if (-not $appUsesWpfUi) {
+    'None'
+} elseif ($scopeMatch.Success) {
+    $scopeMatch.Groups[1].Value.Trim()
+} else {
+    'Full'
+}
+if ($uiMigrationScope -notin @('None', 'SettingsOnly', 'Full')) {
+    throw "Unsupported BlueLink WPF UI migration scope: $uiMigrationScope"
+}
+Write-Host "Windows WPF UI migration scope: $uiMigrationScope"
 
 if (-not (Test-Path -LiteralPath $dotnet)) { throw "The .NET SDK was not found: $dotnet" }
 $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.dotnet-home'
@@ -40,8 +53,8 @@ $env:NUGET_PACKAGES = Join-Path $projectRoot '.nuget-mirror-test'
 
 & (Join-Path $projectRoot 'scripts\verify-version.ps1') -ProjectRoot $projectRoot
 & (Join-Path $projectRoot 'scripts\verify-settings-wiring.ps1')
-if ($appUsesMigratedWpfUi) {
-    & (Join-Path $projectRoot 'scripts\verify-ui-contract.ps1')
+if ($uiMigrationScope -ne 'None') {
+    & (Join-Path $projectRoot 'scripts\verify-ui-contract.ps1') -Scope $uiMigrationScope
 } else {
     Write-Host '[PASS] Windows client matches the preserved pre-migration UI source; migration-only UI gates are skipped.'
 }
@@ -93,6 +106,21 @@ foreach ($source in @($launcherOutput, $uninstallOutput)) {
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
         Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
     }
+}
+
+if ($uiMigrationScope -eq 'SettingsOnly') {
+    $settingsPublishAcceptance = Join-Path $acceptanceDir 'settings-published-current'
+    $resolvedSettingsAcceptance = [IO.Path]::GetFullPath($settingsPublishAcceptance)
+    $resolvedAcceptanceRoot = [IO.Path]::GetFullPath($acceptanceDir).TrimEnd('\') + '\'
+    if (-not $resolvedSettingsAcceptance.StartsWith($resolvedAcceptanceRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clear settings acceptance directory outside artifacts: $resolvedSettingsAcceptance"
+    }
+    if (Test-Path -LiteralPath $resolvedSettingsAcceptance) {
+        Remove-Item -LiteralPath $resolvedSettingsAcceptance -Recurse -Force
+    }
+    & (Join-Path $projectRoot 'scripts\test-settings-ui.ps1') `
+        -ExecutablePath (Join-Path $appStage 'BlueLink.exe') -ArtifactRoot $resolvedSettingsAcceptance
+    if ($LASTEXITCODE -ne 0) { throw 'Published Settings UI Automation acceptance failed.' }
 }
 
 # Resolve the pinned immutable x64 Windows Desktop Runtime 8 patch from
@@ -201,7 +229,7 @@ foreach ($snapshot in @(
 $visualTests = @(
     @{ Name = 'windows-image-preview.png'; MinBytes = 40000; Arguments = @("--preview-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-image-preview.png')", "--preview-source=$(Join-Path $projectRoot 'design\brand\final\bluelink-final-logo.png')") }
 )
-if ($appUsesMigratedWpfUi) {
+if ($uiMigrationScope -eq 'Full') {
     $visualTests += @(
         @{ Name = 'windows-settings-connection.png'; MinBytes = 30000; Arguments = @("--settings-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-settings-connection.png')", '--settings-page=connection') },
         @{ Name = 'windows-settings-files.png'; MinBytes = 30000; Arguments = @("--settings-ui-smoke-test=$(Join-Path $acceptanceDir 'windows-settings-files.png')", '--settings-page=files') },
@@ -216,14 +244,14 @@ foreach ($visualTest in $visualTests) {
     if ($visual.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -lt $visualTest.MinBytes) { throw "Windows visual smoke failed: $($visualTest.Name)" }
 }
 
-if ($appUsesMigratedWpfUi) {
+if ($uiMigrationScope -eq 'Full') {
     $controlTemplateReport = Join-Path $acceptanceDir 'windows-control-template-runtime.json'
     $controlTemplateProbe = Start-Process -FilePath (Join-Path $appStage 'BlueLink.exe') `
         -ArgumentList "--control-template-smoke-test=$controlTemplateReport" -Wait -PassThru
     if ($controlTemplateProbe.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $controlTemplateReport)) {
         throw "Windows control-template runtime probe failed with exit code $($controlTemplateProbe.ExitCode)."
     }
-    & (Join-Path $projectRoot 'scripts\verify-ui-contract.ps1') -RuntimeProbeReport $controlTemplateReport
+    & (Join-Path $projectRoot 'scripts\verify-ui-contract.ps1') -Scope Full -RuntimeProbeReport $controlTemplateReport
     if ($LASTEXITCODE -ne 0) { throw 'WPF UI runtime contract verification failed.' }
 }
 
