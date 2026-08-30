@@ -251,6 +251,14 @@ namespace BlueLink.Installation.Tests
                 "fresh install remains install");
             Assert(!InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Uninstall"),
                 "uninstall is never converted to repair");
+            Assert(!InstallerExecutionPolicy.ShouldPlanRuntimePackage(false, true, false),
+                "normal install/repair does not plan an already available runtime");
+            Assert(InstallerExecutionPolicy.ShouldPlanRuntimePackage(false, false, false),
+                "normal install plans a missing runtime");
+            Assert(InstallerExecutionPolicy.ShouldPlanRuntimePackage(true, false, false),
+                "runtime-only flow plans a missing runtime");
+            Assert(!InstallerExecutionPolicy.ShouldPlanRuntimePackage(false, false, true),
+                "BlueLink uninstall never plans the shared runtime");
         }
 
         private static string CreateFixture(string source, string destination)

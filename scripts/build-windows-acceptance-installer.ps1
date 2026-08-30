@@ -4,7 +4,8 @@ param(
     [string]$AcceptanceId = 'Acceptance',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$ProductVersion,
-    [string]$Stage
+    [string]$Stage,
+    [switch]$IncludeRuntimePrerequisite
 )
 
 $ErrorActionPreference = 'Stop'
@@ -109,7 +110,9 @@ $bundleArguments = @(
     "-p:ProductRegistryKey=$acceptanceRegistryKey",
     "-p:MsiPath=$msi", "-p:BaOutput=$baOutput", "-p:RuntimePayload=$($runtimePayload.FullName)",
     '-p:RuntimeDownloadUrl=https://example.invalid/not-used.exe', '-p:RuntimeVersion=8.0.x',
-    '-p:RuntimeSize=acceptance', '-p:RuntimePerMachine=no', '-p:IncludePrerequisites=no'
+    '-p:RuntimeSize=acceptance',
+    ('-p:RuntimePerMachine=' + $(if ($IncludeRuntimePrerequisite) { 'yes' } else { 'no' })),
+    ('-p:IncludePrerequisites=' + $(if ($IncludeRuntimePrerequisite) { 'yes' } else { 'no' }))
 )
 foreach ($requiredIsolationArgument in @(
     "-p:BundleProviderKey=$acceptanceProviderKey",

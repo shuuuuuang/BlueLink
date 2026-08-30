@@ -286,6 +286,24 @@ namespace BlueLink.SetupUI
 
         private void OnPlanPackageBegin(object sender, PlanPackageBeginEventArgs e)
         {
+            if (e.PackageId.Equals("DesktopRuntime8X64", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!InstallerExecutionPolicy.ShouldPlanRuntimePackage(
+                        this.runtimeOnlyPlan, this.runtimeAvailable, this.uninstalling))
+                {
+                    e.State = RequestState.None;
+                    this.engine.Log(LogLevel.Standard,
+                        "BlueLink BA: suppressing .NET Desktop Runtime package because the required runtime is already available.");
+                }
+                else if (!this.runtimeAvailable)
+                {
+                    e.State = RequestState.Present;
+                    this.engine.Log(LogLevel.Standard,
+                        "BlueLink BA: planning .NET Desktop Runtime because the required runtime is missing.");
+                }
+                return;
+            }
+
             if (this.runtimeOnlyPlan && e.PackageId.Equals("BlueLinkMsi", StringComparison.OrdinalIgnoreCase))
                 e.State = RequestState.None;
         }

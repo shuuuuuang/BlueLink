@@ -72,6 +72,12 @@ namespace BlueLink.Shared
             (String.Equals(requestedAction, "Unknown", StringComparison.OrdinalIgnoreCase) ||
              String.Equals(requestedAction, "Install", StringComparison.OrdinalIgnoreCase));
 
+        public static bool ShouldPlanRuntimePackage(
+            bool runtimeOnlyPlan,
+            bool runtimeAvailable,
+            bool uninstalling) =>
+            !uninstalling && (runtimeOnlyPlan || !runtimeAvailable);
+
         private static string NormalizeVersion(string value)
         {
             if (String.IsNullOrWhiteSpace(value)) return String.Empty;
