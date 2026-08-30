@@ -14,6 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\shared\WindowsAppControlChannel.cs" Link="Shared\WindowsAppControlChannel.cs" />
