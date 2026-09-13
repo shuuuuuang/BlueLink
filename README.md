@@ -6,7 +6,7 @@ BlueLink 是 Android 与 Windows 之间的本地聊天和文件传输应用。�
 
 ## 下载
 
-安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。首个预览版为 [v0.2.17-preview.1](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.17-preview.1)。
+安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.17-preview.3](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.17-preview.3)，新增 Windows 三种架构的 NoRuntime 精简安装包。
 
 - Windows 常见电脑选择 `win-x64-Setup.exe`；需要免安装时选择同架构的 `Portable.zip`，也提供 x86 与 ARM64。
 - Android 不确定架构时选择 `android-universal-release.apk`，最低 Android 13；正式签名 APK 无法直接覆盖旧 Debug 安装。

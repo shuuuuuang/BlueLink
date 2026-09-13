@@ -6,7 +6,10 @@
 - 精简包由 framework-dependent publish 生成；构建检查无内置运行库、Burn 外部下载 URL/架构/大小/SHA512，沿用同一 Review 安装身份。
 - 启动器补齐三架构检测，核对 dotnet/图形/基础运行库 PE 架构，避免将其他架构的 .NET 或不完整安装误认作满足条件；运行库提示页同步显示目标架构。
 - 本地 x64 实测 EXE 约 86.0 MiB、MSI 约 65.1 MiB。27 项架构回归、23 项安装安全回归、14 项发布附件回归通过；界面回归 152 检查/42 图，真实桌面 UI Automation 18 检查/6 图通过。
-- 新增 x86 安装安全回归发现并修复共享清理模块的 winsqlite3 调用约定（Cdecl 改为 StdCall）；真实 x86 进程 27 项架构和 23 项安装安全检查通过。全架构云端构建与新预览发布待本轮流水线确认。实际执行 Microsoft 运行库安装、缺运行库系统的完整安装升级矩阵、ARM64 实机仍未验证。
+- 新增 x86 安装安全回归发现并修复共享清理模块的 winsqlite3 调用约定（Cdecl 改为 StdCall）；真实 x86 进程 27 项架构和 23 项安装安全检查通过。
+- 全架构云端构建与 [v0.2.17-preview.3 发布](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.17-preview.3) 已通过（[流水线 34760521733](https://github.com/shuuuuuang/BlueLink/actions/runs/34760521733)，Android 失败任务重试后成功）。发布后独立核对 22 个公开附件、20 个软件包、SHA256/大小、源码提交 62c0129 与 Android 正式签名指纹一致。
+- 实际执行 Microsoft 运行库安装、缺运行库系统的完整安装升级矩阵、ARM64 实机仍未验证。
+- 发现已有 Android `cancelWhileWaitingNeverCommits` 测试的取消异常时序波动：有时返回 `JobCancellationException`，强制转换为 `TrustHandshakeException` 失败；当前未修改握手实现或放宽测试，一次失败任务重试后全部通过，作为后续稳定性问题记录。
 
 ## 2026-09-13 GitHub 预览版自动发布
 
