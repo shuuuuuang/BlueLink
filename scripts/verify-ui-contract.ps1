@@ -63,20 +63,7 @@ if ($Scope -eq 'SettingsOnly') {
     return
 }
 
-$windowsPrototypeRoot = Join-Path $root 'design\prototypes\windows-v2'
-$windowsPrototypes = Get-ChildItem -LiteralPath $windowsPrototypeRoot -Filter '*.png'
-if ($windowsPrototypes.Count -ne 15) { throw "Expected 15 Windows prototypes, found $($windowsPrototypes.Count)." }
-Write-Host '[PASS] 15 Windows page prototypes are present'
-
-$overwritePrototype = Join-Path $root 'design\prototypes\installer-overwrite-dialog-wpfui.png'
-$runtimePrototype = Join-Path $root 'design\prototypes\installer-runtime-required-wpfui.png'
-if ((Get-FileHash -LiteralPath $overwritePrototype -Algorithm SHA256).Hash -ne 'C26741264D5B3402DC38DA536226401196085B4C3B81E91ED9FD9EEB433105B2') {
-    throw 'Overwrite-dialog prototype hash changed.'
-}
-if ((Get-FileHash -LiteralPath $runtimePrototype -Algorithm SHA256).Hash -ne 'BDCF4C291D8FA595FC45488568A240919F8162536DD775B83BA5C893CA4E7052') {
-    throw 'Runtime-required prototype hash changed.'
-}
-Write-Host '[PASS] confirmed installer prototype hashes'
+# Figma is the design source of truth; validate production UI contracts below.
 
 $productXamlRoots = @(
     'windows\BlueLink.App',

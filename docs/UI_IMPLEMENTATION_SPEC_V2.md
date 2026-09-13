@@ -1,14 +1,14 @@
 # BlueLink 产品与界面实施规范 V2
 
-状态：已冻结，作为 Windows/Android V2 实施与验收基线。
+状态：保留 V2 实施规范记录；界面原型以 Figma 中当前确认的设计为准。
 
 ## 1. 基准资产
 
 - 品牌标志：`design/brand/final/bluelink-final-logo.png`
-- Windows 原型：`design/prototypes/windows-v2/01` 至 `15`
-- Android 原型：`design/prototypes/android-v2/01` 至 `15`
+- Windows / Android 原型：[BlueLink Figma](https://www.figma.com/design/Tna537kDQdpsVwDX0lXlCs/BlueLink)
+- 仓库不再保存旧原型图片；实现与验收使用 Figma 中对应的已确认画板。
 
-旧版原型只用于追溯，不再作为实现依据。实现中不得恢复旧的蓝底 `B` 图标。
+旧版原型已从仓库当前版本删除，不再作为实现依据。实现中不得恢复旧的蓝底 `B` 图标。
 
 ## 2. 产品边界
 

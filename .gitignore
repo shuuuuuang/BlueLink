@@ -30,8 +30,11 @@ obj/
 downloads/
 artifacts/
 *.part
-design/prototypes/prototypes.zip
+/design/prototypes/
 codex-history-repair-*.json
 .gradle-user-home/
 __pycache__/
 *.py[cod]
+/WORKLOG.md
+/PROJECT_ROADMAP.md
+/AGENTS.md
