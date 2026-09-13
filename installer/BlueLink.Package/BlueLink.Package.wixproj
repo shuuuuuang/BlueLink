@@ -1,7 +1,7 @@
 <Project Sdk="WixToolset.Sdk/4.0.6">
   <PropertyGroup>
-    <Platform>x64</Platform>
-    <InstallerPlatform>x64</InstallerPlatform>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
     <SuppressValidation>true</SuppressValidation>
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
     <LauncherExe Condition="'$(LauncherExe)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows\win-x64\BlueLink.exe</LauncherExe>

@@ -30,6 +30,8 @@
     <Variable Name="SetupSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
     <Variable Name="SetupSnapshotPage" Type="string" Value="welcome" bal:Overridable="yes" />
     <Variable Name="SetupOverwriteCancelSnapshotPath" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="TargetArchitecture" Type="string" Value="$(var.TargetArchitecture)" />
+    <Variable Name="BundledDesktopRuntime" Type="numeric" Value="$(var.BundledDesktopRuntime)" />
     <Variable Name="DisplayProductVersion" Type="string" Value="$(var.ProductVersion)" />
     <Variable Name="ExpectedMsiProductCode" Type="string" Value="$(var.ProductCode)" Hidden="yes" />
     <Variable Name="ExpectedPayloadFingerprint" Type="string" Value="$(var.PayloadFingerprint)" Hidden="yes" />
@@ -42,7 +44,7 @@
     <netfx:DotNetCoreSearch Id="DesktopRuntime8X64Search"
                             Variable="DesktopRuntime8Version"
                             RuntimeType="desktop"
-                            Platform="x64"
+                            Platform="$(var.TargetArchitecture)"
                             MajorVersion="8" />
 
     <Chain>

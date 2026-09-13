@@ -45,6 +45,7 @@ internal sealed class NativeSqliteConnection : IDisposable
         _handle = IntPtr.Zero;
     }
 
+    // Windows ships winsqlite3 with STDCALL; Cdecl corrupts the x86 stack.
     internal static class Native
     {
         internal const int Ok = 0;
@@ -53,24 +54,24 @@ internal sealed class NativeSqliteConnection : IDisposable
         internal const int Null = 5;
         internal static readonly IntPtr Transient = new(-1);
 
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)]
         internal static extern int sqlite3_open_v2([MarshalAs(UnmanagedType.LPUTF8Str)] string filename, out IntPtr database, int flags, [MarshalAs(UnmanagedType.LPUTF8Str)] string? virtualFileSystem);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_close_v2(IntPtr database);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr sqlite3_errmsg(IntPtr database);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_exec(IntPtr database, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, IntPtr callback, IntPtr callbackArgument, out IntPtr errorMessage);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern void sqlite3_free(IntPtr value);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_prepare_v2(IntPtr database, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, int bytes, out IntPtr statement, IntPtr tail);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_step(IntPtr statement);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_finalize(IntPtr statement);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_bind_null(IntPtr statement, int index);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_bind_int64(IntPtr statement, int index, long value);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_bind_text(IntPtr statement, int index, byte[] value, int bytes, IntPtr destructor);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_bind_blob(IntPtr statement, int index, byte[] value, int bytes, IntPtr destructor);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_column_type(IntPtr statement, int column);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern long sqlite3_column_int64(IntPtr statement, int column);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr sqlite3_column_text(IntPtr statement, int column);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr sqlite3_column_blob(IntPtr statement, int column);
-        [DllImport("winsqlite3", CallingConvention = CallingConvention.Cdecl)] internal static extern int sqlite3_column_bytes(IntPtr statement, int column);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_close_v2(IntPtr database);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern IntPtr sqlite3_errmsg(IntPtr database);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_exec(IntPtr database, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, IntPtr callback, IntPtr callbackArgument, out IntPtr errorMessage);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern void sqlite3_free(IntPtr value);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_prepare_v2(IntPtr database, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, int bytes, out IntPtr statement, IntPtr tail);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_step(IntPtr statement);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_finalize(IntPtr statement);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_bind_null(IntPtr statement, int index);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_bind_int64(IntPtr statement, int index, long value);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_bind_text(IntPtr statement, int index, byte[] value, int bytes, IntPtr destructor);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_bind_blob(IntPtr statement, int index, byte[] value, int bytes, IntPtr destructor);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_column_type(IntPtr statement, int column);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern long sqlite3_column_int64(IntPtr statement, int column);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern IntPtr sqlite3_column_text(IntPtr statement, int column);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern IntPtr sqlite3_column_blob(IntPtr statement, int column);
+        [DllImport("winsqlite3", CallingConvention = CallingConvention.StdCall)] internal static extern int sqlite3_column_bytes(IntPtr statement, int column);
     }
 }
 

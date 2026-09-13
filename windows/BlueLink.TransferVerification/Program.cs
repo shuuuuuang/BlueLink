@@ -19,6 +19,8 @@ using BlueLink.Files;
 
 try
 {
+    if (args.Contains("--portable-probe")) { await PortableVerification.ProbeAsync(); return; }
+    if (args.Contains("--portable-only")) { await PortableVerification.RunAsync(); return; }
     if (args.Contains("--mtp-responsiveness")) { await MtpResponsivenessVerification.RunAsync(); return; }
     if (args.Length == 2 && args[0] == "--forget-device") { ForgetPeerVerification.Run(args[1]); return; }
     if (args.Length == 2 && args[0] == "--notices-only") { TransientNoticeVerification.Run(args[1]); return; }

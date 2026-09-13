@@ -50,7 +50,7 @@ if (-not $setupProject.Contains('<PackageReference Include="WPF-UI" Version="4.3
 }
 
 $bundle = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.Bundle\Bundle.wxs') -Raw
-foreach ($token in @('WixManagedBootstrapperApplicationHost', 'InstallFolder', 'CreateDesktopShortcut', 'AutoStart', 'BlueLinkMsi', 'DotNetCoreSearch', 'RuntimeType="desktop"', 'Platform="x64"', 'MajorVersion="8"', 'DesktopRuntime8X64', 'Compressed="no"', 'Cache="remove"', 'Permanent="yes"', 'Vital="yes"', 'RepairCondition="NOT DesktopRuntime8Version"', 'RuntimePerMachine', 'PackageUpgradeCode', 'ARPINSTALLLOCATION', 'DisplayProductVersion', 'ExpectedMsiProductCode', 'ExpectedPayloadFingerprint')) {
+foreach ($token in @('WixManagedBootstrapperApplicationHost', 'InstallFolder', 'CreateDesktopShortcut', 'AutoStart', 'BlueLinkMsi', 'DotNetCoreSearch', 'RuntimeType="desktop"', 'Platform="$(var.TargetArchitecture)"', 'MajorVersion="8"', 'DesktopRuntime8X64', 'Compressed="no"', 'Cache="remove"', 'Permanent="yes"', 'Vital="yes"', 'RepairCondition="NOT DesktopRuntime8Version"', 'RuntimePerMachine', 'PackageUpgradeCode', 'ARPINSTALLLOCATION', 'DisplayProductVersion', 'ExpectedMsiProductCode', 'ExpectedPayloadFingerprint')) {
     if (-not $bundle.Contains($token)) { throw "Burn bundle contract missing: $token" }
 }
 
@@ -103,8 +103,10 @@ foreach ($token in @('LauncherComponent', 'UninstallerComponent', 'InstallManife
 
 # Review artifacts intentionally reuse VERSION, so every rebuilt MSI must upgrade
 # the previous product inside the transaction before writing its shared paths.
-$reviewBuild = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-review.ps1') -Raw
-foreach ($token in @('-p:MajorUpgradeSchedule=afterInstallInitialize', '-p:AllowSameVersionUpgrades=yes', '-p:ManifestPath=$manifest')) {
+$reviewEntry = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-review.ps1') -Raw
+if (-not $reviewEntry.Contains('build-windows-packages.ps1')) { throw 'Review entry point bypasses the shared package pipeline.' }
+$reviewBuild = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-packages.ps1') -Raw
+foreach ($token in @('-p:MajorUpgradeSchedule=afterInstallInitialize', '-p:AllowSameVersionUpgrades=yes', '-p:ManifestPath=$ownership')) {
     if (-not $reviewBuild.Contains($token)) { throw "Review repeat-install contract missing: $token" }
 }
 foreach ($token in @('$(var.MajorUpgradeSchedule)', '$(var.AllowSameVersionUpgrades)')) {

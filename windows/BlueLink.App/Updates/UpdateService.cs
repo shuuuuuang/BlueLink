@@ -15,6 +15,15 @@ public sealed class UpdateService : IDisposable
 {
     public const string Repository = "shuuuuuang/BlueLink";
     public static readonly Uri Feed = new($"https://api.github.com/repos/{Repository}/releases/latest");
+    public static string RuntimeIdentifier => GetRuntimeIdentifier(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
+    public static string GetRuntimeIdentifier(System.Runtime.InteropServices.Architecture architecture) => architecture switch
+    {
+        System.Runtime.InteropServices.Architecture.X86 => "win-x86",
+        System.Runtime.InteropServices.Architecture.X64 => "win-x64",
+        System.Runtime.InteropServices.Architecture.Arm64 => "win-arm64",
+        _ => throw new PlatformNotSupportedException("Unsupported Windows architecture.")
+    };
+    public const string PortableUpdateNotice = "免安装版本请下载对应架构的 Portable ZIP，退出程序后解压更新并保留 Data 和 Download 文件夹。";
     public const long MaximumPackageBytes = 512L * 1024 * 1024;
     private readonly HttpClient _client;
     private readonly string _directory;
@@ -36,6 +45,7 @@ public sealed class UpdateService : IDisposable
 
     public async Task<UpdateRelease?> CheckAsync(Version current, CancellationToken token)
     {
+        if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(PortableUpdateNotice);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(25));
         using var response = await GetAsync(Feed, deadline.Token);
@@ -58,9 +68,9 @@ public sealed class UpdateService : IDisposable
             throw new InvalidDataException("发布版本格式无效。");
         var version = new Version(parsed.Major, parsed.Minor, parsed.Build);
         if (version <= new Version(current.Major, current.Minor, Math.Max(0, current.Build))) return null;
-        var name = $"BlueLink-Setup-{version}-win-x64.exe";
+        var name = $"BlueLink-Setup-{version}-{RuntimeIdentifier}.exe";
         var assets = root.GetProperty("assets").EnumerateArray().Where(x => x.GetProperty("name").GetString() == name).ToArray();
-        if (assets.Length != 1) throw new InvalidDataException("此版本尚未提供 Windows x64 安装包。");
+        if (assets.Length != 1) throw new InvalidDataException("此版本尚未提供当前架构的 Windows 安装包。");
         var asset = assets[0];
         var size = asset.GetProperty("size").GetInt64();
         var digest = asset.TryGetProperty("digest", out var d) ? d.GetString() : null;
@@ -77,6 +87,7 @@ public sealed class UpdateService : IDisposable
     public async Task<UpdatePackage> DownloadAsync(UpdateRelease release, IProgress<DownloadProgress>? progress, CancellationToken token)
     {
         ValidateRelease(release);
+        if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(PortableUpdateNotice);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromMinutes(10));
         var ct = deadline.Token;
@@ -154,7 +165,7 @@ public sealed class UpdateService : IDisposable
     private static void ValidateRelease(UpdateRelease value)
     {
         var prefix = $"https://github.com/{Repository}/releases/download/";
-        if (value.Size is <= 0 or > MaximumPackageBytes || value.FileName != $"BlueLink-Setup-{value.Version}-win-x64.exe" ||
+        if (value.Size is <= 0 or > MaximumPackageBytes || value.FileName != $"BlueLink-Setup-{value.Version}-{RuntimeIdentifier}.exe" ||
             value.Sha256.Length != 64 || value.Sha256.Any(c => !Uri.IsHexDigit(c)) || !value.DownloadUrl.AbsoluteUri.StartsWith(prefix, StringComparison.Ordinal) ||
             !value.DownloadUrl.AbsoluteUri.EndsWith("/" + value.FileName, StringComparison.Ordinal)) throw new InvalidDataException("更新包元数据无效。");
     }

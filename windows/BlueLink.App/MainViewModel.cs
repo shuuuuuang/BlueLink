@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using BlueLink.Feedback;
 using System.Windows;
@@ -93,8 +93,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public string LocalDeviceDisplayName => LocalDeviceName.Resolve(Settings.LocalDeviceName);
     public MainViewModel(string? dataRoot = null)
     {
-        CacheDirectory = Path.Combine(dataRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink"), "Cache");
+        CacheDirectory = Path.Combine(dataRoot ?? BlueLink.Storage.AppStoragePaths.UserDirectory, "Cache");
         Files.FileInteractionService.ThumbnailDirectory = Path.Combine(CacheDirectory, "Thumbnails");
         _identity = new IdentityStore(dataRoot);
         Updates = new(new Updates.UpdateService(Path.Combine(CacheDirectory, "Updates")));
@@ -116,14 +115,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _sessions.ReceiptReceived += OnSessionReceipt;
     }
 
-    private static string ResolveInstallRoot()
-    {
-        var baseDirectory = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(
-            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        return baseDirectory.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && baseDirectory.Parent is not null
-            ? baseDirectory.Parent.FullName
-            : baseDirectory.FullName;
-    }
+    private static string ResolveInstallRoot() => AppStoragePaths.ProgramDirectory;
     public NearbyDevice? SelectedDevice
     {
         get => _selectedDevice;

@@ -1,5 +1,17 @@
 # BlueLink 实现状态
 
+## 2026-09-13：多架构构建与 Windows Portable
+
+Windows 构建入口支持 x86、x64、ARM64，统一生成内置 .NET 8 运行库的 Review EXE/MSI 和 Portable ZIP。旧 Review 入口委托同一流程；正式 x64 发布锁和版本号未改。WiX 每个架构重建，并在发布产物前解包验证 MSI 平台/位数、Burn 目标架构、产品码、载荷指纹、内嵌 MSI 和恢复清单，避免参数切换后复用上一架构的缓存产物。ARM64 客户端/运行库为原生 ARM64，安装引导界面暂用 x86 .NET Framework 兼容层。
+
+Portable 由 BlueLink.portable 标记启用，身份、数据库、设置、缓存及日志保存在程序内 Data，默认接收目录为 Download；退出后整体移动，下次启动事务内修正原程序目录内部的文件路径，外部路径保留。身份私钥继续使用 Windows 用户保护，跨账户/电脑需重新核验信任。Portable 更新入口提示手动更新对应 ZIP，阻止自动转为安装版；安装版按进程架构选择更新资产。
+
+Android 默认一次构建 armeabi-v7a、arm64-v8a、x86、x86_64 及 universal 的 Debug/未签名 Release APK，保留旧通用包名；从输出元数据选择 APK，并检查对应 Conscrypt 原生库、记录 ABI 与 SHA-256。IDE 普通构建保持原路径，分包由 Gradle 属性显式开启。
+
+**已验证**：Android 196 项单元测试、协议测试、Debug lint（0 错误/15 个既有警告）和双构建通过，10 个 APK 原生 ABI 校验通过。Windows x86 原生执行发现并修正 winsqlite3 的 Cdecl/StdCall 声明错误；x86/x64 各通过 12 项迁移/架构、32 项更新、2 项实际 portable 数据与更新门禁检查，以及 2337 项 WPF 原生 AutomationPeer/几何检查和 61 张截图。安装器真实组件通过 134 项检查/36 图，三架构标签无裁切。最终三架构各通过 66 项安装归属检查；9 个产物逐文件、PE、MSI 位数/升级顺序与 Burn 载荷核对通过。最终产物在 artifacts/windows/multiarch-20260913-final-packages、artifacts/android，证据在 .acceptance/build-architectures。
+
+**Not verified**：Windows ARM64 实机、Android 各 ABI 设备逐一运行、蓝牙/USB 全硬件矩阵及分架构实际安装/升级/卸载。本轮未执行安装或上传发布；包未签名，构建成功不等于正式发布验收完成。此次局部 WPF 验证不替代其他条目记载的完整 UI 回归限制。
+
 ## 2026-09-13：Android 下拉刷新与一次启动扫描
 
 Android 设备与会话页的“附近新设备”扫描按钮已移除，改为列表顶部下拉刷新。启动扫描遵循既有开关，每次进程启动最多一轮；等待持久设置和首次蓝牙可用，不再按 10 秒扫描/5 秒暂停循环，也不在连接结束、返回设置、前后台切换或身份操作后重启扫描。手动请求每轮最多 5 秒，重复下拉不叠加，结束/取消/失败会收起指示器，迟到回调不会污染新一轮。蓝牙广播与入站/可信设备连接策略仍保留，Windows 扫描未改。

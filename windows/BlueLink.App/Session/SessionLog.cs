@@ -7,7 +7,7 @@ internal static class SessionLog
     private static readonly object Gate = new();
     public static volatile bool Enabled = true;
     public static string DirectoryPath { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Logs");
+        BlueLink.Storage.AppStoragePaths.UserDirectory, "Logs");
     public static string FilePath => Path.Combine(DirectoryPath, "windows-session.log");
 
     public static void Write(string component, string message, Exception? failure = null)

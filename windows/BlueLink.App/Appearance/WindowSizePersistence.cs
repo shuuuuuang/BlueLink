@@ -44,7 +44,7 @@ internal sealed class WindowSizePersistence
     private WindowPreferencesStore Store => _store ??= new WindowPreferencesStore(_dataDirectory ??
         (_window.Owner as MainWindow)?.ViewModel.DataDirectory ??
         (Application.Current?.MainWindow as MainWindow)?.ViewModel.DataDirectory ??
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Data"), _key);
+        BlueLink.Storage.AppStoragePaths.DatabaseDirectory, _key);
 
     internal WindowSizePreference Restore(Size workArea)
     {

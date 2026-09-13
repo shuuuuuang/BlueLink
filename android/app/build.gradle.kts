@@ -29,6 +29,23 @@ android {
         }
     }
 
+    // ABI-specific artifacts are opt-in so ordinary IDE/debug builds keep their paths.
+    val splitApks = providers.gradleProperty("bluelinkSplitApks").orNull == "true"
+    val supportedAbis = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+    val requestedAbis = providers.gradleProperty("bluelinkAbis").orNull
+        ?.split(",")?.filter { it.isNotBlank() } ?: supportedAbis
+    require(requestedAbis.isNotEmpty() && requestedAbis.all { it in supportedAbis }) {
+        "bluelinkAbis must contain only: ${supportedAbis.joinToString()}"
+    }
+    splits {
+        abi {
+            isEnable = splitApks
+            reset()
+            include(*requestedAbis.toTypedArray())
+            isUniversalApk = true
+        }
+    }
+
     // Language can change inside BlueLink without a Play Store language download.
     bundle { language { enableSplit = false } }
     buildFeatures { compose = true; buildConfig = true }

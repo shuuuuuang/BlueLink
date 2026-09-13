@@ -75,7 +75,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         _onEnvelope = onEnvelope;
         _onReceipt = onReceipt;
         _receiveDirectory = string.IsNullOrWhiteSpace(receiveDirectory)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Received")
+            ? Path.Combine(BlueLink.Storage.AppStoragePaths.UserDirectory, "Received")
             : receiveDirectory;
         _maxReceiveBytes = maxReceiveBytes;
         _autoAcceptFiles = autoAcceptFiles;
@@ -87,7 +87,7 @@ public sealed partial class PeerSession : IAsyncDisposable
     public string PeerName => string.IsNullOrWhiteSpace(_remoteDeviceName) ? _connection.PeerName : _remoteDeviceName;
 
     public string ReceiveDirectory { get => _receiveDirectory; set => _receiveDirectory = value; }
-    public string OutgoingDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Cache", "Outgoing");
+    public string OutgoingDirectory { get; set; } = Path.Combine(BlueLink.Storage.AppStoragePaths.UserDirectory, "Cache", "Outgoing");
     public long MaxReceiveBytes
     {
         get => Interlocked.Read(ref _maxReceiveBytes);
@@ -723,8 +723,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         var safeName = Path.GetFileName(offer.Name);
         var normalized = offer with { Name = safeName };
         var root = offer.Role == AttachmentRole.ImagePreview
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "BlueLink", "Cache", "Previews")
+            ? Path.Combine(BlueLink.Storage.AppStoragePaths.UserDirectory, "Cache", "Previews")
             : _receiveDirectory;
         var transfer = existing ?? (_mtpJobs.TryGetValue(offer.Id, out var queuedJob) ? queuedJob.Progress.Item : CreateIncomingItem(offer, TransferStatus.Offered));
         transfer.FailureDetail = null;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
@@ -674,8 +674,7 @@ public partial class App : System.Windows.Application
             var directory = Application.Current is App { _startupSmokeDataRoot: { } testRoot }
                 ? Path.Combine(testRoot, "Logs")
                 : Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "BlueLink", "Logs");
+                BlueLink.Storage.AppStoragePaths.UserDirectory, "Logs");
             Directory.CreateDirectory(directory);
             File.AppendAllText(Path.Combine(directory, "windows-crash.log"),
                 $"[{DateTimeOffset.Now:O}] {failure}\n\n");

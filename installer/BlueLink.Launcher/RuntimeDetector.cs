@@ -6,6 +6,13 @@ namespace BlueLink.Launcher
 
     internal static class RuntimeDetector
     {
+        public static bool HasBundledDesktopRuntime()
+        {
+            var root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app");
+            return File.Exists(Path.Combine(root, "coreclr.dll")) && File.Exists(Path.Combine(root, "hostfxr.dll")) &&
+                File.Exists(Path.Combine(root, "PresentationFramework.dll"));
+        }
+
         public static bool IsDesktopRuntime8X64Installed()
         {
             try

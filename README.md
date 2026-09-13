@@ -71,7 +71,7 @@ scripts/           构建、检查与设备验收入口
 | Windows 客户端 | Windows、.NET 8 SDK；客户端使用 WPF-UI 4.3 |
 | Windows 安装器 | 上述环境及项目声明的 WiX / .NET Framework 引用程序集依赖 |
 
-设置 `JAVA_HOME` 和 `ANDROID_SDK_ROOT`；可用 `BLUELINK_GRADLE` 指定 Gradle 可执行文件。部分 Windows 发布脚本仍使用开发机上的 `D:\Tool\dotnet-sdk-8\dotnet.exe`，在其他机器运行前需要调整路径；Review 脚本支持 `-DotnetPath` 参数。
+设置 `JAVA_HOME` 和 `ANDROID_SDK_ROOT`；可用 `BLUELINK_GRADLE` 指定 Gradle 可执行文件。部分 Windows 发布脚本仍使用开发机上的 `D:\Tool\dotnet-sdk-8\dotnet.exe`，在其他机器运行前需要调整路径；多架构打包脚本与 Review 脚本支持 `-DotnetPath` 参数。
 
 ### 协议与静态检查
 
@@ -90,40 +90,64 @@ scripts/           构建、检查与设备验收入口
 .\scripts\build-android.ps1
 ```
 
-脚本执行协议测试、应用单元测试、Debug lint，并构建 Debug 和未签名 Release APK。输出到 `artifacts/android/`：
+脚本执行协议测试、应用单元测试、Debug lint，并构建 Debug 和未签名 Release APK。默认分别生成 `armeabi-v7a`（ARM32）、`arm64-v8a`（ARM64）、`x86`、`x86_64` 及通用 APK，输出到 `artifacts/android/`：
 
-- `BlueLink-<VERSION>-android-debug.apk`
-- `BlueLink-<VERSION>-android-release-unsigned.apk`
+- `BlueLink-<VERSION>-android-<ABI>-debug.apk`
+- `BlueLink-<VERSION>-android-<ABI>-release-unsigned.apk`
+- 通用包使用 `universal`，同时保留不含 ABI 的旧文件名作为兼容副本。
+- `build-manifest.json` 记录每个 APK 实际包含的原生 ABI；`SHA256SUMS.txt` 提供校验值。
+
+只构建指定架构时可用 `-Architecture arm64-v8a` 或 `-Architecture x86_64`；`-Offline` 使用本地依赖缓存，`-SkipTests` 跳过测试与 Debug lint。直接从 IDE/Gradle 构建时沿用原有单个通用 APK；按 ABI 拆包需传入 `-PbluelinkSplitApks=true`，可用 `-PbluelinkAbis=arm64-v8a,x86_64` 指定范围。
 
 Debug APK 可用于开发验收；未签名 Release APK 需要签名后才能安装。覆盖已有 Debug 安装时需使用同一签名，可通过 `BLUELINK_DEBUG_KEYSTORE` 指定本地调试密钥文件，密钥不应提交到仓库。
 
-### Windows 客户端
+### Windows 客户端与多架构打包
+
+| 架构 | 客户端 | Review 安装包 | Portable 免安装包 |
+| --- | --- | --- | --- |
+| x86（32 位） | 原生 x86 | EXE / MSI | ZIP |
+| x64 | 原生 x64 | EXE / MSI | ZIP |
+| ARM64 | 原生 ARM64 | EXE / MSI | ZIP |
+
+Windows ARM 指 ARM64，不包含 ARM32。ARM64 安装包目前使用 x86 的 .NET Framework 安装引导界面，通过系统兼容层运行；客户端和内置 .NET 8 运行库为原生 ARM64。
 
 ```powershell
-.\scripts\build-windows.ps1
+# 只编译客户端；Architecture 默认为 x64，也可传 x86、arm64 或 all。
+.\scripts\build-windows.ps1 -Architecture all
+
+# 一次生成三种架构的 Review EXE/MSI 与 portable ZIP。
+.\scripts\build-windows-packages.ps1 -Architecture all
+
+# 只生成某种架构的 portable 包。
+.\scripts\build-windows-packages.ps1 -Architecture arm64 -Format Portable
 ```
 
-Release 输出位于 `windows/BlueLink.App/bin/Release/net8.0-windows10.0.19041.0/`。客户端采用框架依赖部署，需要兼容的 .NET 8 Desktop Runtime；它不是内置运行库的单文件程序。
+普通编译输出位于 `windows/BlueLink.App/bin/Release/net8.0-windows10.0.19041.0/win-<架构>/`，需要对应架构的 .NET 8 Desktop Runtime。打包脚本则使用自包含部署，将对应架构的运行库一并打入包中，无需另外安装 .NET 8。
 
-### Windows Review 安装包
+打包脚本会恢复依赖、校验客户端和关键运行库的 PE 架构，对当前主机可运行的架构执行 SQLite/portable/更新回归；安装包还会执行目录归属测试，并解包核对 MSI 平台、Burn 内嵌架构和载荷哈希。可用 `-SkipTests` 跳过原生运行回归，结构与包内容校验仍保留；可用 `-DotnetPath` 指定 SDK、`-Offline` 使用已缓存的依赖，或用 `-Format Installer` / `Portable` / `Both` 选择产物。输出到新的 `artifacts/windows/multiarch-<时间戳>/`，避免覆盖旧产物：
 
-Review 包用于开发验收，具有独立安装身份，不作为正式签名发布包。该脚本使用 `--no-restore`，首次运行前需恢复客户端和安装组件依赖：
+- `BlueLink-Review-<VERSION>-win-<架构>-Setup.exe`
+- `BlueLink-Review-<VERSION>-win-<架构>-Setup.msi`
+- `BlueLink-<VERSION>-win-<架构>-Portable.zip`
+- `build-manifest.json`、`SHA256SUMS.txt`
 
-```powershell
-$dotnetPath = (Get-Command dotnet -ErrorAction Stop).Source
-& $dotnetPath restore windows/BlueLink.App/BlueLink.App.csproj --configfile NuGet.config
-if ($LASTEXITCODE -ne 0) { throw "Client restore failed" }
-foreach ($component in @('Launcher', 'Uninstall', 'SetupUI', 'Installation.Tests', 'Package', 'Bundle')) {
-    $extension = if ($component -in @('Package', 'Bundle')) { 'wixproj' } else { 'csproj' }
-    & $dotnetPath restore "installer/BlueLink.$component/BlueLink.$component.$extension" --configfile NuGet.config
-    if ($LASTEXITCODE -ne 0) { throw "Restore failed: $component" }
-}
-.\scripts\build-windows-review.ps1 -DotnetPath $dotnetPath -CompileInstaller
-```
+原有 `scripts/build-windows-review.ps1` 已接入同一流程，可继续使用 `-CompileInstaller`，并支持 `-Architecture` 选择架构。`scripts/build-windows.ps1 -Package Both` 也可直接进入打包流程。
 
-默认输出目录为 `artifacts/windows/review-<时间戳>/`，包含 `BlueLink-Review-DO-NOT-DISTRIBUTE.exe`、对应 MSI 和 `BlueLink-Windows-review.zip`。Review 包未签名、不内置 .NET 运行库；脚本生成产物，不自动执行安装。
+这些包是未签名的开发验收产物。Review 安装包共用独立于正式版的安装身份，不用于与其他架构的 Review 版并排安装。脚本只生成产物，不自动执行安装。
 
-正式发布入口为 `scripts/build-windows-release.ps1`，产物位于 `artifacts/windows/win-x64/` 和 `artifacts/installer/BlueLink-Setup-<VERSION>-win-x64.exe`。该流程含运行库获取及 UI 验收；正式版本受 `installer/release-payload-lock.json` 约束，同版本内容变化时必须升级 `VERSION`，不能覆盖已锁定的发布内容。正式发布还需完成签名及安装/升级/卸载验收。
+### Portable 数据与更新
+
+将 ZIP 解压到可写目录，直接运行 `BlueLink.exe`。`BlueLink.portable` 标记使数据库、设备身份、设置、缓存和日志保存在程序目录内的 `Data`，默认接收文件放入 `Download`。
+
+退出程序后可以整体移动该目录。下次启动会修正数据库中原程序目录内的下载、附件、预览和传输路径；用户选择的外部目录保持原路径，外部文件需自行搬移。跨 Windows 账户或电脑时，身份私钥仍受 Windows 用户保护，需要重新核验设备信任。
+
+更新时退出程序，用同架构的 portable 包更新程序文件，并保留 `BlueLink.portable`、`Data` 和 `Download`。Portable 模式不会自动运行 EXE 安装包更新，以免转换成安装版或覆盖错误目录。
+
+### 正式发布
+
+原有 `scripts/build-windows-release.ps1` 保留 x64 的框架依赖正式发布流程，与新的多架构 Review/portable 构建分开。产物位于 `artifacts/windows/win-x64/` 和 `artifacts/installer/BlueLink-Setup-<VERSION>-win-x64.exe`；流程含运行库获取及 UI 验收。
+
+正式版本受 `installer/release-payload-lock.json` 约束，同版本内容变化时必须升级 `VERSION`，不能覆盖已锁定的发布内容。多架构产物完成构建不等于正式发布完成，分架构的签名、实际安装/升级/卸载及目标硬件验收仍须分别完成。
 
 ## 当前验证边界
 

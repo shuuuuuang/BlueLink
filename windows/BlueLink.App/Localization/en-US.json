@@ -890,5 +890,7 @@
   "请连接设备并确认原文件仍可读取，然后重试。": "Connect the device and check that the original file is still readable, then retry.",
   "正在查找…": "Searching…",
   "扫描附近设备": "Scan nearby devices",
-  "启动扫描已关闭": "Startup scanning is off"
+  "启动扫描已关闭": "Startup scanning is off",
+  "免安装版本请下载对应架构的 Portable ZIP，退出程序后解压更新并保留 Data 和 Download 文件夹。": "For the portable edition, download the Portable ZIP for your architecture. Exit BlueLink before extracting the update and keep the Data and Download folders.",
+  "此版本尚未提供当前架构的 Windows 安装包。": "This release does not provide a Windows installer for the current architecture."
 }

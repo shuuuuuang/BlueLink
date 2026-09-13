@@ -66,6 +66,19 @@ internal static class Program
             Check(footer.TranslatePoint(new Point(footer.ActualWidth, 0), root).X <= navigation.TranslatePoint(new Point(0, 0), root).X ||
                 footer.TranslatePoint(new Point(0, footer.ActualHeight), root).Y <= navigation.TranslatePoint(new Point(0, 0), root).Y,
                 "compact welcome version information does not overlap navigation buttons");
+            foreach (var architecture in new[] { "x86", "x64", "arm64" })
+            {
+                setup.SetTargetArchitecture(architecture);
+                setup.SetDisplayVersion("0.2.17");
+                Capture(setup, root, output, "setup-architecture-" + architecture);
+                var text = (TextBlock)setup.FindName("FooterInfoText");
+                var peer = new System.Windows.Automation.Peers.TextBlockAutomationPeer(text);
+                Check(peer.GetName().EndsWith(architecture, StringComparison.Ordinal), "installer automation exposes target architecture: " + architecture);
+                Check(text.TranslatePoint(new Point(text.ActualWidth, 0), root).X <= navigation.TranslatePoint(new Point(0, 0), root).X ||
+                    text.TranslatePoint(new Point(0, text.ActualHeight), root).Y <= navigation.TranslatePoint(new Point(0, 0), root).Y,
+                    "installer architecture footer does not overlap navigation: " + architecture);
+            }
+            setup.SetTargetArchitecture("x64"); setup.SetDisplayVersion("0.2.17");
             setup.ShowOverwriteContext(); Capture(setup, root, output, "setup-location");
             setup.ShowLocationError("QA 目标位置不可用"); Capture(setup, root, output, "setup-location-error");
             Check(!((Button)setup.FindName("NextButton")).IsEnabled, "invalid location prevents installation");

@@ -68,8 +68,8 @@ internal static partial class DesktopAcceptance
                 {
                     tag_name = "v" + Version, draft = false, prerelease = false,
                     body = "QA 本地验收样本：用于核对下载、取消和重试界面，不会连接发布服务器或启动安装。",
-                    assets = new[] { new { name = $"BlueLink-Setup-{Version}-win-x64.exe",
-                        browser_download_url = $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/BlueLink-Setup-{Version}-win-x64.exe",
+                    assets = new[] { new { name = $"BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
+                        browser_download_url = $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
                         size = Payload.Length, digest = "sha256:" + Convert.ToHexString(SHA256.HashData(Payload)) } }
                 })) };
             }

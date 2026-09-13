@@ -27,6 +27,7 @@ namespace BlueLink.Shared
             var executable = Process.GetCurrentProcess().MainModule?.FileName;
             var folder = Path.GetDirectoryName(executable) ?? AppDomain.CurrentDomain.BaseDirectory;
             var directory = new DirectoryInfo(Path.GetFullPath(folder));
+            if (File.Exists(Path.Combine(directory.FullName, "BlueLink.portable"))) return directory.FullName;
             return directory.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && directory.Parent != null
                 ? directory.Parent.FullName
                 : directory.FullName;

@@ -104,8 +104,7 @@ public sealed class IdentityStore
 
     public IdentityStore(string? dataRoot = null)
     {
-        var directory = dataRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink");
+        var directory = dataRoot ?? BlueLink.Storage.AppStoragePaths.UserDirectory;
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "identity.json");
         _data = LoadStoreData(directory);

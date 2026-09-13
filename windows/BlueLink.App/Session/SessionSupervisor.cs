@@ -37,9 +37,9 @@ public sealed class SessionSupervisor : IAsyncDisposable
             value.Phase == ConnectionPhase.Connected && value.IdentityHint is not null).Select(value => value.IdentityHint!).Distinct().ToArray();
     }
     public string LocalDeviceName { get; set; } = "";
-    public string OutgoingDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Cache", "Outgoing");
+    public string OutgoingDirectory { get; set; } = Path.Combine(BlueLink.Storage.AppStoragePaths.UserDirectory, "Cache", "Outgoing");
     private string _receiveDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Received");
+        BlueLink.Storage.AppStoragePaths.UserDirectory, "Received");
     private long _maxReceiveBytes = 500L * 1024 * 1024;
     private bool _autoAcceptFiles = true;
     public string ReceiveDirectory

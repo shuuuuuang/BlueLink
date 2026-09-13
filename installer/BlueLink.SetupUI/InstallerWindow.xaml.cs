@@ -99,11 +99,14 @@ namespace BlueLink.SetupUI
             });
         }
 
+        private string targetArchitecture = "x64";
+        public void SetTargetArchitecture(string value) { targetArchitecture = value == "x86" || value == "arm64" ? value : "x64"; }
+
         public void SetDisplayVersion(string version)
         {
             var displayVersion = InstallerExecutionPolicy.GetDisplayVersion(version);
             this.Dispatcher.Invoke(() =>
-                this.FooterInfoText.Text = "版本 " + displayVersion + "  ·  Windows 10/11 x64");
+                this.FooterInfoText.Text = "版本 " + displayVersion + "  ·  Windows 10/11 " + targetArchitecture);
         }
 
         public void ShowFreshInstall()

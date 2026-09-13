@@ -98,8 +98,8 @@ internal sealed class UpdateTestSource : HttpMessageHandler
     public byte[] Metadata(string mode = "normal") => JsonSerializer.SerializeToUtf8Bytes(new
     {
         tag_name = "v" + Version, draft = mode == "draft", prerelease = mode == "prerelease", body = "QA 更新说明：实际下载与校验状态。",
-        assets = new[] { new { name = mode == "missing-asset" ? "Android.apk" : $"BlueLink-Setup-{Version}-win-x64.exe",
-            browser_download_url = mode == "foreign-url" ? "https://example.com/installer.exe" : $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/BlueLink-Setup-{Version}-win-x64.exe",
+        assets = new[] { new { name = mode == "missing-asset" ? "Android.apk" : $"BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
+            browser_download_url = mode == "foreign-url" ? "https://example.com/installer.exe" : $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
             size = mode == "huge" ? UpdateService.MaximumPackageBytes + 1 : Payload.Length,
             digest = mode == "missing-digest" ? null : "sha256:" + Convert.ToHexString(SHA256.HashData(Payload)) } }
     });

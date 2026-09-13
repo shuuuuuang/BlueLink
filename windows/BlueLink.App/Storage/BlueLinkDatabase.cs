@@ -15,11 +15,13 @@ public sealed partial class BlueLinkDatabase
     public string DatabasePath { get; }
     public string DefaultDownloadDirectory { get; }
 
-    public BlueLinkDatabase(string? dataRoot = null, string? installRoot = null)
+    private readonly string? _portableRoot;
+
+    public BlueLinkDatabase(string? dataRoot = null, string? installRoot = null, bool portable = false)
     {
-        dataRoot ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "BlueLink", "Data");
+        _portableRoot = portable || (dataRoot is null && AppStoragePaths.IsPortable)
+            ? Path.GetFullPath(installRoot ?? AppStoragePaths.ProgramDirectory) : null;
+        dataRoot ??= BlueLink.Storage.AppStoragePaths.DatabaseDirectory;
         Directory.CreateDirectory(dataRoot);
         DatabasePath = Path.Combine(dataRoot, "bluelink.db");
         DefaultDownloadDirectory = Path.Combine(installRoot ?? AppContext.BaseDirectory, "Download");
@@ -35,6 +37,7 @@ public sealed partial class BlueLinkDatabase
         ApplyIdentityAssociations(connection, identityStore);
         connection.Execute($"PRAGMA user_version={SchemaVersion};");
         EnsureDefaultSettings(connection);
+        if (_portableRoot is not null) RelocatePortablePaths(connection, _portableRoot);
         ImportLegacyTrust(connection, identityStore.TrustedIdentities);
     }, token);
 
@@ -331,6 +334,7 @@ public sealed partial class BlueLinkDatabase
             connection.Execute("UPDATE peer SET trust_state='Unknown', identity_public_key=NULL WHERE trust_state NOT IN ('Retired','Removed');");
             connection.Execute("DELETE FROM app_setting;");
             EnsureDefaultSettings(connection);
+        if (_portableRoot is not null) RelocatePortablePaths(connection, _portableRoot);
         });
     }, token);
 

@@ -69,7 +69,7 @@ public static class FileInteractionService
         $"状态：{attachment.StateText}{Environment.NewLine}" +
         $"本地位置：{attachment.LocalPath ?? "尚未保存"}";
 
-    public static string ThumbnailDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Cache", "Thumbnails");
+    public static string ThumbnailDirectory { get; set; } = Path.Combine(BlueLink.Storage.AppStoragePaths.UserDirectory, "Cache", "Thumbnails");
 
     public static ImageSource? LoadThumbnail(ChatAttachment attachment, int decodeWidth = 320)
     {

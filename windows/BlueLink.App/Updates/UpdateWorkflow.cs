@@ -109,8 +109,10 @@ public sealed class UpdateWorkflow(UpdateService service) : ObservableObject, ID
         Stage = UpdateStage.Installing; Error = ""; Notify();
         try
         {
+            if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(UpdateService.PortableUpdateNotice);
             if (!canInstall()) throw new InvalidOperationException("请先完成或取消正在进行的文件传输。");
             await using var lease = await service.AcquireVerifiedPackageAsync(Package, _cancellation!.Token);
+            if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(UpdateService.PortableUpdateNotice);
             if (!canInstall()) throw new InvalidOperationException("请先完成或取消正在进行的文件传输。");
             _cancellation.Token.ThrowIfCancellationRequested();
             if (launch is null)

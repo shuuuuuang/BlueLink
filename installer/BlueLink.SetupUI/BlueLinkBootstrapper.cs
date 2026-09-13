@@ -110,6 +110,7 @@ namespace BlueLink.SetupUI
             this.progressWatchdog.Tick += this.OnProgressWatchdog;
             this.window = new InstallerWindow();
             this.window.InstallDirectoryValidator = this.ValidateInstallDirectory;
+            this.window.SetTargetArchitecture(this.GetString("TargetArchitecture", "x64"));
             this.window.SetDisplayVersion(this.displayProductVersion);
             this.window.SetLogPath(GetString("WixBundleLog", String.Empty));
             this.window.SetInstallFolder(this.installFolder);
@@ -174,7 +175,7 @@ namespace BlueLink.SetupUI
 
             this.runtimeVersion = this.GetString("DesktopRuntimePackageVersion", "8.0.x");
             this.runtimeSize = this.GetString("DesktopRuntimePackageSize", "读取实际包大小");
-            this.runtimeAvailable = !String.IsNullOrWhiteSpace(this.GetString("DesktopRuntime8Version", String.Empty));
+            this.runtimeAvailable = this.GetNumeric("BundledDesktopRuntime", 0) != 0 || !String.IsNullOrWhiteSpace(this.GetString("DesktopRuntime8Version", String.Empty));
             if (runtimeJustInstalled && runtimeAvailable && command.Display == Display.Full) { window.ShowRuntimeProgress("completed"); return; }
 
             var snapshotPath = this.GetString("SetupSnapshotPath", String.Empty);
