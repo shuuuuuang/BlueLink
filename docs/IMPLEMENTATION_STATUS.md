@@ -4,7 +4,7 @@
 
 - 新增标签触发和手动触发工作流：三种 Windows 架构、Android 四 ABI + 通用包，14 个安装附件及统一清单/哈希。
 - Android 正式密钥保存在仓库外，GitHub Secrets 提供临时签名输入；本地五个 Release APK 已通过 apksigner 签名/验证与 zipalign 校验。
-- 发布附件门禁 12 项回归、PowerShell 语法、actionlint 和现有版本/UI/安装器契约已通过；线上完整流水线与发布结果待本次标签运行核对。
+- 发布附件门禁 12 项回归、PowerShell 语法、actionlint 和现有版本/UI/安装器契约已通过；GitHub Actions 首次流水线 [34756587487](https://github.com/shuuuuuang/BlueLink/actions/runs/34756587487) 全部成功，Android 冷构建 9 分 14 秒，五 APK 签名/对齐通过；[v0.2.17-preview.1](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.17-preview.1) 已公开。发布后独立核对 16 附件（14 安装包 + 清单 + SHA256）、大小/哈希、源码提交 04977ed 及正式签名指纹一致。
 - 当前仅发布 preview 标签，Windows 无 Authenticode 签名、Review 安装身份和此前实机/完整安装矩阵限制保持明确。
 
 ## 2026-09-13：多架构构建与 Windows Portable
