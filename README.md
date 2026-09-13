@@ -200,3 +200,8 @@ GitHub CI 使用 `NuGet.CI.Config` 和官方 Maven 仓库恢复依赖；本地�
 双端已完成多轮协议、单元测试、界面及指定手机的实际传输验收，但多机/Hub、其他手机型号、长期运行和完整发布矩阵仍需继续验证。近期 Windows 完整 UI 回归存在剪贴板或前台焦点干扰；Review 包完整性检查不能替代实际安装验收。
 
 具体能力、限制和各次验证结果见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。构建产物、验收输出和本地工作文档不纳入源码仓库。
+
+## 许可证
+
+BlueLink 原创代码采用 [MIT License](LICENSE)，Copyright (c) 2026 shuuuuuang。
+第三方依赖及素材保留各自的许可证和版权声明。
