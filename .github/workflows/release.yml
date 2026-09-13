@@ -1,0 +1,193 @@
+name: Publish preview release
+
+on:
+  push:
+    tags: ['v*-preview.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing preview tag, e.g. v0.2.17-preview.1'
+        required: true
+        type: string
+      draft:
+        description: 'Keep the completed release as a draft'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate preview tag and source
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          python scripts/test-release-assets.py
+          python scripts/prepare-release.py validate-tag --tag "$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor HEAD origin/main
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: validate
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x86, x64, arm64]
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify repository contracts
+        run: |
+          Copy-Item -LiteralPath NuGet.CI.Config -Destination NuGet.Config -Force
+          ./scripts/verify-version.ps1
+          ./scripts/verify-ui-contract.ps1
+          ./scripts/verify-installer-contract.ps1
+      - name: Build and verify packages
+        env:
+          BUILD_ARCH: ${{ matrix.architecture }}
+        run: |
+          ./scripts/build-windows-packages.ps1 -Architecture $env:BUILD_ARCH -Format Both -NuGetConfig ./NuGet.CI.Config -OutputDirectory (Join-Path $PWD 'artifacts/packages')
+      - name: Upload verified packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-${{ matrix.architecture }}
+          path: |
+            artifacts/packages/*.exe
+            artifacts/packages/*.msi
+            artifacts/packages/*.zip
+            artifacts/packages/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: diagnostics-windows-${{ matrix.architecture }}
+          path: artifacts/packages/**/*.log
+          retention-days: 7
+
+  android:
+    needs: validate
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: '8.5'
+          cache-read-only: true
+      - name: Install Android SDK packages
+        run: |
+          $sdkmanager = Join-Path $env:ANDROID_HOME 'cmdline-tools/latest/bin/sdkmanager.bat'
+          & $sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Android SDK setup failed.' }
+      - name: Test and build all ABIs
+        run: ./scripts/build-android.ps1 -Architecture all
+      - name: Sign and verify release APKs
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          $keystore = Join-Path $env:RUNNER_TEMP 'bluelink-release.jks'
+          try {
+            if (-not $env:ANDROID_KEYSTORE_BASE64) { throw 'Configure the four ANDROID signing Secrets documented in README.' }
+            [IO.File]::WriteAllBytes($keystore, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+            ./scripts/sign-android-packages.ps1 -KeystorePath $keystore -InputDirectory ./artifacts/android -OutputDirectory ./artifacts/android-signed
+          } finally {
+            if (Test-Path -LiteralPath $keystore) { Remove-Item -LiteralPath $keystore -Force }
+          }
+      - name: Upload signed APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android
+          path: |
+            artifacts/android-signed/*.apk
+            artifacts/android-signed/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: diagnostics-android
+          path: |
+            android/app/build/reports/
+            protocol-core/build/reports/
+          retention-days: 7
+
+  release:
+    needs: [validate, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts/download
+      - name: Validate complete release assets
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          python scripts/prepare-release.py collect --tag "$RELEASE_TAG" --commit "$SOURCE_COMMIT" --input artifacts/download --output artifacts/release
+      - name: Create draft, upload assets, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.validate.outputs.commit }}
+          KEEP_DRAFT: ${{ inputs.draft || false }}
+        run: |
+          # Create fails if a release exists: retries never replace already published assets.
+          gh release create "$RELEASE_TAG" --verify-tag --target "$SOURCE_COMMIT" --draft --prerelease --latest=false --title "BlueLink $RELEASE_TAG 预览版" --notes-file artifacts/release/RELEASE_NOTES.md
+          find artifacts/release -maxdepth 1 -type f ! -name RELEASE_NOTES.md -print0 | xargs -0 gh release upload "$RELEASE_TAG"
+          if [ "$KEEP_DRAFT" != "true" ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          fi
+          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

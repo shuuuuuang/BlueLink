@@ -1,5 +1,12 @@
 # BlueLink 实现状态
 
+## 2026-09-13 GitHub 预览版自动发布
+
+- 新增标签触发和手动触发工作流：三种 Windows 架构、Android 四 ABI + 通用包，14 个安装附件及统一清单/哈希。
+- Android 正式密钥保存在仓库外，GitHub Secrets 提供临时签名输入；本地五个 Release APK 已通过 apksigner 签名/验证与 zipalign 校验。
+- 发布附件门禁 12 项回归、PowerShell 语法、actionlint 和现有版本/UI/安装器契约已通过；线上完整流水线与发布结果待本次标签运行核对。
+- 当前仅发布 preview 标签，Windows 无 Authenticode 签名、Review 安装身份和此前实机/完整安装矩阵限制保持明确。
+
 ## 2026-09-13：多架构构建与 Windows Portable
 
 Windows 构建入口支持 x86、x64、ARM64，统一生成内置 .NET 8 运行库的 Review EXE/MSI 和 Portable ZIP。旧 Review 入口委托同一流程；正式 x64 发布锁和版本号未改。WiX 每个架构重建，并在发布产物前解包验证 MSI 平台/位数、Burn 目标架构、产品码、载荷指纹、内嵌 MSI 和恢复清单，避免参数切换后复用上一架构的缓存产物。ARM64 客户端/运行库为原生 ARM64，安装引导界面暂用 x86 .NET Framework 兼容层。

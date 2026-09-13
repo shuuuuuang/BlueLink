@@ -1,6 +1,8 @@
 pluginManagement {
     repositories {
-        maven("https://repo.huaweicloud.com/repository/maven/")
+        if (System.getenv("CI") != "true") {
+            maven("https://repo.huaweicloud.com/repository/maven/")
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -9,7 +11,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven("https://repo.huaweicloud.com/repository/maven/")
+        if (System.getenv("CI") != "true") {
+            maven("https://repo.huaweicloud.com/repository/maven/")
+        }
         google()
         mavenCentral()
     }

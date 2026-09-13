@@ -149,6 +149,35 @@ Windows ARM 指 ARM64，不包含 ARM32。ARM64 安装包目前使用 x86 的 .N
 
 正式版本受 `installer/release-payload-lock.json` 约束，同版本内容变化时必须升级 `VERSION`，不能覆盖已锁定的发布内容。多架构产物完成构建不等于正式发布完成，分架构的签名、实际安装/升级/卸载及目标硬件验收仍须分别完成。
 
+### GitHub Releases 自动发布
+
+仓库的 `.github/workflows/release.yml` 在推送 `v<VERSION>-preview.N` 标签时执行自动发布，例如 `v0.2.17-preview.1`。当前多架构安装器仍为 Review 身份，因此此工作流只发布预览版；正式稳定发布继续遵守上面的发布锁和验收要求。
+
+```powershell
+git push origin main
+git tag -a v0.2.17-preview.1 -m "BlueLink 0.2.17 preview 1"
+git push origin v0.2.17-preview.1
+```
+
+标签必须与根目录 `VERSION` 一致，指向远程 `main` 历史中的提交。每次发布使用新的标签；升级 Android 版本时还须递增 `android/app/build.gradle.kts` 的 `versionCode`。Actions 页面也可手动运行 **Publish preview release**，填写已有标签；手动运行默认保留草稿。
+
+工作流使用 Windows runner 分别构建 x86/x64/ARM64，并完成 Android 四 ABI 和通用包的测试、构建、签名。上传前检查全部 14 个安装附件的文件名、架构、版本、哈希和 Android 签名指纹，再生成 `release-manifest.json` 与 `SHA256SUMS.txt`。先上传到草稿，全部上传成功才公开。上传失败会保留草稿；排除故障并删除失败草稿后可以重跑，流程不会替换已发布版本。
+
+Android 签名需要在 **Settings → Secrets and variables → Actions** 配置以下 repository Secrets：
+
+| Secret | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 正式 JKS 密钥库的 Base64 内容 |
+| `ANDROID_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 应用签名别名 |
+| `ANDROID_KEY_PASSWORD` | 私钥密码 |
+
+密钥和密码必须在仓库外备份，未来版本持续使用同一密钥。CI 仅在签名步骤将 JKS 写入临时目录，结束后删除；Release 不包含密钥、Debug APK 或 unsigned APK。正式密钥与 Debug 密钥不同，不能覆盖原有 Debug 安装。
+
+本地也可在设置三个密码/别名环境变量后，通过 `scripts/sign-android-packages.ps1 -KeystorePath <JKS路径> -InputDirectory <未签名产物目录> -OutputDirectory <新输出目录>` 签名；密码不要写进命令参数或源码。脚本校验原始 APK 哈希，执行 zipalign/apksigner，并检查五个 APK 的证书一致。
+
+GitHub CI 使用 `NuGet.CI.Config` 和官方 Maven 仓库恢复依赖；本地沿用原镜像配置。工作流固定 Actions 完整提交 SHA，构建任务仅有源码读取权限，只有最终上传任务拥有 Release 写入权限。Windows 当前没有 Authenticode 签名，ARM64 实机与完整安装矩阵尚未验证，发布说明会明确这些限制。
+
 ## 当前验证边界
 
 双端已完成多轮协议、单元测试、界面及指定手机的实际传输验收，但多机/Hub、其他手机型号、长期运行和完整发布矩阵仍需继续验证。近期 Windows 完整 UI 回归存在剪贴板或前台焦点干扰；Review 包完整性检查不能替代实际安装验收。

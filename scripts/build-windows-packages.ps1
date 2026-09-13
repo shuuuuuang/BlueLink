@@ -1,8 +1,9 @@
-﻿param(
+param(
     [ValidateSet('x86','x64','arm64','all')][string[]]$Architecture = @('all'),
     [ValidateSet('Installer','Portable','Both')][string]$Format = 'Both',
     [string]$DotnetPath = '',
     [string]$OutputDirectory = '',
+    [string]$NuGetConfig = (Join-Path $PSScriptRoot '../NuGet.Config'),
     [switch]$Offline,
     [switch]$SkipTests
 )
@@ -31,7 +32,7 @@ function Invoke-Dotnet([string[]]$Arguments, [string]$LogPath) {
     if ($LASTEXITCODE -ne 0) { throw "Build failed; see $LogPath" }
 }
 function Restore-Project([string]$Project, [string]$Rid, [string]$LogPath) {
-    $arguments = @('restore', $Project, '--configfile', (Join-Path $root 'NuGet.config'), '-p:NuGetAudit=false')
+    $arguments = @('restore', $Project, '--configfile', $NuGetConfig, '-p:NuGetAudit=false')
     if ($Rid) { $arguments += @('-r', $Rid) }
     if ($Offline) { $arguments += @('--ignore-failed-sources', '--source', $env:NUGET_PACKAGES) }
     Invoke-Dotnet $arguments $LogPath

@@ -38,3 +38,9 @@ __pycache__/
 /WORKLOG.md
 /PROJECT_ROADMAP.md
 /AGENTS.md
+
+# Release signing keys and credentials stay outside source control.
+*.jks
+*.keystore
+*.p12
+*.pfx
