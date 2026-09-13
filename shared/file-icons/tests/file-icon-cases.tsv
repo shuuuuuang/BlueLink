@@ -1,0 +1,47 @@
+name	mime	expected
+report.PDF	image/png	file-pdf-symbol
+说明.DOCX	application/octet-stream	file-word-symbol
+schema.sql	text/plain	file-sql-symbol
+readme.md		file-text
+photo.HEIC		file-image
+backup.tar.gz		file-archive
+main.java	text/plain	file-code
+main.py		file-code
+main.go		file-code
+main.js		file-code
+main.ts		file-code
+view.tsx		file-code
+view.vue		file-code
+settings.conf		file-config
+settings.config		file-config
+settings.yaml	text/plain	file-config
+settings.yml		file-config
+settings.properties		file-config
+settings.INI		file-config
+budget.xlsx		file-table
+slides.pptx		file-presentation
+sound.flac		file-audio
+clip.mkv		file-video
+app.msix		package
+README		file
+font.WOFF2		file-font
+disk.qcow2		file-disk-image
+machine.ova		file-disk-image
+machine.OVF		file-disk-image
+disk.vdi		file-disk-image
+disk.qcow		file-disk-image
+art.psd	image/vnd.adobe.photoshop	file-design-source
+cube.glb		file-3d
+drawing.dwg		file-3d
+cert.P12		file-certificate
+image	IMAGE/PNG; charset=utf-8	file-image
+unknown.xyz	audio/ogg	file-audio
+README	text/plain	file-text
+design	image/vnd.adobe.photoshop	file-design-source
+type	font/woff2	file-font
+model	model/gltf+json	file-3d
+D:\parent.pdf\README		file
+/folder.png/file.unknown		file
+		file
+opaque.xyz	application/octet-stream	file
+.config		file-config

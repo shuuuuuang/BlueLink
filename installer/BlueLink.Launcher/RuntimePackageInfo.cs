@@ -1,3 +1,6 @@
+#if NET8_0_OR_GREATER
+#nullable disable
+#endif
 namespace BlueLink.Launcher
 {
     using System;

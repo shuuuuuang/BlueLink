@@ -36,6 +36,15 @@ namespace BlueLink.Installation.Tests
 
             var source = Path.GetFullPath(args[0]);
             var testRoot = Path.GetFullPath(args[1]);
+            var expectedBoundary = Path.Combine(Path.GetFullPath(Environment.CurrentDirectory), ".acceptance") + Path.DirectorySeparatorChar;
+            if (!testRoot.StartsWith(expectedBoundary, StringComparison.OrdinalIgnoreCase) ||
+                !Path.GetFileName(testRoot).StartsWith("install-ownership-", StringComparison.OrdinalIgnoreCase) ||
+                testRoot.Equals(source, StringComparison.OrdinalIgnoreCase) ||
+                source.StartsWith(testRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine("Installation tests require an isolated .acceptance/install-ownership-* directory.");
+                return 2;
+            }
             try
             {
                 if (!Directory.Exists(source)) throw new DirectoryNotFoundException(source);
@@ -52,6 +61,7 @@ namespace BlueLink.Installation.Tests
                 TestForeignContentIsRejected(source, testRoot);
                 TestUnsafeManifestIsRejected(source, testRoot);
                 TestIncompleteProductIsRejected(source, testRoot);
+                TestRegisteredRecovery(source, testRoot);
                 TestLegacySingleFile(source, testRoot);
                 TestUserDataOnly(testRoot);
                 TestInstallerExecutionPolicy();
@@ -165,6 +175,33 @@ namespace BlueLink.Installation.Tests
             var root = CreateFixture(source, Path.Combine(testRoot, "incomplete"));
             File.Delete(Path.Combine(root, "app", "BlueLink.exe"));
             AssertKind(root, InstallDirectoryKind.IncompleteProduct, "missing app executable");
+        }
+
+        private static void TestRegisteredRecovery(string source, string testRoot)
+        {
+            var root = CreateFixture(source, Path.Combine(testRoot, "registered-recovery"));
+            var manifest = Path.Combine(source, ".bluelink-install.json");
+            foreach (var file in new[] { "BlueLink.exe", "BlueLink.exe.config", "Uninstall.exe",
+                         "Uninstall.exe.config", ".bluelink-install.json" })
+                File.Delete(Path.Combine(root, file));
+            Assert(!InstallDirectoryOwnership.Inspect(root).IsInstallable, "unregistered partial install remains rejected");
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, null, manifest), "recovery requires MSI registration");
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root + "-other", manifest), "recovery rejects another registered path");
+            Assert(InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root + "\\", manifest), "exact MSI partial install can recover");
+            var download = Path.Combine(root, "Download", "keep.txt");
+            File.WriteAllText(download, "user data");
+            Assert(InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root, manifest) &&
+                File.ReadAllText(download) == "user data", "recovery validation preserves Download");
+            var foreign = Path.Combine(root, "bootstrap", "foreign.txt");
+            File.WriteAllText(foreign, "foreign");
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root, manifest), "registered recovery rejects foreign nested file");
+            File.Delete(foreign);
+            File.WriteAllText(Path.Combine(root, ".bluelink-install.json"), "invalid");
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root, manifest), "registered recovery does not bypass invalid local manifest");
+            File.Delete(Path.Combine(root, ".bluelink-install.json"));
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root, manifest + ".missing"), "recovery requires bundled manifest");
+            File.WriteAllText(Path.Combine(root, "app", "BlueLink.exe"), "foreign executable");
+            Assert(!InstallDirectoryOwnership.CanRecoverRegisteredInstall(root, root, manifest), "registered recovery rejects foreign app identity");
         }
 
         private static void TestLegacySingleFile(string source, string testRoot)

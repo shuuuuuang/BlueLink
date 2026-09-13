@@ -14,7 +14,6 @@ public partial class ImagePreviewWindow : FluentWindow
     private const double MinimumScale = 0.05;
     private const double MaximumScale = 8;
     private const double FitPadding = 28;
-    private readonly string _path;
     private readonly BitmapSource _bitmap;
     private bool _fitMode = true;
     private bool _panning;
@@ -25,15 +24,27 @@ public partial class ImagePreviewWindow : FluentWindow
     private double _angle;
     private Size _imageSize;
 
-    public ImagePreviewWindow(string path, string title)
+    private void PreviewRoot_SizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (PreviewTools is not null) PreviewTools.Tag = args.NewSize.Width < 900;
+    }
+
+    public ImagePreviewWindow(string path, string title) : this(path, title, null) { }
+
+    internal ImagePreviewWindow(string path, string title, string? preferencesDirectory)
     {
         InitializeComponent();
-        _path = Path.GetFullPath(path);
-        _bitmap = LoadImage(_path);
-        var fileName = Path.GetFileName(_path);
-        Title = $"{fileName} · 蓝联图片预览";
+        _ = new Appearance.WindowSizePersistence(this, "preview", preferencesDirectory);
+        var fullPath = Path.GetFullPath(path);
+        _bitmap = LoadImage(fullPath);
+        var fileName = string.IsNullOrWhiteSpace(title) ? Path.GetFileName(fullPath) : title;
+        Title = $"{fileName} · {Localization.Strings.Get("图片预览")}";
         TitleBarFileName.Text = fileName;
         TitleBarFileName.ToolTip = fileName;
+        var fileBytes = new FileInfo(fullPath).Length;
+        var displaySize = fileBytes < 1024 ? $"{fileBytes} B" : fileBytes < 1048576
+            ? $"{fileBytes / 1024d:0.#} KiB" : $"{fileBytes / 1048576d:0.##} MiB";
+        ImageInfoText.Text = $"{_bitmap.PixelWidth} × {_bitmap.PixelHeight} · {Path.GetExtension(fullPath).TrimStart('.').ToUpperInvariant()} · {displaySize}";
         PreviewImage.Source = _bitmap;
         NavigatorImage.Source = _bitmap;
         Loaded += (_, _) =>
@@ -54,6 +65,8 @@ public partial class ImagePreviewWindow : FluentWindow
             _bitmap.PixelWidth, _bitmap.PixelHeight, dpi);
         PreviewImage.Width = _imageSize.Width;
         PreviewImage.Height = _imageSize.Height;
+        PreviewImageBounds.Width = _imageSize.Width;
+        PreviewImageBounds.Height = _imageSize.Height;
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
@@ -70,6 +83,12 @@ public partial class ImagePreviewWindow : FluentWindow
     }
 
     private Size ViewportSize => new(ImageViewport.ActualWidth, ImageViewport.ActualHeight);
+
+    private void Close_Executed(object sender, ExecutedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        Close();
+    }
 
     private Size CurrentExtent =>
         ImagePreviewViewportMath.RotatedExtent(_imageSize, _angle, _scale);
@@ -150,12 +169,15 @@ public partial class ImagePreviewWindow : FluentWindow
         ImageTransform.Matrix = ImagePreviewViewportMath.CreateImageMatrix(
             _imageSize, _angle, _scale, ViewportSize, _offset);
         ZoomText.Text = $"{_scale * 100:0}%";
+        PreviewImageBounds.BorderThickness = new Thickness(.75 / _scale);
+        FitButton.Tag = _fitMode;
+        ActualSizeButton.Tag = !_fitMode && Math.Abs(_scale - 1) < .0001;
         UpdateNavigator();
     }
 
     private void ImageViewport_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (!IsLoaded) return;
+        if (_imageSize.Width <= 0) return;
         if (_fitMode) FitImage();
         else
         {
@@ -223,7 +245,8 @@ public partial class ImagePreviewWindow : FluentWindow
         var navigatorHeight = NavigatorCanvas.ActualHeight > 0
             ? NavigatorCanvas.ActualHeight
             : NavigatorCanvas.Height;
-        if (!IsLoaded || _imageSize.Width <= 0 || navigatorWidth <= 0 || navigatorHeight <= 0) return;
+        if (_imageSize.Width <= 0 || navigatorWidth <= 0 || navigatorHeight <= 0 ||
+            ViewportSize.Width <= 0 || ViewportSize.Height <= 0) return;
 
         var extent = CurrentExtent;
         var viewport = ViewportSize;
@@ -274,8 +297,6 @@ public partial class ImagePreviewWindow : FluentWindow
         ApplyViewState();
         UpdateLayout();
     }
-
-    private void Locate_Click(object sender, RoutedEventArgs e) => ShellFileLocator.OpenAndSelect(_path);
 
     private static BitmapImage LoadImage(string path)
     {

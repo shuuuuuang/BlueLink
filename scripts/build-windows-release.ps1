@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Configuration = 'Release',
     [switch]$SkipInstaller
 )
@@ -393,7 +393,7 @@ foreach ($page in @('welcome', 'location', 'runtime', 'progress', 'complete', 'u
 $overwriteSnapshot = Join-Path $acceptanceDir 'installer-overwrite-wpfui-uia.png'
 Invoke-OverwriteDialogAutomation $installer $overwriteSnapshot
 if (-not (Test-Path -LiteralPath $overwriteSnapshot) -or (Get-Item -LiteralPath $overwriteSnapshot).Length -lt 20000) {
-    throw 'Official WPF-UI overwrite MessageBox UI Automation smoke failed.'
+    throw 'Shared overwrite confirmation UI Automation smoke failed.'
 }
 
 [ordered]@{

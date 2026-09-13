@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_records">Local records</string>
+    <string name="privacy_save_messages">Save message history</string>
+    <string name="privacy_retention">Keep records for</string>
+    <plurals name="privacy_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="privacy_year">1 year</string>
+    <string name="privacy_forever">Forever</string>
+    <string name="privacy_clear_messages">Clear chat history</string>
+    <string name="privacy_clear_transfers">Clear transfer history</string>
+    <string name="privacy_identity">Device identity</string>
+    <string name="privacy_reset_identity">Reset this device identity</string>
+    <string name="privacy_diagnostics">Diagnostics</string>
+    <string name="privacy_export">Export diagnostic log</string>
+    <string name="privacy_note">Message and file records are stored locally by default.\nDeleting records keeps received files in Download.</string>
+    <string name="privacy_clear_messages_title">Clear all chat history</string>
+    <string name="privacy_clear_messages_question">Clear all chat history?</string>
+    <string name="privacy_clear_messages_note">Transfer records and received files will be kept.</string>
+    <string name="privacy_clear_transfers_title">Clear all transfer history</string>
+    <string name="privacy_clear_transfers_question">Clear all file transfer history?</string>
+    <string name="privacy_clear_transfers_note">Chat history and received files will be kept.</string>
+    <string name="privacy_clear">Clear</string>
+    <string name="privacy_remove_title">Remove all trust</string>
+    <string name="privacy_remove_question">Remove all trusted devices?</string>
+    <string name="privacy_remove_note">These devices will need pairing and authorization again.</string>
+    <string name="privacy_remove_confirm">Remove all</string>
+    <string name="privacy_reset_title">Reset device identity</string>
+    <string name="privacy_reset_question">Reset this device identity?</string>
+    <string name="privacy_reset_note">Paired devices will need verification and authorization again.</string>
+    <string name="privacy_reset_confirm">Reset</string>
+    <string name="privacy_done">Operation completed</string>
+    <string name="privacy_working">Working…</string>
+    <string name="privacy_failed">Operation incomplete</string>
+    <string name="privacy_failed_note">The operation could not be completed. Check available storage and try again. Received files will not be deleted.</string>
+</resources>

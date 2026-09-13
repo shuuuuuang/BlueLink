@@ -20,7 +20,8 @@
     <RuntimeSize Condition="'$(RuntimeSize)' == ''">读取实际包大小</RuntimeSize>
     <RuntimePerMachine Condition="'$(RuntimePerMachine)' == ''">yes</RuntimePerMachine>
     <IncludePrerequisites Condition="'$(IncludePrerequisites)' == ''">yes</IncludePrerequisites>
-    <DefineConstants>ProductVersion=$(ProductVersion);ProductCode=$(ProductCode);PayloadFingerprint=$(PayloadFingerprint);BundleName=$(BundleName);BundleUpgradeCode=$(BundleUpgradeCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleProviderKey=$(BundleProviderKey);ProductRegistryKey=$(ProductRegistryKey);MsiPath=$(MsiPath);BaOutput=$(BaOutput);IconPath=$(IconPath);RuntimePayload=$(RuntimePayload);RuntimeDownloadUrl=$(RuntimeDownloadUrl);RuntimeVersion=$(RuntimeVersion);RuntimeSize=$(RuntimeSize);RuntimePerMachine=$(RuntimePerMachine);IncludePrerequisites=$(IncludePrerequisites)</DefineConstants>
+    <ManifestPath Condition="'$(ManifestPath)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows\win-x64\.bluelink-install.json</ManifestPath>
+    <DefineConstants>ManifestPath=$(ManifestPath);ProductVersion=$(ProductVersion);ProductCode=$(ProductCode);PayloadFingerprint=$(PayloadFingerprint);BundleName=$(BundleName);BundleUpgradeCode=$(BundleUpgradeCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleProviderKey=$(BundleProviderKey);ProductRegistryKey=$(ProductRegistryKey);MsiPath=$(MsiPath);BaOutput=$(BaOutput);IconPath=$(IconPath);RuntimePayload=$(RuntimePayload);RuntimeDownloadUrl=$(RuntimeDownloadUrl);RuntimeVersion=$(RuntimeVersion);RuntimeSize=$(RuntimeSize);RuntimePerMachine=$(RuntimePerMachine);IncludePrerequisites=$(IncludePrerequisites)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.Bal.wixext" Version="4.0.6" />

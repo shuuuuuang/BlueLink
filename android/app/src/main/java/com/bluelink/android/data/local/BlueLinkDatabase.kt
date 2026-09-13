@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         PeerEntity::class,
+        PeerHintEntity::class,
         ConversationEntity::class,
         MessageEntity::class,
         AttachmentEntity::class,
@@ -19,11 +20,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TrustEntity::class,
         AppSettingEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class BlueLinkDatabase : RoomDatabase() {
     abstract fun peers(): PeerDao
+    abstract fun peerHints(): PeerHintDao
     abstract fun conversations(): ConversationDao
     abstract fun messages(): MessageDao
     abstract fun attachments(): AttachmentDao
@@ -41,7 +43,13 @@ abstract class BlueLinkDatabase : RoomDatabase() {
                 context.applicationContext,
                 BlueLinkDatabase::class.java,
                 "bluelink.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+        }
+
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS peer_hint (peerId TEXT NOT NULL, hint TEXT NOT NULL, PRIMARY KEY(peerId, hint), FOREIGN KEY(peerId) REFERENCES peer(peerId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {

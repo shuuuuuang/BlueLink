@@ -1,0 +1,19 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "assets": [
+    {
+      "nodeId": "1031:1662",
+      "file": "windows/BlueLink.App/Assets/Figma/usb-device.png",
+      "logicalSize": [
+        20,
+        20
+      ],
+      "pixelSize": [
+        60,
+        60
+      ],
+      "scale": 3,
+      "sha256": "AA58329F1D143C759E2219FDD9AF8D01F2F34EF72D1264BD4146E67D846BA7A0"
+    }
+  ]
+}

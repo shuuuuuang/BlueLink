@@ -3,45 +3,16 @@ namespace BlueLink.SetupUI
     using System;
     using System.IO;
     using System.Windows;
-    using System.Windows.Controls;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
     using System.Windows.Threading;
-    using System.Threading.Tasks;
-    using Wpf.Ui.Controls;
+    using BlueLink.Installation;
 
     internal static class InstallerPromptWindow
     {
         public static bool Confirm(Window owner, string title, string message, string autoCancelSnapshotPath = null)
         {
-            var overwrite = title.Equals("蓝联正在运行", StringComparison.Ordinal);
-            var dialog = new Wpf.Ui.Controls.MessageBox
-            {
-                Owner = owner,
-                Title = overwrite ? String.Empty : title,
-                Content = BuildContent(message, overwrite),
-                ShowTitle = !overwrite,
-                PrimaryButtonText = overwrite ? "取消" : "确认",
-                SecondaryButtonText = overwrite ? "关闭并继续安装" : String.Empty,
-                CloseButtonText = overwrite ? String.Empty : "取消",
-                PrimaryButtonAppearance = overwrite ? ControlAppearance.Secondary : ControlAppearance.Caution,
-                SecondaryButtonAppearance = overwrite ? ControlAppearance.Primary : ControlAppearance.Caution,
-                IsSecondaryButtonEnabled = overwrite,
-                IsCloseButtonEnabled = !overwrite,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Width = overwrite ? 600 : 560,
-                Height = overwrite ? 333 : 260,
-                MinWidth = 480,
-                MinHeight = 220
-            };
-            var officialStyle = Application.Current?.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style;
-            if (officialStyle == null)
-                throw new InvalidOperationException("WPF UI 官方 MessageBox 样式未加载。");
-            dialog.Style = officialStyle;
-            if (overwrite)
-            {
-                dialog.Loaded += (sender, args) => PrepareOverwriteVisuals(dialog);
-            }
+            var dialog = Create(owner, title, message);
             if (!String.IsNullOrWhiteSpace(autoCancelSnapshotPath))
             {
                 dialog.ContentRendered += (sender, args) =>
@@ -58,162 +29,14 @@ namespace BlueLink.SetupUI
                     timer.Start();
                 };
             }
-            var result = WaitForDialogResult(dialog.ShowDialogAsync(), dialog.Dispatcher);
-            return overwrite
-                ? result == Wpf.Ui.Controls.MessageBoxResult.Secondary
-                : result == Wpf.Ui.Controls.MessageBoxResult.Primary;
+            dialog.ShowDialog();
+            return dialog.Confirmed;
         }
 
-        private static Wpf.Ui.Controls.MessageBoxResult WaitForDialogResult(
-            Task<Wpf.Ui.Controls.MessageBoxResult> task, Dispatcher dispatcher)
-        {
-            while (!task.IsCompleted)
-            {
-                var frame = new DispatcherFrame();
-                task.ContinueWith(completed => dispatcher.BeginInvoke(
-                    new Action(() => frame.Continue = false)), TaskScheduler.Default);
-                Dispatcher.PushFrame(frame);
-            }
-            return task.GetAwaiter().GetResult();
-        }
-
-        private static FrameworkElement BuildContent(string message, bool overwrite)
-        {
-            if (!overwrite)
-            {
-                return new System.Windows.Controls.TextBlock
-                {
-                    Text = message,
-                    FontFamily = new FontFamily("Microsoft YaHei UI"),
-                    FontSize = 15,
-                    LineHeight = 24,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 4, 0, 0)
-                };
-            }
-
-            var content = new Grid { Margin = new Thickness(18, -35, 18, 0) };
-            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var heading = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 3, 0, 0)
-            };
-            heading.Children.Add(new Border
-            {
-                Width = 52,
-                Height = 52,
-                CornerRadius = new CornerRadius(26),
-                Background = new SolidColorBrush(Color.FromRgb(0xE7, 0xEF, 0xFF)),
-                Child = new SymbolIcon
-                {
-                    Symbol = SymbolRegular.Info24,
-                    FontSize = 26,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xF5))
-                }
-            });
-            heading.Children.Add(new System.Windows.Controls.TextBlock
-            {
-                Text = "蓝联正在运行",
-                FontFamily = new FontFamily("Microsoft YaHei UI"),
-                FontSize = 22,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x1B, 0x39)),
-                Margin = new Thickness(18, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            Grid.SetRow(heading, 0);
-            content.Children.Add(heading);
-
-            var body = new System.Windows.Controls.TextBlock
-            {
-                Text = "覆盖安装需要先关闭正在运行的蓝联。确认后，安装向导将关闭应用并继续安装。",
-                FontFamily = new FontFamily("Microsoft YaHei UI"),
-                FontSize = 15,
-                LineHeight = 24,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x20, 0x28, 0x36)),
-                Margin = new Thickness(0, 19, 0, 0)
-            };
-            Grid.SetRow(body, 1);
-            content.Children.Add(body);
-
-            var notice = new System.Windows.Controls.TextBlock
-            {
-                Text = "正在进行的聊天或文件传输将会中断。",
-                FontFamily = new FontFamily("Microsoft YaHei UI"),
-                FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x75, 0x81, 0x94)),
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 2, 0, 0)
-            };
-            Grid.SetRow(notice, 2);
-            content.Children.Add(notice);
-            return content;
-        }
-
-        private static void PrepareOverwriteVisuals(Wpf.Ui.Controls.MessageBox dialog)
-        {
-            dialog.ApplyTemplate();
-            // WPF UI 4.3 exposes ShowTitle, but its official net472 template does
-            // not consume that property.  Keep the official template and hide
-            // only the duplicated title presenter; the business heading remains
-            // in Content, matching the reviewed prototype.
-            var titlePresenter = dialog.Template?.FindName("Title", dialog) as UIElement;
-            if (titlePresenter != null) titlePresenter.Visibility = Visibility.Collapsed;
-
-            Grid buttonGrid = null;
-            foreach (var button in FindVisualChildren<Wpf.Ui.Controls.Button>(dialog))
-            {
-                var text = button.Content as string;
-                if (String.Equals(text, "取消", StringComparison.Ordinal))
-                {
-                    buttonGrid = button.Parent as Grid;
-                }
-                else if (String.Equals(text, "关闭并继续安装", StringComparison.Ordinal))
-                {
-                    buttonGrid = button.Parent as Grid ?? buttonGrid;
-                }
-            }
-            if (buttonGrid != null && buttonGrid.ColumnDefinitions.Count >= 5)
-            {
-                buttonGrid.Width = 232;
-                buttonGrid.HorizontalAlignment = HorizontalAlignment.Right;
-                buttonGrid.ColumnDefinitions[0].Width = new GridLength(94);
-                buttonGrid.ColumnDefinitions[1].Width = new GridLength(16);
-                buttonGrid.ColumnDefinitions[2].Width = new GridLength(122);
-                buttonGrid.ColumnDefinitions[3].Width = new GridLength(0);
-                buttonGrid.ColumnDefinitions[4].Width = new GridLength(0);
-            }
-
-            dialog.MinWidth = 500;
-            dialog.MaxWidth = 500;
-            dialog.Width = 500;
-            dialog.Height = 263;
-            dialog.Padding = new Thickness(33, 20, 33, 20);
-            dialog.UpdateLayout();
-            var ownerWidth = dialog.Owner.ActualWidth > 0 ? dialog.Owner.ActualWidth : dialog.Owner.Width;
-            var ownerHeight = dialog.Owner.ActualHeight > 0 ? dialog.Owner.ActualHeight : dialog.Owner.Height;
-            dialog.Left = dialog.Owner.Left + ((ownerWidth - dialog.Width) / 2);
-            dialog.Top = dialog.Owner.Top + ((ownerHeight - dialog.Height) / 2) - 6;
-        }
-
-        private static System.Collections.Generic.IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)
-            where T : DependencyObject
-        {
-            if (parent == null) yield break;
-            for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, index);
-                var match = child as T;
-                if (match != null) yield return match;
-                foreach (var descendant in FindVisualChildren<T>(child)) yield return descendant;
-            }
-        }
+        internal static InstallerDialogWindow Create(Window owner, string title, string message) =>
+            title.Equals("蓝联正在运行", StringComparison.Ordinal)
+                ? new InstallerDialogWindow(title, message, owner, "关闭并继续安装", "取消")
+                : InstallerConfirmationDialog.Create(owner, title, message);
 
         private static void SaveSnapshot(Window owner, Window dialog, string path)
         {

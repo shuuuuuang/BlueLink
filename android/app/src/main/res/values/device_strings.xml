@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="device_no_results">未找到设备或会话</string>
+    <string name="device_search_hint">请尝试其他名称或设备标识</string>
+    <string name="device_connected">已连接</string>
+    <string name="device_no_connected">暂无已连接设备</string>
+    <string name="device_history_available">仍可查看历史消息与文件</string>
+    <string name="device_reconnect_bluetooth">蓝牙开启后可重新连接</string>
+    <string name="device_offline">离线</string>
+    <string name="device_no_offline">暂无离线设备</string>
+    <string name="device_history_here">历史会话将在这里显示</string>
+    <string name="device_nearby">附近新设备</string>
+    <string name="device_refresh">刷新附近设备</string>
+    <string name="device_scanning_nearby">正在扫描附近新设备…</string>
+    <string name="device_no_nearby">暂无附近新设备</string>
+    <string name="device_keep_bluetooth">请保持蓝牙开启</string>
+    <string name="device_check_peer">下拉刷新，查找已开启蓝联与蓝牙的设备</string>
+    <string name="device_search">搜索设备或会话</string>
+    <string name="device_search_history">搜索历史会话</string>
+    <string name="device_expanded">已展开</string>
+    <string name="device_collapsed">已折叠</string>
+    <string name="device_scanning">扫描中</string>
+    <string name="device_scan">扫描</string>
+    <string name="device_sending_progress">正在发送文件 · %1$d%%</string>
+    <string name="device_receiving_progress">正在接收文件 · %1$d%%</string>
+    <string name="device_current_conversation">当前会话</string>
+    <string name="device_last_connection">上次连接 %1$s</string>
+    <string name="device_offline_history">离线 · 可查看历史</string>
+    <string name="device_establishing">正在建立安全连接…</string>
+    <string name="device_failed">连接失败</string>
+    <string name="device_generic">设备</string>
+    <string name="device_connecting">连接中</string>
+    <string name="device_retry">重试</string>
+    <string name="device_connect">连接</string>
+    <string name="device_permission_denied">蓝牙权限已关闭</string>
+    <string name="device_permission_needed">需要蓝牙权限</string>
+    <string name="device_permission_denied_body">请在系统设置中允许“附近设备”权限后重试。</string>
+    <string name="device_permission_body">允许蓝联查找并连接附近设备，保持设备会话。</string>
+    <string name="device_open_settings">前往系统设置</string>
+    <string name="device_allow_permission">允许蓝牙权限</string>
+    <string name="device_recheck_permission">返回应用后自动重新检测权限。</string>
+    <string name="device_permission_note">权限仅用于附近设备通信。</string>
+    <string name="device_bluetooth_off">蓝牙未开启</string>
+    <string name="device_bluetooth_off_body">无法发现附近新设备，请先打开蓝牙</string>
+    <string name="device_permission_short">需要蓝牙权限</string>
+    <string name="device_nearby_connectable">附近可连接</string>
+</resources>

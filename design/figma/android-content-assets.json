@@ -1,0 +1,189 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "format": "PNG",
+  "scale": 3,
+  "assets": [
+    {
+      "id": "422:42",
+      "file": "figma_content_back.png",
+      "width": 24,
+      "height": 24,
+      "sha256": "cb1b15f12eeaa28a57359f5b60df1c224f0aef6dbf1e13da325a144fd0ccd246"
+    },
+    {
+      "id": "422:52",
+      "file": "figma_content_search.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "c7b9a4498b653ed6ec0515acdb610e896b26c64812de16279bc6d2fa4cc076f9"
+    },
+    {
+      "id": "422:55",
+      "file": "figma_content_more.png",
+      "width": 22,
+      "height": 22,
+      "sha256": "1cf990e10a28ddec047fcac5ed7e23f5f1ebd2d442696a9885b13a43a5b200bd"
+    },
+    {
+      "id": "422:123",
+      "file": "figma_content_attachment.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "a45feb968b3f98371bb9c10c4268f9174b4567a635ecb9d6d7f6276072eba235"
+    },
+    {
+      "id": "460:60",
+      "file": "figma_content_send.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "49c76719f80cf1b56dc0b67635bff67bedbc3985175d7a6e4dff6ea50986f8f1"
+    },
+    {
+      "id": "428:2577",
+      "file": "figma_content_file_mp4.png",
+      "width": 42,
+      "height": 46,
+      "sha256": "0cdcdaad68250e53fa9efbd576f03f8f602847a2bd5d47bd39bf0801f114781f"
+    },
+    {
+      "id": "428:2586",
+      "file": "figma_content_file_pdf.png",
+      "width": 42,
+      "height": 46,
+      "sha256": "c9bcab7b1c7c4a4a1667a8ce5cac756908e74ffce27b94e280b90acd107e0b26"
+    },
+    {
+      "id": "428:2604",
+      "file": "figma_content_file_png.png",
+      "width": 42,
+      "height": 46,
+      "sha256": "160bbeb16dd1c1f7c1bbc9aab27f4b49b818c8d58fd112e6280fd0be4eb86020"
+    },
+    {
+      "id": "428:2622",
+      "file": "figma_content_file_txt.png",
+      "width": 42,
+      "height": 46,
+      "sha256": "f54eb53bf20ea03841b843fef214349d049b6d691706002416ab0b1882bde15f"
+    },
+    {
+      "id": "424:57",
+      "file": "figma_content_message.png",
+      "width": 22,
+      "height": 22,
+      "sha256": "431ed8fb68d60ca22b0947d4a593daae080edeecf3dc51bf9eda47e889edd4d0"
+    },
+    {
+      "id": "424:68",
+      "file": "figma_content_file.png",
+      "width": 22,
+      "height": 22,
+      "sha256": "77253de3c977fd21c0aa713f0eff36cadfb4f3c3e17c0b229f5e9bb9753d1069"
+    },
+    {
+      "id": "424:79",
+      "file": "figma_content_image.png",
+      "width": 22,
+      "height": 22,
+      "sha256": "03f0ed6b2eff2e33f07bda4c71f7be9e3c122abcf2d3f92c5809d29471c46849"
+    },
+    {
+      "id": "424:63",
+      "file": "figma_content_chevron.png",
+      "width": 22,
+      "height": 22,
+      "sha256": "9582e1696d9debf57abf579376776731d26d08a91fd88b05faf01aaab7e9b713"
+    },
+    {
+      "id": "424:50",
+      "file": "figma_content_close.png",
+      "width": 24,
+      "height": 24,
+      "sha256": "216f2fce3240c482de2968803a2a35a5b3fb81d211de8466fe8a51be15843f92"
+    },
+    {
+      "id": "528:79",
+      "file": "figma_preview_back.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "533c12061d61916ada27fa107a4745bdeed66235a54618bbb0575f62c2b251ab"
+    },
+    {
+      "id": "528:84",
+      "file": "figma_preview_more.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "c9ca14f46201d700f430622015f402e308a54b9ba3eaf0f79413d7df46ed30d0"
+    },
+    {
+      "id": "542:78",
+      "file": "figma_preview_minus.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "dc64c27eae0f5afd419b893d4880f10908cf4ecc6d81e356f2e528ed9ee83188"
+    },
+    {
+      "id": "542:84",
+      "file": "figma_preview_plus.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "4a1521cf9b05e9e7aefda51cd90e5aa1e66abc9dbe60eea81a2f9ed25aa93d35"
+    },
+    {
+      "id": "178:5",
+      "file": "figma_preview_rotate_left.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "c3558302ada4531658ca0457e25e4473be9ebbcba665b13f386ed92360b8e479",
+      "source": "windows/BlueLink.App/Assets/Figma/preview-left.png",
+      "sourceFileKey": "LAN7pHzjEV67Awz8fFhI4y",
+      "sourceNodeId": "58:107"
+    },
+    {
+      "id": "178:9",
+      "file": "figma_preview_rotate_right.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "b8c7b5bf04cd8283211c6714bdb4dab8fcec0bf0f5ac92f2d526d8289d831bc6",
+      "source": "windows/BlueLink.App/Assets/Figma/preview-right.png",
+      "sourceFileKey": "LAN7pHzjEV67Awz8fFhI4y",
+      "sourceNodeId": "58:146"
+    },
+    {
+      "id": "178:13",
+      "file": "figma_preview_reset.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "de10311e67de57ca46f29f470ed208656ab03e698c0ba1d5f729cba0fe260025",
+      "source": "windows/BlueLink.App/Assets/Figma/preview-reset.png"
+    },
+    {
+      "id": "542:105",
+      "file": "figma_preview_save.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "c9fd4596fac45457e7f1c756585c136d2a09b680eb9908d0c811877b1bf44c6a"
+    },
+    {
+      "id": "542:113",
+      "file": "figma_preview_share.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "ec4e78febb6c92a7172706da285f6933e080da7d1ffc379756ba4dc5da8813e5"
+    },
+    {
+      "id": "542:121",
+      "file": "figma_preview_open.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "6a8d2cfd18a7555ee604804ff9e095beb10220dd856616727496ca61c01beda4"
+    },
+    {
+      "id": "542:129",
+      "file": "figma_preview_info.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "5064a7aa2da4749950889dec472347c34222a617d8e4201f1e221a8e7d0b88ef"
+    }
+  ]
+}

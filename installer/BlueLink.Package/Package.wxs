@@ -4,7 +4,7 @@
            Version="$(var.ProductVersion)" Language="2052" Scope="perUser" InstallerVersion="500"
            UpgradeCode="$(var.PackageUpgradeCode)">
     <SummaryInformation Description="蓝联安全蓝牙聊天与文件传输" Manufacturer="BlueLink" />
-    <MajorUpgrade DowngradeErrorMessage="此电脑上已安装更高版本的蓝联。" Schedule="afterInstallExecute" />
+    <MajorUpgrade DowngradeErrorMessage="此电脑上已安装更高版本的蓝联。" Schedule="$(var.MajorUpgradeSchedule)" AllowSameVersionUpgrades="$(var.AllowSameVersionUpgrades)" />
     <MediaTemplate EmbedCab="yes" />
     <Property Id="CREATE_DESKTOP_SHORTCUT" Value="1" Secure="yes" />
     <Property Id="AUTOSTART" Value="0" Secure="yes" />

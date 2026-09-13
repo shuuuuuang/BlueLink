@@ -1,0 +1,27 @@
+<ui:FluentWindow x:Class="BlueLink.DeviceNameWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:loc="clr-namespace:BlueLink.Localization" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{loc:Text '修改设备名'}" Width="520" MinHeight="286" SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
+    WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="None"
+    FontFamily="{StaticResource HomeFont}" Background="{DynamicResource SurfaceBrush}" UseLayoutRounding="True"
+    PreviewKeyDown="Window_PreviewKeyDown" Closing="Window_Closing" Style="{DynamicResource {x:Type ui:FluentWindow}}">
+    <ui:FluentWindow.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Themes/SettingsWindow.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></ui:FluentWindow.Resources>
+    <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource SettingsBorderBrush}" BorderThickness="1" CornerRadius="12">
+        <Grid>
+            <StackPanel Margin="27,23,27,23">
+                <TextBlock Text="{loc:Text '修改设备名'}" FontSize="21" FontWeight="Bold" LineHeight="31" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource SettingsInkBrush}" Margin="0,0,28,0"/>
+                <TextBlock Text="{loc:Text '该名称会显示在附近设备和可信设备列表中。'}" Style="{StaticResource SettingsDescriptionStyle}" FontSize="13" LineHeight="19" LineStackingStrategy="BlockLineHeight" Margin="0,6,0,0"/>
+                <TextBlock Text="{loc:Text '设备名'}" Style="{StaticResource SettingsLabelStyle}" FontSize="13" LineHeight="19" LineStackingStrategy="BlockLineHeight" Margin="0,25,0,8"/>
+                <ui:TextBox x:Name="DeviceNameInput" MaxLength="32" AutomationProperties.Name="{loc:Text '设备名'}" Height="44" Style="{StaticResource SettingsTextBoxStyle}"/>
+                <TextBlock Text="{loc:Text '最多 32 个字符，不能仅包含空格。'}" Style="{StaticResource SettingsDescriptionStyle}" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="0,8,0,0"/>
+                <ui:InfoBar x:Name="NameStatus" IsOpen="False" IsClosable="False" Severity="Error" Margin="0,10,0,0"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                    <ui:Button x:Name="CancelNameButton" Width="96" Content="{loc:Text '取消'}" Click="Cancel_Click" Style="{StaticResource SettingsButtonStyle}" Margin="0,0,10,0"/>
+                    <ui:Button x:Name="SaveNameButton" Width="88" Content="{loc:Text '保存'}" Appearance="Primary" Foreground="{DynamicResource OnAccentBrush}" BorderBrush="{DynamicResource PrimaryBrush}" Background="{DynamicResource PrimaryBrush}" Click="Save_Click" Style="{StaticResource SettingsButtonStyle}"/>
+                </StackPanel>
+            </StackPanel>
+            <ui:Button Width="32" Height="32" MinWidth="0" MinHeight="0" CornerRadius="8" Margin="0,17,17,0" HorizontalAlignment="Right" VerticalAlignment="Top" Appearance="Transparent" Padding="6" BorderThickness="0" AutomationProperties.Name="{loc:Text '关闭'}" Click="Cancel_Click"><ui:SymbolIcon Symbol="Dismiss20" FontSize="20" Foreground="{DynamicResource SettingsMutedBrush}"/></ui:Button>
+        </Grid>
+    </Border>
+</ui:FluentWindow>

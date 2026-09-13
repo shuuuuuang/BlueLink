@@ -24,9 +24,8 @@ enum class PeerPlatform { ANDROID, WINDOWS, UNKNOWN }
 
 /** Keeps device precedence rules outside Compose. */
 object DeviceProjectionPolicy {
-    fun availability(connected: Boolean, trusted: Boolean, nearby: Boolean): DeviceAvailability = when {
+    fun availability(connected: Boolean, nearby: Boolean): DeviceAvailability = when {
         connected -> DeviceAvailability.CONNECTED
-        trusted -> DeviceAvailability.OFFLINE
         nearby -> DeviceAvailability.CONNECTABLE
         else -> DeviceAvailability.OFFLINE
     }
@@ -61,7 +60,7 @@ object DeviceProjectionPolicy {
 
 data class DiscoveryState(
     val scanning: Boolean = false,
-    val detail: String = "点击扫描查找附近运行蓝联的设备",
+    val detail: String = "下拉刷新查找附近运行蓝联的设备",
 )
 
 enum class DiagnosticLevel { INFO, WARNING, ERROR }
@@ -80,6 +79,8 @@ data class ConnectionState(
     val phase: ConnectionPhase = ConnectionPhase.OFFLINE,
     val peerName: String? = null,
     val detail: String? = null,
+    val transportAddress: String? = null,
+    val transport: SessionTransport = SessionTransport.BLUETOOTH,
 )
 
 data class ManagedSessionState(
@@ -90,6 +91,11 @@ data class ManagedSessionState(
     val phase: ConnectionPhase,
     val detail: String,
     val startedAtEpochMs: Long,
+    val transport: SessionTransport = SessionTransport.BLUETOOTH,
+    val platform: PeerPlatform = PeerPlatform.UNKNOWN,
+    val identityHint: String? = null,
+    val hasPeerProvidedName: Boolean = false,
+    val usbFileReady: Boolean = false,
 )
 
 enum class DeviceAvailability { CONNECTED, OFFLINE, CONNECTABLE }
@@ -103,6 +109,11 @@ data class ConversationSummary(
     val transportAddress: String = "",
     val unreadCount: Int = 0,
     val lastActivityAt: Long = 0,
+    val lastConnectedAt: Long? = null,
+    val isTrusted: Boolean = false,
+    val usbReady: Boolean = false,
+    val transport: SessionTransport = SessionTransport.BLUETOOTH,
+    val isRemoved: Boolean = false,
 )
 
 data class TrustPrompt(
@@ -110,6 +121,7 @@ data class TrustPrompt(
     val peerId: String,
     val peerName: String,
     val safetyCode: String,
+    val connectionConfirmation: Boolean = false,
 )
 
 enum class MessageStatus { LOCAL_QUEUED, SENDING, SENT, DELIVERED, READ, RECEIVED, FAILED }
@@ -129,10 +141,15 @@ data class ChatAttachment(
 ) {
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
     val isAvailable: Boolean get() = !localUri.isNullOrBlank()
+    val canOpen: Boolean get() = state == "COMPLETED" && isAvailable
+    // A verified preview can be displayed before the original is ready to open.
+    val thumbnailUri: String? get() = previewUri?.takeIf { it.isNotBlank() }
+        ?: localUri?.takeIf { canOpen && it.isNotBlank() }
+    fun showsThumbnail(enabled: Boolean): Boolean = enabled && isImage && thumbnailUri != null
     val progress: Float get() = if (sizeBytes == 0L) 1f else
         (completedBytes.toFloat() / sizeBytes).coerceIn(0f, 1f)
     val isTransferActive: Boolean get() = state in setOf("OFFERED", "QUEUED", "TRANSFERRING",
-        "PAUSED", "RESUMING", "VERIFYING", "COMMITTING")
+        "PAUSED", "REMOTE_PAUSED", "RESUMING", "VERIFYING", "COMMITTING")
 }
 
 data class ChatItem(
@@ -146,7 +163,7 @@ data class ChatItem(
 )
 
 enum class TransferStatus {
-    OFFERED, QUEUED, TRANSFERRING, PAUSED, RESUMING, VERIFYING, COMMITTING,
+    OFFERED, QUEUED, TRANSFERRING, PAUSED, REMOTE_PAUSED, RESUMING, VERIFYING, COMMITTING,
     COMPLETED, REJECTED, FAILED, CANCELED
 }
 

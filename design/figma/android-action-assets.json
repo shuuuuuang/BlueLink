@@ -1,0 +1,72 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "scale": 3,
+  "assets": [
+    {
+      "name": "message",
+      "id": "370:381",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_message.png",
+      "sha256": "54b6f07c8ca34d2d4d866b1e4aa6791cfbabd709eeca6e05e636d0d1d674e5a3"
+    },
+    {
+      "name": "info",
+      "id": "370:385",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_info.png",
+      "sha256": "5160df72eb613f4ee8099c8fa5c213743dbefe56f4db3d285c34a7eb029bb7a7"
+    },
+    {
+      "name": "delete",
+      "id": "370:390",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_delete.png",
+      "sha256": "4ea6896a9f12fd4e9dc474b44a692f8810fe2f4c028011f2848b51e86fa7194c"
+    },
+    {
+      "name": "trust",
+      "id": "370:394",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_trust.png",
+      "sha256": "f199fd23718589f1de46609eb7b423b61751856232498239115d5b41c67e9369"
+    },
+    {
+      "name": "open",
+      "id": "380:88",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_open.png",
+      "sha256": "6e7062ae823534f237b9f49a99eaccdc8025e305fba3c1fdb6c6bae1bda22864"
+    },
+    {
+      "name": "copy",
+      "id": "380:93",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_copy.png",
+      "sha256": "2506181cc4a880a1bd49e3f7dc10cc4d82fc64996306c929919b77b378a02f44"
+    },
+    {
+      "name": "folder",
+      "id": "380:98",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_folder.png",
+      "sha256": "f5430aee967a0f517418722a0fd7e830cde675f61c74a84dd0be7096bad5744e"
+    },
+    {
+      "name": "save",
+      "id": "380:102",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_save.png",
+      "sha256": "dcbd90d2fcd1b4afc1e21f038062bfa7a8e75cf67e37ca518ec22b19c0c0fd50"
+    },
+    {
+      "name": "cancel",
+      "id": "380:405",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_cancel.png",
+      "sha256": "0fd50fd8d3e5d2c971e693d14f52897ee14243c17730e6734c246936de2c0097"
+    },
+    {
+      "name": "resume",
+      "id": "564:3812",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_resume.png",
+      "sha256": "35a7bd464a379cb45873a40025a19fceee43daf475bd058d1b9132d59fc723a5"
+    },
+    {
+      "name": "pause",
+      "id": "380:205",
+      "path": "android/app/src/main/res/drawable-nodpi/figma_action_pause.png",
+      "sha256": "150957460a692b30deeeac2a6ea37c0c54cc468ca477e52deac20773f5c2567e"
+    }
+  ]
+}

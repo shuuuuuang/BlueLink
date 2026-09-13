@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="support_article_connection">
+        <item>连接与配对</item>
+        <item>使用帮助 · Android</item>
+        <item>先确认两台设备已开启蓝牙，并允许蓝联访问附近设备。</item>
+        <item>找不到附近设备</item>
+        <item>在两台设备上打开蓝联，确认蓝牙与附近设备权限已开启。返回设备列表重新扫描，并让两台设备保持靠近。</item>
+        <item>安全码不一致或配对失败</item>
+        <item>核对两台设备显示的安全码。安全码不一致时取消连接，再重新发起；只有确认一致后，才选择“确认并信任”。</item>
+        <item>已信任设备无法自动连接</item>
+        <item>确认对端在线、蓝牙已开启且蓝联可运行。可从离线设备卡片重新连接；若设备身份已重置，需要重新确认安全码。</item>
+        <item>USB 高速传输</item>
+        <item>先通过蓝牙连接并核对安全码，再开启两端的 USB 高速传输，用数据线连接手机并选择“传输文件”。首次开启时，选择并授权蓝联专用中转文件夹，例如 Download/BlueLinkUSB；取消授权后，可重新关闭再开启此开关重试。设备名称旁的闪电表示该设备的 USB 文件通道已就绪。共享目录只保存加密中转文件。同一手机的双向文件依次传输，后续文件排队等待；暂停队首会让后续文件继续等待，取消则让下一项继续。中断后重新发送整个文件。无需 USB 调试或替换驱动，资源管理器仍可浏览手机；被其他程序占用时会等待通道可用。</item>
+    </string-array>
+    <string-array name="support_article_messages">
+        <item>消息与文件</item>
+        <item>使用帮助 · Android</item>
+        <item>会话与文件记录保存在本机；查看历史不要求开启蓝牙。</item>
+        <item>查看离线历史会话</item>
+        <item>在“设备与会话”中选择离线设备，即可查看已有消息和传输记录。发送新消息或文件时，需要先连接该设备。</item>
+        <item>发送消息与文件</item>
+        <item>进入已连接设备的会话后输入消息，或通过附件入口选择文件。接收完成的文件可在 Download/BlueLink 中查看。</item>
+        <item>传输中断后如何处理</item>
+        <item>先恢复设备连接。失败记录仅供查看原因或删除；如仍需传输，请重新选择文件发送，创建新的传输任务。</item>
+    </string-array>
+    <string-array name="support_article_faq">
+        <item>常见问题</item>
+        <item>使用帮助 · Android</item>
+        <item>了解本地数据、连接权限和反馈信息的使用边界。</item>
+        <item>必须连接互联网吗？</item>
+        <item>消息与文件通过 Bluetooth 在设备间传输；查看本机历史无需联网。检查更新和下载新版本则需要互联网连接。</item>
+        <item>清除记录会删除文件吗？</item>
+        <item>不会。聊天记录和传输记录可分别清除，Download/BlueLink 中已接收的文件会保留，可在文件管理器中单独管理。</item>
+        <item>诊断信息何时生成？</item>
+        <item>附加诊断信息默认关闭。开启后，只有点击“生成反馈包”时才一起打包；打开或填写表单不会生成诊断日志，也不会自动上传。</item>
+    </string-array>
+    <string-array name="support_article_privacy">
+        <item>蓝联隐私政策</item>
+        <item>生效日期：2026 年 9 月 4 日</item>
+        <item>蓝联以本地处理为原则，消息与文件传输不依赖云端服务。</item>
+        <item>我们处理的数据</item>
+        <item>蓝联处理设备名称、设备标识、连接状态、聊天记录与传输记录，用于建立蓝牙连接及展示历史。数据默认保存在本机。</item>
+        <item>蓝牙传输与本地存储</item>
+        <item>消息和文件仅在用户授权的设备之间通过 Bluetooth 传输，不通过互联网同步。已接收文件保存在 Download/BlueLink。</item>
+        <item>诊断与反馈</item>
+        <item>应用不会自动上传诊断数据。生成反馈信息后，只有在你选择系统分享应用时，相关信息才会离开本机；诊断信息默认不附加。</item>
+        <item>权限使用</item>
+        <item>附近设备与 Bluetooth 权限仅用于发现、连接和传输；通知权限用于展示连接或传输状态。</item>
+        <item>数据删除</item>
+        <item>你可以分别清除聊天记录与传输记录。清除记录不会删除 Download/BlueLink 中已接收的文件。</item>
+    </string-array>
+    <string-array name="support_article_agreement">
+        <item>蓝联用户协议</item>
+        <item>生效日期：2026 年 9 月 4 日</item>
+        <item>使用蓝联即表示你理解并同意以下使用规则。</item>
+        <item>服务范围</item>
+        <item>蓝联用于用户授权设备之间的 Bluetooth 消息与文件传输，并提供本地历史记录管理。应用不提供云端账户或云端备份。</item>
+        <item>用户责任</item>
+        <item>你应确保发送内容合法且已获得必要授权，并妥善管理设备访问权限、安全码和可信设备列表。</item>
+        <item>设备与数据安全</item>
+        <item>重置设备标识或移除可信设备后，需要重新核对安全码。请自行备份重要文件和记录。</item>
+        <item>更新与联网</item>
+        <item>检查更新和下载新版本需要联网；消息与文件传输仍仅通过 Bluetooth 完成。</item>
+        <item>责任限制与终止</item>
+        <item>因设备兼容性、Bluetooth 环境或用户操作造成的中断与数据损失，应结合实际情况处理。你可以随时停止使用并卸载应用。</item>
+    </string-array>
+</resources>

@@ -1,0 +1,91 @@
+<ui:FluentWindow x:Class="BlueLink.MessageSearchWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:loc="clr-namespace:BlueLink.Localization"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:BlueLink"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Width="860" Height="640" MinWidth="620" MinHeight="480" WindowStartupLocation="CenterOwner"
+    Title="{loc:Text '消息记录'}" FontFamily="{StaticResource HomeFont}" Background="{DynamicResource SurfaceBrush}"
+    ExtendsContentIntoTitleBar="True" WindowBackdropType="None" ShowInTaskbar="False" Style="{DynamicResource {x:Type ui:FluentWindow}}">
+    <ui:FluentWindow.Resources>
+        <local:MessageSearchDateMarkerConverter x:Key="DateMarkerVisibility"/>
+        <Style x:Key="HistoryCalendarDay" TargetType="CalendarDayButton" BasedOn="{StaticResource DefaultCalendarDayButtonStyle}">
+            <Setter Property="Width" Value="28"/><Setter Property="Height" Value="30"/>
+            <Setter Property="MinWidth" Value="28"/><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="0"/>
+            <Setter Property="ContentTemplate"><Setter.Value><DataTemplate>
+                <Grid Width="18" Height="24">
+                    <TextBlock Text="{Binding}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,6"/>
+                    <Ellipse x:Name="RecordDateMarker" Width="4" Height="4" VerticalAlignment="Bottom" Margin="0,0,0,1">
+                        <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{DynamicResource BlueBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsToday, RelativeSource={RelativeSource AncestorType=CalendarDayButton}}" Value="True"><Setter Property="Fill" Value="{DynamicResource OnAccentBrush}"/></DataTrigger></Style.Triggers></Style></Ellipse.Style>
+                        <Ellipse.Visibility><MultiBinding Converter="{StaticResource DateMarkerVisibility}">
+                            <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=CalendarDayButton}"/>
+                            <Binding Path="DataContext.MatchingDates" RelativeSource="{RelativeSource AncestorType=Calendar}"/>
+                        </MultiBinding></Ellipse.Visibility>
+                    </Ellipse>
+                </Grid>
+            </DataTemplate></Setter.Value></Setter>
+        </Style>
+        <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="Transparent"/>
+        <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="#F1F5FB"/>
+        <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="#176BFF"/>
+        <Style x:Key="HistoryTab" TargetType="RadioButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+            <Setter Property="Width" Value="64"/><Setter Property="Height" Value="46"/>
+            <Setter Property="Margin" Value="0,0,14,0"/><Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Text475569Brush}"/>
+            <Style.Triggers><Trigger Property="IsChecked" Value="True"><Setter Property="Foreground" Value="{DynamicResource BlueBrush}"/></Trigger></Style.Triggers>
+        </Style>
+    </ui:FluentWindow.Resources>
+    <Grid Background="{DynamicResource SurfaceBrush}">
+        <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="80"/><RowDefinition Height="46"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <ui:TitleBar ButtonsForeground="{DynamicResource InkBrush}" Title="" Height="58" Background="{DynamicResource SurfaceBrush}" ShowMinimize="False" ShowMaximize="False"/>
+        <TextBlock x:Name="SearchTitle" FontSize="{StaticResource ClientFont15}" TextTrimming="CharacterEllipsis" Margin="70,0" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+        <ui:TextBox x:Name="QueryInput" Grid.Row="1" Margin="22,12,22,12" Height="46" Background="{DynamicResource PanelF8FAFCBrush}" FontSize="{StaticResource ClientFont13}" PlaceholderText="{loc:Text '搜索消息或文件名'}" ClearButtonEnabled="True" AutomationProperties.Name="{loc:Text '搜索消息记录'}" TextChanged="Filter_Changed">
+            <ui:TextBox.Icon><ui:ImageIcon Source="{DynamicResource FigmaIcon-search}" Width="20" Height="20"/></ui:TextBox.Icon>
+        </ui:TextBox>
+        <DockPanel Grid.Row="2" Margin="22,0"><TextBlock x:Name="ResultCount" DockPanel.Dock="Right" FontSize="13" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal">
+            <RadioButton Tag="All" GroupName="HistoryKind" IsChecked="True" Style="{StaticResource HistoryTab}" Checked="Kind_Changed"><Grid Width="64" Height="44"><TextBlock Text="{loc:Text '全部'}" FontSize="{StaticResource ClientFont13}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/><Border Width="32" Height="3" CornerRadius="2" VerticalAlignment="Bottom"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="{DynamicResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style></Border></Grid></RadioButton>
+            <RadioButton Tag="Text" GroupName="HistoryKind" Style="{StaticResource HistoryTab}" Checked="Kind_Changed"><Grid Width="64" Height="44"><TextBlock Text="{loc:Text '文本'}" FontSize="{StaticResource ClientFont13}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/><Border Width="32" Height="3" CornerRadius="2" VerticalAlignment="Bottom"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="{DynamicResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style></Border></Grid></RadioButton>
+            <RadioButton Tag="Images" GroupName="HistoryKind" Style="{StaticResource HistoryTab}" Checked="Kind_Changed"><Grid Width="64" Height="44"><TextBlock Text="{loc:Text '图片'}" FontSize="{StaticResource ClientFont13}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/><Border Width="32" Height="3" CornerRadius="2" VerticalAlignment="Bottom"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="{DynamicResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style></Border></Grid></RadioButton>
+            <RadioButton Tag="Files" GroupName="HistoryKind" Style="{StaticResource HistoryTab}" Checked="Kind_Changed"><Grid Width="64" Height="44"><TextBlock Text="{loc:Text '文件'}" FontSize="{StaticResource ClientFont13}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/><Border Width="32" Height="3" CornerRadius="2" VerticalAlignment="Bottom"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="{DynamicResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style></Border></Grid></RadioButton>
+            <RadioButton Tag="Date" GroupName="HistoryKind" Style="{StaticResource HistoryTab}" Checked="Kind_Changed"><Grid Width="64" Height="44"><TextBlock Text="{loc:Text '日期'}" FontSize="{StaticResource ClientFont13}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/><Border Width="32" Height="3" CornerRadius="2" VerticalAlignment="Bottom"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="{DynamicResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style></Border></Grid></RadioButton>
+        </StackPanel></DockPanel>
+        <Grid Grid.Row="3" Background="{DynamicResource PanelF8FAFDBrush}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border x:Name="CalendarPane" Width="260" Margin="16,16,0,16" Padding="10,10" VerticalAlignment="Top" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="10" Visibility="Collapsed">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+                    <Viewbox x:Name="CalendarViewport" Stretch="Uniform" StretchDirection="DownOnly">
+                        <Calendar x:Name="DateInput" Width="280" MinWidth="0" Style="{StaticResource DefaultCalendarStyle}" CalendarDayButtonStyle="{StaticResource HistoryCalendarDay}" SelectionMode="SingleDate" FirstDayOfWeek="Monday" SelectedDatesChanged="Filter_Changed" AutomationProperties.Name="{loc:Text '消息日期'}"/>
+                    </Viewbox>
+                    <TextBlock Text="{loc:Text '蓝点表示当天存在匹配记录'}" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" Margin="0,14,0,8"/>
+                </StackPanel></ScrollViewer>
+            </Border>
+            <Grid Grid.Column="1">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <DockPanel x:Name="DateResultHeader" Margin="16,16,16,0" Visibility="Collapsed">
+                <TextBlock x:Name="DateResultCount" DockPanel.Dock="Right" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
+                <TextBlock x:Name="DateResultTitle" FontSize="{StaticResource ClientFont14}"/>
+            </DockPanel>
+            <ListBox x:Name="Results" Grid.Row="1" Margin="16,10" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource TransparentListItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Result_Selected" IsSynchronizedWithCurrentItem="False" VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                <ListBox.GroupStyle><GroupStyle><GroupStyle.HeaderTemplate><DataTemplate><TextBlock Text="{Binding Name}" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="2,4,0,10"/></DataTemplate></GroupStyle.HeaderTemplate></GroupStyle></ListBox.GroupStyle>
+                <ListBox.ItemTemplate><DataTemplate><Border x:Name="ResultCard" BorderThickness="1" CornerRadius="10" Margin="0,0,0,10" Padding="12,10">
+                    <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource PanelF8FAFFBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource SoftBlueBrush}"/></Trigger></Style.Triggers></Style></Border.Style>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <Grid VerticalAlignment="Center">
+                            <Border Background="{DynamicResource SoftBlueBrush}" CornerRadius="10" Width="44" Height="44"><Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding HasThumbnail}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><Image Source="{Binding Icon}" Width="24" Height="24"/></Border>
+                            <Border Width="{Binding ThumbnailWidth}" Height="{Binding ThumbnailHeight}" CornerRadius="8" Background="{DynamicResource SoftBlueBrush}" Visibility="{Binding HasThumbnail, Converter={StaticResource BooleanToVisibilityConverter}}"><Image Source="{Binding Thumbnail}" Stretch="Uniform"/></Border>
+                        </Grid>
+                        <StackPanel Grid.Column="1" Margin="{Binding ContentMargin}" VerticalAlignment="Center"><TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/><TextBlock FontSize="{StaticResource ClientFont13}" Margin="0,5" TextTrimming="CharacterEllipsis" local:HighlightedText.Text="{Binding Title}" local:HighlightedText.Query="{Binding Query}" local:HighlightedText.Brush="{DynamicResource BlueBrush}"/><TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/></StackPanel>
+                        <TextBlock Grid.Row="{Binding ActionRow}" Grid.Column="1" Text="{loc:Text '定位到聊天位置'}" Foreground="{DynamicResource BlueBrush}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="{Binding ActionMargin}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Hidden"/><Style.Triggers><DataTrigger Binding="{Binding IsMouseOver, ElementName=ResultCard}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                    </Grid>
+                </Border></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel x:Name="EmptyState" Grid.Row="1" Margin="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                <Border Width="60" Height="60" CornerRadius="30" Background="{DynamicResource SearchEmptyBackgroundBrush}" HorizontalAlignment="Center"><Image Source="{DynamicResource FigmaIcon-message-search-empty}" Width="40" Height="40"/></Border>
+                <TextBlock x:Name="EmptyMessage" FontSize="{StaticResource ClientFont15}" Foreground="{DynamicResource InkBrush}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                <TextBlock Text="{loc:Text '请尝试更换关键词或调整消息类型'}" FontSize="13" Foreground="{DynamicResource MutedBrush}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
+            </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

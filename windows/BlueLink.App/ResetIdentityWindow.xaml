@@ -1,0 +1,33 @@
+<ui:FluentWindow x:Class="BlueLink.ResetIdentityWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:loc="clr-namespace:BlueLink.Localization"
+    Width="540" Height="320" ResizeMode="NoResize" ShowInTaskbar="False" FontFamily="{StaticResource HomeFont}"
+    WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="None" UseLayoutRounding="True"
+    Background="{DynamicResource SurfaceBrush}" Title="{loc:Text '重置设备标识'}"
+    PreviewKeyDown="Window_PreviewKeyDown" Style="{DynamicResource {x:Type ui:FluentWindow}}">
+    <ui:FluentWindow.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Themes/SettingsWindow.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></ui:FluentWindow.Resources>
+    <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource SettingsBorderBrush}" BorderThickness="1" CornerRadius="12">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="80"/><RowDefinition Height="*"/><RowDefinition Height="68"/></Grid.RowDefinitions>
+            <StackPanel Margin="27,23,27,0"><TextBlock Text="{loc:Text '重置设备标识'}" FontSize="21" FontWeight="Bold" Foreground="{DynamicResource SettingsInkBrush}" LineHeight="31" LineStackingStrategy="BlockLineHeight"/><TextBlock Text="{loc:Text '此操作会在本机生成新的设备身份。'}" FontSize="13" Style="{StaticResource SettingsDescriptionStyle}" Margin="0,6,0,0"/></StackPanel>
+            <ui:Button Width="32" Height="32" MinWidth="0" MinHeight="0" CornerRadius="8" Margin="0,17,17,0" HorizontalAlignment="Right" VerticalAlignment="Top" Appearance="Transparent" Padding="6" BorderThickness="0" AutomationProperties.Name="{loc:Text '关闭'}" Click="Cancel_Click"><ui:SymbolIcon Symbol="Dismiss20" FontSize="20" Foreground="{DynamicResource SettingsMutedBrush}"/></ui:Button>
+            <StackPanel Grid.Row="1" Margin="27,10,27,0">
+                <Border Background="{DynamicResource SettingsDestructiveBackgroundBrush}" Height="68" CornerRadius="10">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="28" Height="28" Background="{DynamicResource SettingsDestructiveBrush}"><Border.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-alert.png" Stretch="Uniform"/></Border.OpacityMask></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock Text="{loc:Text '所有可信关系将失效'}" Foreground="{DynamicResource SettingsDestructiveBrush}" Style="{StaticResource SettingsLabelStyle}"/>
+                            <TextBlock Text="{loc:Text '再次连接已信任设备时，需要重新核对安全码。'}" Style="{StaticResource SettingsDescriptionStyle}" Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                <TextBlock Text="{loc:Text '聊天记录、传输记录和 Download 中的文件不会被删除。'}" FontSize="13" Style="{StaticResource SettingsDescriptionStyle}" Margin="0,14,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="27,0,27,0">
+                <ui:Button x:Name="ResetCancelButton" Width="96" Content="{loc:Text '取消'}" Click="Cancel_Click" Style="{StaticResource SettingsButtonStyle}"/>
+                <ui:Button x:Name="ResetConfirmButton" Width="88" Content="{loc:Text '重置'}" Click="Reset_Click" Margin="10,0,0,0" Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource SettingsDestructiveBrush}" BorderBrush="{DynamicResource SettingsDestructiveBrush}" Style="{StaticResource SettingsButtonStyle}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</ui:FluentWindow>

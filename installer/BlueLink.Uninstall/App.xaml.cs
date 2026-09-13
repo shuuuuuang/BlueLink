@@ -8,7 +8,7 @@ namespace BlueLink.Uninstall
 
     public partial class App : Application
     {
-        protected override async void OnStartup(StartupEventArgs e)
+        protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
             var smokeTest = e.Args.Any(value =>
@@ -27,16 +27,7 @@ namespace BlueLink.Uninstall
                 }
                 catch (Exception failure)
                 {
-                    var dialog = new Wpf.Ui.Controls.MessageBox
-                    {
-                        Title = "无法启动卸载程序",
-                        Content = failure.Message,
-                        CloseButtonText = "关闭",
-                        WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                    };
-                    dialog.Style = TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style
-                        ?? throw new InvalidOperationException("WPF UI 官方 MessageBox 样式未加载。");
-                    await dialog.ShowDialogAsync();
+                    new BlueLink.Installation.InstallerNoticeWindow("无法启动卸载程序", failure.Message).ShowDialog();
                     Shutdown(3);
                 }
                 return;

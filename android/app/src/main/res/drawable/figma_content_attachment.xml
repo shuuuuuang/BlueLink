@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <!-- Figma Tna537kDQdpsVwDX0lXlCs / 422:123: preserve the original paperclip path.
+         The old 20x20 PNG clipped its left stroke. Center the full stroked bounds
+         with breathing room, keeping the displayed stroke approximately 1.42dp. -->
+    <group android:scaleX="0.9" android:scaleY="0.9"
+        android:translateX="1.79" android:translateY="0.31">
+        <path android:fillColor="@android:color/transparent"
+            android:strokeColor="#687386" android:strokeWidth="1.57407"
+            android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M7.27273,10.4544 L12.5455,5.18168 C13.7727,3.95441 15.7727,3.95441 17,5.18168 C18.2273,6.40896 18.2273,8.40896 17,9.63623 L9.27272,17.3635 C7.22727,19.409 3.90909,19.409 1.86363,17.3635 C-0.18182,15.318 -0.18182,11.9999 1.86363,9.95441 L9.18182,2.63623" />
+    </group>
+</vector>

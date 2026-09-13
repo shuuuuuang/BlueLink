@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_records">本機記錄</string>
+    <string name="privacy_save_messages">儲存訊息記錄</string>
+    <string name="privacy_retention">記錄保留時間</string>
+    <plurals name="privacy_days">
+        <item quantity="other">%1$d 天</item>
+    </plurals>
+    <string name="privacy_year">1 年</string>
+    <string name="privacy_forever">永久</string>
+    <string name="privacy_clear_messages">清除聊天記錄</string>
+    <string name="privacy_clear_transfers">清除傳輸記錄</string>
+    <string name="privacy_identity">裝置身分</string>
+    <string name="privacy_reset_identity">重設本機裝置識別</string>
+    <string name="privacy_diagnostics">診斷</string>
+    <string name="privacy_export">匯出診斷記錄</string>
+    <string name="privacy_note">訊息和檔案記錄預設僅儲存在本機。\n刪除記錄不會刪除 Download 中已接收的檔案。</string>
+    <string name="privacy_clear_messages_title">清除所有聊天記錄</string>
+    <string name="privacy_clear_messages_question">確定清除所有聊天記錄嗎？</string>
+    <string name="privacy_clear_messages_note">傳輸記錄與已接收的檔案會保留。</string>
+    <string name="privacy_clear_transfers_title">清除所有傳輸記錄</string>
+    <string name="privacy_clear_transfers_question">確定清除所有檔案傳輸記錄嗎？</string>
+    <string name="privacy_clear_transfers_note">聊天記錄與已接收的檔案會保留。</string>
+    <string name="privacy_clear">清除</string>
+    <string name="privacy_remove_title">移除所有信任</string>
+    <string name="privacy_remove_question">確定移除所有信任裝置嗎？</string>
+    <string name="privacy_remove_note">下次連線這些裝置時需要重新配對與授權。</string>
+    <string name="privacy_remove_confirm">全部移除</string>
+    <string name="privacy_reset_title">重設裝置識別</string>
+    <string name="privacy_reset_question">確定重設本機裝置識別嗎？</string>
+    <string name="privacy_reset_note">已配對裝置需要重新驗證與授權。</string>
+    <string name="privacy_reset_confirm">重設</string>
+    <string name="privacy_done">操作已完成</string>
+    <string name="privacy_working">正在處理…</string>
+    <string name="privacy_failed">操作未完成</string>
+    <string name="privacy_failed_note">無法完成操作，請檢查可用儲存空間後重試。已接收的檔案不會被刪除。</string>
+</resources>

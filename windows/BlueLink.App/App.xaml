@@ -10,10 +10,15 @@
                 <ui:ThemesDictionary Theme="Light"/>
                 <ui:ControlsDictionary/>
                 <ResourceDictionary Source="Themes/DesignTokens.xaml"/>
+                <ResourceDictionary Source="Themes/Palette.Light.xaml"/>
                 <ResourceDictionary Source="Themes/Icons.xaml"/>
+                <ResourceDictionary Source="Themes/ThemedIcons.xaml"/>
+                <ResourceDictionary Source="Themes/FileTypes.xaml"/>
                 <ResourceDictionary Source="Themes/Components.xaml"/>
+                <ResourceDictionary Source="Themes/Home.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <files:AttachmentThumbnailConverter x:Key="AttachmentThumbnailConverter"/>
+            <files:FileTypeIcons x:Key="FileTypeIconConverter"/>
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         </ResourceDictionary>
     </Application.Resources>

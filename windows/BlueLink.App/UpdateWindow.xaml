@@ -1,0 +1,53 @@
+<ui:FluentWindow x:Class="BlueLink.UpdateWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="clr-namespace:BlueLink.Localization"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Width="540" Height="350" ResizeMode="NoResize" ShowInTaskbar="False" WindowStartupLocation="CenterOwner"
+    ExtendsContentIntoTitleBar="True" WindowBackdropType="None" UseLayoutRounding="True" Background="{DynamicResource SurfaceBrush}" Title="{Binding Title}"
+    Closing="Window_Closing" PreviewKeyDown="Window_PreviewKeyDown" Style="{DynamicResource {x:Type ui:FluentWindow}}">
+    <ui:FluentWindow.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/SettingsWindow.xaml"/>
+    </ResourceDictionary.MergedDictionaries></ResourceDictionary></ui:FluentWindow.Resources>
+    <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource SettingsBorderBrush}" BorderThickness="1" CornerRadius="12">
+    <Grid TextElement.FontFamily="{StaticResource HomeFont}">
+        <Grid Margin="27,23"><Grid.RowDefinitions>
+            <RowDefinition Height="31"/><RowDefinition Height="7"/><RowDefinition Height="20"/><RowDefinition Height="22"/>
+            <RowDefinition Height="64"/><RowDefinition Height="12"/><RowDefinition Height="76"/><RowDefinition Height="30"/><RowDefinition Height="32"/>
+        </Grid.RowDefinitions>
+            <TextBlock Text="{Binding Title}" FontSize="21" FontWeight="Bold" LineHeight="31" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource InkBrush}"/>
+            <TextBlock Grid.Row="2" Text="{Binding Subtitle}" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"/>
+            <Grid Grid.Row="4"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Border Width="52" Height="52" CornerRadius="26" Background="{DynamicResource SoftBlueBrush}" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <TextBlock Text="↓" FontSize="{StaticResource ClientFont20}" FontWeight="Bold" Foreground="{DynamicResource BlueBrush}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding VersionText}" FontSize="{StaticResource ClientFont16}" FontWeight="Bold" LineHeight="27" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource InkBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding VersionText}"/>
+                    <TextBlock Text="{Binding SizeText}" FontSize="12" LineHeight="18" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,5"/>
+                    <ProgressBar x:Name="DownloadProgressBar" Height="6" BorderThickness="0" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}" Visibility="{Binding ShowProgress, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </StackPanel>
+            </Grid>
+            <Border x:Name="UpdateNote" Grid.Row="6" Background="{DynamicResource SoftBlueBrush}" CornerRadius="10" Padding="12,10,12,7" ToolTip="{Binding Error}">
+                <Grid><Grid.RowDefinitions><RowDefinition Height="21"/><RowDefinition Height="2"/><RowDefinition/></Grid.RowDefinitions>
+                    <TextBlock x:Name="UpdateNoteTitle" Text="{Binding NoteTitle}" FontSize="{StaticResource ClientFont13}" FontWeight="Medium" LineHeight="21" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource InkBrush}"/>
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <TextBlock Text="{Binding NoteText}" TextWrapping="Wrap" FontSize="12" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource MutedBrush}"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+            <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="{Binding SecondaryText}" Appearance="Secondary" Click="Close_Click" MinWidth="96" Style="{StaticResource SettingsButtonStyle}"/>
+                <ui:Button x:Name="UpdatePrimaryButton" Content="{Binding PrimaryText}" Appearance="Primary" Click="Primary_Click" MinWidth="100" Margin="10,0,0,0" Style="{StaticResource SettingsButtonStyle}"
+                    Background="{DynamicResource PrimaryBrush}" BorderBrush="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnAccentBrush}" AutomationProperties.Name="{Binding PrimaryText}">
+                    <ui:Button.Resources>
+                        <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="{DynamicResource SettingsBlueColor}" Opacity="0.5"/>
+                        <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="White"/>
+                    </ui:Button.Resources>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
+        <ui:Button Width="32" Height="32" MinWidth="0" MinHeight="0" CornerRadius="8" Margin="0,17,17,0" HorizontalAlignment="Right" VerticalAlignment="Top" Appearance="Transparent" Padding="6" BorderThickness="0" AutomationProperties.Name="{loc:Text '关闭'}" Click="Close_Click"><ui:SymbolIcon Symbol="Dismiss20" FontSize="20" Foreground="{DynamicResource SettingsMutedBrush}"/></ui:Button>
+    </Grid>
+    </Border>
+</ui:FluentWindow>

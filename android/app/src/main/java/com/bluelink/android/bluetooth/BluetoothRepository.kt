@@ -48,7 +48,6 @@ import kotlinx.coroutines.withTimeout
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 
 data class BluetoothConnection(val socket: BluetoothSocket, val peerName: String)
 
@@ -57,6 +56,7 @@ class BluetoothRepository(
     private val context: Context,
     identityPeerId: String,
     private val diagnostic: (DiagnosticLevel, String, String) -> Unit = { _, _, _ -> },
+    hasActiveConnection: (String) -> Boolean = { false },
 ) : Closeable {
     private val adapter: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java).adapter
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -68,19 +68,40 @@ class BluetoothRepository(
     private var server: BluetoothServerSocket? = null
     private var gattServer: BluetoothGattServer? = null
     private var connectRequestHandler: (suspend (BluetoothConnection) -> Unit)? = null
-    private val callbackDialing = AtomicBoolean()
+    private val dialGate = PeerDialGate(hasActiveConnection)
     private var serverJob: Job? = null
-    private var scanJob: Job? = null
-    @Volatile private var discoveryDetail = "点击扫描查找附近运行蓝联的设备"
+    @Volatile private var discoveryDetail = "下拉刷新查找附近运行蓝联的设备"
     @Volatile private var presenceError: String? = null
     @Volatile private var advertising = false
     @Volatile private var advertisingStarting = false
     @Volatile private var advertisingWithName = false
-    private val localPresenceId = identityPeerId.take(16).chunked(2)
+    @Volatile private var discoverable = false // Wait for persisted settings before advertising.
+    @Volatile var localDisplayName: String = ""
+    val deviceDisplayName: String get() = localDisplayName.ifBlank {
+        runCatching { adapter?.name }.getOrNull().orEmpty().ifBlank { "Android" }
+    }
+
+    fun setDiscoverable(enabled: Boolean) {
+        discoverable = enabled
+        if (enabled) startPresence() else stopAdvertising()
+    }
+
+    private fun stopAdvertising() {
+        runCatching { adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
+        advertising = false
+        advertisingStarting = false
+        refreshDiscovery()
+    }
+    @Volatile private var localPresenceId = identityPeerId.take(16).chunked(2)
         .map { it.toInt(16).toByte() }.toByteArray()
-    private val localPresenceIdHex = localPresenceId.joinToString("") { "%02X".format(Locale.ROOT, it) }
-    private val localRendezvousIdHex = localPresenceId.copyOfRange(0, 6)
+    private val localPresenceIdHex get() = localPresenceId.joinToString("") { "%02X".format(Locale.ROOT, it) }
+    private val localRendezvousIdHex get() = localPresenceId.copyOfRange(0, 6)
         .joinToString("") { "%02X".format(Locale.ROOT, it) }
+
+    /** Called with runtime session admission paused and Bluetooth endpoints stopped. */
+    fun updateIdentity(peerId: String) {
+        localPresenceId = peerId.take(16).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
         override fun onServiceAdded(status: Int, service: BluetoothGattService) {
@@ -142,17 +163,46 @@ class BluetoothRepository(
         }
     }
 
-    private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) = put(result)
-        override fun onBatchScanResults(results: MutableList<ScanResult>) = results.forEach(::put)
-        override fun onScanFailed(errorCode: Int) {
-            log(DiagnosticLevel.ERROR, "BLE 扫描失败（错误 $errorCode）")
-            updateDiscovery(false, "BLE 扫描失败（错误 $errorCode）")
-        }
-    }
+    private var stopActiveScan: (() -> Unit)? = null
+    private val discoveryScan = SingleDiscoveryScan(scope,
+        startRadio = { accept, failed ->
+            val scanner = requireNotNull(adapter?.bluetoothLeScanner) { "BLE 扫描器不可用" }
+            val callback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) = accept { put(result) }
+                override fun onBatchScanResults(results: MutableList<ScanResult>) = accept { results.forEach(::put) }
+                override fun onScanFailed(errorCode: Int) = failed("BLE 扫描失败（错误 $errorCode）")
+            }
+            stopActiveScan = { scanner.stopScan(callback) }
+            val filters = listOf(
+                ScanFilter.Builder().setManufacturerData(COMPANY_ID, PRESENCE_PREFIX, PRESENCE_PREFIX_MASK).build(),
+                ScanFilter.Builder().setServiceUuid(ParcelUuid(BtxConstants.BLE_RENDEZVOUS_UUID)).build(),
+                ScanFilter.Builder().setServiceData(ParcelUuid(BtxConstants.BLE_RENDEZVOUS_UUID),
+                    RENDEZVOUS_PREFIX, RENDEZVOUS_PREFIX_MASK).build(),
+            )
+            val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setReportDelay(0).setLegacy(false).build()
+            scanner.startScan(filters, settings, callback)
+        },
+        stopRadio = { stopActiveScan?.invoke(); stopActiveScan = null },
+        onStarted = {
+            publishDevices(nearbyTracker.beginScan())
+            log(DiagnosticLevel.INFO, "开始 BLE 扫描")
+            updateDiscovery(true, "正在查找附近的 BlueLink 设备…")
+        },
+        onTick = ::expireDevices,
+        onFinished = { completed, failure ->
+            if (completed) publishDevices(nearbyTracker.completeScanWindow(System.currentTimeMillis()))
+            val detail = failure ?: if (completed) {
+                if (_devices.value.isEmpty()) "附近没有发现运行蓝联的设备" else "发现 ${_devices.value.size} 台附近设备"
+            } else "已停止附近设备扫描"
+            log(if (failure == null) DiagnosticLevel.INFO else DiagnosticLevel.ERROR, "BLE 扫描结束：$detail")
+            updateDiscovery(false, detail)
+        },
+    )
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
+            if (!discoverable) { stopAdvertising(); return }
             advertisingStarting = false
             advertising = true
             presenceError = null
@@ -208,6 +258,7 @@ class BluetoothRepository(
     }
 
     private fun startAdvertising(includeName: Boolean) {
+        if (!discoverable) return
         val bluetooth = adapter ?: return
         val advertiser = bluetooth.bluetoothLeAdvertiser ?: return
         val settings = AdvertiseSettings.Builder()
@@ -232,6 +283,7 @@ class BluetoothRepository(
             }
     }
 
+    @Synchronized
     fun startDiscovery() {
         val bluetooth = adapter ?: run {
             publishDevices(nearbyTracker.unavailable())
@@ -254,84 +306,65 @@ class BluetoothRepository(
                 return
             }
         }
-        val scanner = bluetooth.bluetoothLeScanner
-        if (scanner == null) {
+        if (bluetooth.bluetoothLeScanner == null) {
             publishDevices(nearbyTracker.unavailable())
             log(DiagnosticLevel.ERROR, "BLE 扫描器不可用")
             updateDiscovery(false, "BLE 扫描器不可用")
             return
         }
 
-        scanJob?.cancel()
-        runCatching { scanner.stopScan(scanCallback) }
-        publishDevices(nearbyTracker.beginScan())
-        log(DiagnosticLevel.INFO, "开始 BLE 扫描")
-        scanJob = scope.launch {
-            val filters = listOf(
-                ScanFilter.Builder()
-                    .setManufacturerData(COMPANY_ID, PRESENCE_PREFIX, PRESENCE_PREFIX_MASK)
-                    .build(),
-                ScanFilter.Builder()
-                    .setServiceUuid(ParcelUuid(BtxConstants.BLE_RENDEZVOUS_UUID))
-                    .build(),
-                ScanFilter.Builder()
-                    .setServiceData(ParcelUuid(BtxConstants.BLE_RENDEZVOUS_UUID),
-                        RENDEZVOUS_PREFIX, RENDEZVOUS_PREFIX_MASK)
-                    .build(),
-            )
-            val settings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                .setReportDelay(0)
-                .setLegacy(false)
-                .build()
-            while (currentCoroutineContext().isActive) {
-                updateDiscovery(true, "正在查找附近的 BlueLink 设备…")
-                val failure = runCatching { scanner.startScan(filters, settings, scanCallback) }.exceptionOrNull()
-                if (failure != null) {
-                    log(DiagnosticLevel.ERROR,
-                        "BLE 扫描启动异常：${failure.message ?: failure.javaClass.simpleName}")
-                    updateDiscovery(false, "BLE 扫描启动异常：${failure.message ?: failure.javaClass.simpleName}")
-                    return@launch
-                }
-                repeat(SCAN_WINDOW_SECONDS) {
-                    delay(1_000)
-                    expireDevices()
-                }
-                runCatching { scanner.stopScan(scanCallback) }
-                publishDevices(nearbyTracker.completeScanWindow(System.currentTimeMillis()))
-                updateDiscovery(false,
-                    if (_devices.value.isEmpty()) "附近没有发现运行蓝联的设备" else "发现 ${_devices.value.size} 台附近设备")
-                delay(SCAN_PAUSE_MS)
-            }
-        }
+        discoveryScan.start()
     }
 
-    suspend fun connect(device: NearbyDevice, onStage: (String) -> Unit): BluetoothConnection = withContext(Dispatchers.IO) {
+    suspend fun connect(device: NearbyDevice, onStage: (String) -> Unit,
+                        onConnected: suspend (BluetoothConnection) -> Unit): Unit = withContext(Dispatchers.IO) {
         val bluetooth = requireNotNull(adapter) { "Bluetooth is unavailable" }
         require(hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { "缺少蓝牙连接权限" }
         require(device.rendezvousAvailable && device.connectable) { "该 Windows 广播没有可连接的 BlueLink Rendezvous" }
-        // Stopping only the platform scanner is insufficient: the discovery loop
-        // would otherwise start it again while GATT/RFCOMM negotiation is running.
-        scanJob?.cancel()
-        scanJob = null
-        runCatching { bluetooth.bluetoothLeScanner?.stopScan(scanCallback) }
-        updateDiscovery(false, "连接期间已暂停附近设备扫描")
-        log(DiagnosticLevel.INFO, "已暂停扫描，准备连接 Windows ${redact(device.address)}")
+        stopDiscoveryForConnection()
+        log(DiagnosticLevel.INFO, "已停止扫描，准备连接 Windows ${redact(device.address)}")
         onStage("正在连接 BLE Rendezvous")
         val offer = try {
             resolveTransportOffer(bluetooth.getRemoteDevice(device.address), onStage)
-        } catch (failure: Throwable) {
+        } catch (failure: kotlinx.coroutines.CancellationException) { throw failure }
+        catch (failure: Exception) {
             throw IOException("无法从对端取得 RFCOMM 连接参数：${failure.message}", failure)
         }
-        val peerName = offer.name.ifBlank { device.name }
-        log(DiagnosticLevel.INFO, "已读取 Transport Offer，设备名=$peerName，Classic=${redact(offer.classicAddress)}")
-        publishDevices(nearbyTracker.rename(device.address, peerName))
+        log(DiagnosticLevel.INFO, "已读取 Transport Offer，设备名=${offer.name}，Classic=${redact(offer.classicAddress)}")
+        publishDevices(nearbyTracker.rename(device.address, offer.name.ifBlank { device.name }))
         onStage("正在请求配对并连接 RFCOMM")
-        val socket = bluetooth.getRemoteDevice(offer.classicAddress)
-            .createRfcommSocketToServiceRecord(BtxConstants.RFCOMM_SERVICE_UUID)
-            .also { it.connect() }
-        log(DiagnosticLevel.INFO, "RFCOMM 通道已建立")
-        BluetoothConnection(socket, peerName)
+        dialTransportOffer(offer.copy(name = offer.name.ifBlank { device.name }), onConnected)
+    }
+
+    private suspend fun dialTransportOffer(offer: TransportOffer,
+                                          onConnected: suspend (BluetoothConnection) -> Unit) {
+        val lease = dialGate.tryAcquire(offer.classicAddress)
+        if (lease == null) {
+            log(DiagnosticLevel.INFO, "同一设备已有拨号或会话，复用现有连接")
+            return
+        }
+        var socket: BluetoothSocket? = null
+        var handedOff = false
+        try {
+            val connectedSocket = requireNotNull(adapter).getRemoteDevice(offer.classicAddress)
+                .createRfcommSocketToServiceRecord(BtxConstants.RFCOMM_SERVICE_UUID)
+            socket = connectedSocket
+            connectedSocket.connect()
+            log(DiagnosticLevel.INFO, "RFCOMM 通道已建立")
+            // Retain the dial lease until the session is registered, closing the hand-off race.
+            onConnected(BluetoothConnection(connectedSocket, offer.name.ifBlank { "Windows ${redact(offer.classicAddress)}" }))
+            handedOff = true
+        } finally {
+            if (!handedOff) {
+                try { socket?.close() } catch (_: IOException) { }
+            }
+            lease.close()
+        }
+    }
+
+    @Synchronized
+    private fun stopDiscoveryForConnection() {
+        discoveryScan.stop()
     }
 
     fun startServer(onAccepted: suspend (BluetoothSocket) -> Unit) {
@@ -359,9 +392,9 @@ class BluetoothRepository(
         server = null
     }
 
+    @Synchronized
     fun suspendBackgroundWork() {
-        scanJob?.cancel()
-        runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+        discoveryScan.stop()
         if (advertising) runCatching { adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
         advertisingStarting = false
         advertising = false
@@ -377,7 +410,6 @@ class BluetoothRepository(
         scope.cancel()
     }
 
-    @Synchronized
     private fun put(result: ScanResult) {
         val record = result.scanRecord ?: return
         val now = System.currentTimeMillis()
@@ -433,7 +465,6 @@ class BluetoothRepository(
         }
     }
 
-    @Synchronized
     private fun expireDevices() {
         publishDevices(nearbyTracker.expire(System.currentTimeMillis()))
     }
@@ -495,26 +526,15 @@ class BluetoothRepository(
             log(DiagnosticLevel.WARNING, "收到回连请求，但会话运行时尚未就绪")
             return
         }
-        if (!callbackDialing.compareAndSet(false, true)) {
-            log(DiagnosticLevel.WARNING, "已有回连任务，忽略重复 Connect Request")
-            return
-        }
         scope.launch {
+            stopDiscoveryForConnection()
             try {
-                scanJob?.cancel()
-                scanJob = null
-                runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
                 log(DiagnosticLevel.INFO, "正在响应 Windows 请求建立 RFCOMM")
-                val socket = requireNotNull(adapter).getRemoteDevice(offer.classicAddress)
-                    .createRfcommSocketToServiceRecord(BtxConstants.RFCOMM_SERVICE_UUID)
-                    .also { it.connect() }
-                log(DiagnosticLevel.INFO, "Windows 请求的 RFCOMM 回连已建立")
-                handler(BluetoothConnection(socket, offer.name.ifBlank { "Windows ${redact(offer.classicAddress)}" }))
-            } catch (failure: Throwable) {
+                dialTransportOffer(offer, handler)
+            } catch (failure: kotlinx.coroutines.CancellationException) { throw failure }
+            catch (failure: Exception) {
                 log(DiagnosticLevel.ERROR,
                     "Windows 回连失败：${failure.javaClass.simpleName}: ${failure.message ?: "无详细信息"}")
-            } finally {
-                callbackDialing.set(false)
             }
         }
     }
@@ -587,7 +607,7 @@ class BluetoothRepository(
 
     private fun localPeerInfo(): ByteArray = transportOffer(
         "00:00:00:00:00:00",
-        runCatching { adapter?.name }.getOrNull().orEmpty().ifBlank { "Android" },
+        deviceDisplayName,
     )
 
     private fun transportOffer(classicAddress: String, displayName: String): ByteArray {
@@ -623,8 +643,6 @@ class BluetoothRepository(
 
     companion object {
         const val COMPANY_ID = 0xFFFF
-        private const val SCAN_WINDOW_SECONDS = 10
-        private const val SCAN_PAUSE_MS = 5_000L
         private val PRESENCE_PREFIX = byteArrayOf(0x42, 0x4c, BtxConstants.PROTOCOL_MAJOR.toByte())
         private val PRESENCE_PREFIX_MASK = byteArrayOf(0xff.toByte(), 0xff.toByte(), 0xff.toByte())
         private val RENDEZVOUS_PREFIX = byteArrayOf(BtxConstants.PROTOCOL_MAJOR.toByte(), 2)

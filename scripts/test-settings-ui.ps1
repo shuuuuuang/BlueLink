@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$ExecutablePath,
     [string]$ArtifactRoot
 )
@@ -23,8 +23,8 @@ function Assert-True([bool]$condition, [string]$message) {
 }
 
 function Assert-SourceContract {
-    $settingsXaml = Join-Path $root 'windows\BlueLink.App\SettingsWindow.xaml'
-    $settingsCode = Join-Path $root 'windows\BlueLink.App\SettingsWindow.xaml.cs'
+    $settingsXaml = Join-Path $root 'windows\BlueLink.App\SettingsPage.xaml'
+    $settingsCode = Join-Path $root 'windows\BlueLink.App\SettingsPage.xaml.cs'
     $settingsTheme = Join-Path $root 'windows\BlueLink.App\Themes\SettingsWindow.xaml'
     $appXaml = Join-Path $root 'windows\BlueLink.App\App.xaml'
     $componentsTheme = Join-Path $root 'windows\BlueLink.App\Themes\Components.xaml'
@@ -42,16 +42,16 @@ function Assert-SourceContract {
     $projectText = Get-Content -LiteralPath $project -Raw -Encoding UTF8
     [xml]$xaml | Out-Null
     [xml]$theme | Out-Null
-    Assert-True ($xaml -match '^<ui:FluentWindow\b') 'SettingsWindow must use WPF UI FluentWindow.'
-    Assert-True ($xaml -match '<ui:TitleBar\b') 'SettingsWindow must expose the official WPF UI TitleBar.'
-    Assert-True ($xaml -match '<ui:NavigationView\b') 'SettingsWindow must expose the official WPF UI NavigationView.'
-    Assert-True ($xaml -match 'x:Name="SaveInfoBar"') 'SettingsWindow must expose non-blocking save feedback.'
+    Assert-True ($xaml -match '^<UserControl\b') 'Settings must be a page in the main window.'
+    Assert-True ($xaml -notmatch '<ui:TitleBar\b') 'Settings must share the main window title bar.'
+    Assert-True ($xaml -match '<ui:NavigationView\b') 'SettingsPage must expose the official WPF UI NavigationView.'
+    Assert-True ($xaml -notmatch '<ui:InfoBar\b' -and (Get-Content -LiteralPath $settingsCode -Raw) -match 'ShowToast\(') 'SettingsPage uses transient feedback without an occupied banner.'
     foreach ($page in @('general', 'connection', 'files', 'privacy', 'about')) {
         Assert-True ($xaml -match ('TargetPageTag="' + $page + '"')) "Missing settings navigation page: $page"
     }
-    Assert-True ($xaml -notmatch '<\s*ControlTemplate\b') 'SettingsWindow contains a forbidden ControlTemplate.'
-    Assert-True ($theme -notmatch '<\s*ControlTemplate\b') 'SettingsWindow theme contains a forbidden ControlTemplate.'
-    Assert-True ($theme -notmatch '<Style(?=[^>]*TargetType)(?![^>]*x:Key)') 'SettingsWindow theme contains a forbidden implicit base-control Style.'
+    Assert-True ($xaml -notmatch '<\s*ControlTemplate\b') 'SettingsPage contains a forbidden ControlTemplate.'
+    Assert-True ($theme -notmatch '<\s*ControlTemplate\b') 'Settings page theme contains a forbidden ControlTemplate.'
+    Assert-True ($theme -notmatch '<Style(?=[^>]*TargetType)(?![^>]*x:Key)') 'Settings page theme contains a forbidden implicit base-control Style.'
     Assert-True ($app -match '<ui:ThemesDictionary Theme="Light"\s*/>') 'App must load the WPF UI theme dictionary globally.'
     Assert-True ($app -match '<ui:ControlsDictionary\s*/>') 'App must load the WPF UI controls dictionary globally.'
     Assert-True ($theme -notmatch '<ui:(ThemesDictionary|ControlsDictionary)') 'Settings must not shadow WPF UI dictionaries in window scope.'
@@ -78,8 +78,8 @@ function Assert-SourceContract {
         'windows/BlueLink.App/ImagePreviewWindow.xaml',
         'windows/BlueLink.App/ImagePreviewWindow.xaml.cs',
         'windows/BlueLink.App/ShellFileLocator.cs',
-        'windows/BlueLink.App/SettingsWindow.xaml',
-        'windows/BlueLink.App/SettingsWindow.xaml.cs',
+        'windows/BlueLink.App/SettingsPage.xaml',
+        'windows/BlueLink.App/SettingsPage.xaml.cs',
         'windows/BlueLink.App/MainWindow.xaml',
         'windows/BlueLink.App/MainWindow.xaml.cs',
         'windows/BlueLink.App/Themes/Components.xaml',
@@ -239,24 +239,12 @@ function Find-WindowByNameAndProcess([string]$name, [int]$processId) {
         [Windows.Automation.TreeScope]::Children, $condition)
 }
 
-function Find-SettingsWindowByProcess([int]$processId, $ownerWindow) {
-    $condition = New-Object Windows.Automation.AndCondition(
-        (New-Object Windows.Automation.PropertyCondition(
-            [Windows.Automation.AutomationElement]::ControlTypeProperty,
-            [Windows.Automation.ControlType]::Window)),
-        (New-Object Windows.Automation.PropertyCondition(
-            [Windows.Automation.AutomationElement]::ProcessIdProperty, $processId)))
-    $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [Windows.Automation.TreeScope]::Children, $condition)
-    foreach ($window in $windows) {
-        if ($window.Current.Name -ne '蓝联 / BlueLink') { return $window }
-    }
-    if ($null -ne $ownerWindow) {
-        $ownedWindows = $ownerWindow.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
-        foreach ($window in $ownedWindows) {
-            if ($window.Current.Name -ne '蓝联 / BlueLink') { return $window }
-        }
-    }
+function Find-InlineSettingsHost([int]$processId, $ownerWindow) {
+    if ($null -eq $ownerWindow) { return $null }
+    $condition = New-Object Windows.Automation.PropertyCondition(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'SettingsPage')
+    $page = $ownerWindow.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+    if ($null -ne $page -and -not $page.Current.IsOffscreen) { return $ownerWindow }
     return $null
 }
 
@@ -412,7 +400,7 @@ function Capture-ControlVisual($element, [string]$path, [string]$description) {
 function Open-Settings($mainWindow, [int]$processId) {
     $button = Wait-Element { Find-ActionableByName $mainWindow '设置' } 10 'the real main-window Settings button'
     Invoke-Element $button 'the real main-window Settings button'
-    Wait-Element { Find-SettingsWindowByProcess $processId $mainWindow } 15 'the BlueLink Settings window'
+    Wait-Element { Find-InlineSettingsHost $processId $mainWindow } 15 'the inline BlueLink Settings page'
 }
 
 function Select-SettingsPage($settingsWindow, [string]$navigationName, [string]$visibleControlName) {
@@ -511,7 +499,7 @@ try {
     $valuePattern.SetValue('0')
     Invoke-Element (Find-ActionableByName $settingsWindow '保存设置') 'Save Settings button for invalid-value validation'
     Start-Sleep -Milliseconds 450
-    Assert-True ($null -ne (Find-SettingsWindowByProcess $process.Id $mainWindow)) 'Invalid receive limit did not keep the Settings window open.'
+    Assert-True ($null -ne (Find-InlineSettingsHost $process.Id $mainWindow)) 'Invalid receive limit did not keep the Settings page open.'
     $invalidPattern = [Windows.Automation.ValuePattern]$limitText.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
     Assert-True ($invalidPattern.Current.Value -eq '0') 'Invalid receive limit was unexpectedly rewritten or saved.'
     Capture-Window $settingsWindow (Join-Path $ArtifactRoot ("06-invalid-value-feedback-{0}pct.png" -f $scalePercent))
@@ -522,7 +510,7 @@ try {
     Assert-True ($restoredPattern.Current.Value -eq '500') 'Restore Defaults did not restore the 500 MiB draft value.'
     Invoke-Element (Find-ActionableByName $settingsWindow '取消设置') 'Cancel Settings button'
     Start-Sleep -Milliseconds 400
-    Assert-True ($null -eq (Find-SettingsWindowByProcess $process.Id $mainWindow)) 'Settings window did not close after Cancel.'
+    Assert-True ($null -eq (Find-InlineSettingsHost $process.Id $mainWindow)) 'Settings page did not return after Cancel.'
 
     @(
         'BlueLink settings UI Automation acceptance: PASS',

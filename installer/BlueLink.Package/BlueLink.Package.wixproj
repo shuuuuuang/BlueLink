@@ -9,7 +9,7 @@
     <UninstallExe Condition="'$(UninstallExe)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows\win-x64\Uninstall.exe</UninstallExe>
     <UninstallConfig Condition="'$(UninstallConfig)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows\win-x64\Uninstall.exe.config</UninstallConfig>
     <ManifestPath Condition="'$(ManifestPath)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows\win-x64\.bluelink-install.json</ManifestPath>
-    <ProductName Condition="'$(ProductName)' == ''">蓝联 BlueLink</ProductName>
+    <ProductName Condition="'$(ProductName)' == ''">钃濊仈 BlueLink</ProductName>
     <ProductCode Condition="'$(ProductCode)' == ''">*</ProductCode>
     <PackageUpgradeCode Condition="'$(PackageUpgradeCode)' == ''">{BE8A6A43-710C-4B6E-92DC-07C4FAFC22B9}</PackageUpgradeCode>
     <BundleUpgradeCode Condition="'$(BundleUpgradeCode)' == ''">{6B6EB4AB-16E2-4E54-BBBE-556061F7D4A7}</BundleUpgradeCode>
@@ -23,6 +23,15 @@
     <AutoStartComponentGuid Condition="'$(AutoStartComponentGuid)' == ''">{9FD0E1E0-913C-4906-A026-625313D0E250}</AutoStartComponentGuid>
     <ProductRegistryKey Condition="'$(ProductRegistryKey)' == ''">Software\BlueLink</ProductRegistryKey>
     <StartMenuComponentCondition Condition="'$(StartMenuComponentCondition)' == ''">1</StartMenuComponentCondition>
-    <DefineConstants>ProductVersion=$(ProductVersion);LauncherExe=$(LauncherExe);LauncherConfig=$(LauncherConfig);UninstallExe=$(UninstallExe);UninstallConfig=$(UninstallConfig);ManifestPath=$(ManifestPath);ProductName=$(ProductName);ProductCode=$(ProductCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleUpgradeCode=$(BundleUpgradeCode);BundleProviderKey=$(BundleProviderKey);ApplicationComponentGuid=$(ApplicationComponentGuid);UninstallerComponentGuid=$(UninstallerComponentGuid);ManifestComponentGuid=$(ManifestComponentGuid);DownloadComponentGuid=$(DownloadComponentGuid);StartMenuComponentGuid=$(StartMenuComponentGuid);DesktopComponentGuid=$(DesktopComponentGuid);AutoStartComponentGuid=$(AutoStartComponentGuid);ProductRegistryKey=$(ProductRegistryKey);StartMenuComponentCondition=$(StartMenuComponentCondition)</DefineConstants>
+    <MajorUpgradeSchedule Condition="'$(MajorUpgradeSchedule)' == ''">afterInstallExecute</MajorUpgradeSchedule>
+    <AllowSameVersionUpgrades Condition="'$(AllowSameVersionUpgrades)' == ''">no</AllowSameVersionUpgrades>
+    <DefineConstants>MajorUpgradeSchedule=$(MajorUpgradeSchedule);AllowSameVersionUpgrades=$(AllowSameVersionUpgrades);ProductVersion=$(ProductVersion);LauncherExe=$(LauncherExe);LauncherConfig=$(LauncherConfig);UninstallExe=$(UninstallExe);UninstallConfig=$(UninstallConfig);ManifestPath=$(ManifestPath);ProductName=$(ProductName);ProductCode=$(ProductCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleUpgradeCode=$(BundleUpgradeCode);BundleProviderKey=$(BundleProviderKey);ApplicationComponentGuid=$(ApplicationComponentGuid);UninstallerComponentGuid=$(UninstallerComponentGuid);ManifestComponentGuid=$(ManifestComponentGuid);DownloadComponentGuid=$(DownloadComponentGuid);StartMenuComponentGuid=$(StartMenuComponentGuid);DesktopComponentGuid=$(DesktopComponentGuid);AutoStartComponentGuid=$(AutoStartComponentGuid);ProductRegistryKey=$(ProductRegistryKey);StartMenuComponentCondition=$(StartMenuComponentCondition)</DefineConstants>
   </PropertyGroup>
+  <ItemGroup Condition="'$(GeneratedPayloadPath)' != ''">
+    <Compile Remove="Package.Generated.wxs" />
+    <Compile Include="$(GeneratedPayloadPath)" />
+  </ItemGroup>
+  <Target Name="UseReviewPayload" BeforeTargets="CoreCompile" Condition="'$(GeneratedPayloadPath)' != ''">
+    <ItemGroup><Compile Remove="Package.Generated.wxs" /></ItemGroup>
+  </Target>
 </Project>

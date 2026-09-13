@@ -14,7 +14,9 @@ public sealed class TransferReceiver : IAsyncDisposable
     private static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
         { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
           "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
-    private readonly string _target;
+    private string _target;
+    private readonly string _requestedTarget;
+    private readonly string _duplicatePolicy;
     private readonly string _partial;
     private readonly string _metadata;
     private readonly long _size;
@@ -26,9 +28,11 @@ public sealed class TransferReceiver : IAsyncDisposable
     private bool _writerClosed;
     private bool _committed;
 
-    public TransferReceiver(string managedRoot, FileOffer offer)
+    public TransferReceiver(string managedRoot, FileOffer offer, string duplicatePolicy = "rename")
     {
         _target = ResolveSafe(managedRoot, offer.Name);
+        _requestedTarget = _target;
+        _duplicatePolicy = duplicatePolicy;
         _partial = $"{_target}.{offer.Id:N}.part";
         _metadata = $"{_partial}.resume";
         _size = offer.Size;
@@ -110,6 +114,24 @@ public sealed class TransferReceiver : IAsyncDisposable
         }
     }
 
+    /// <summary>Authenticated USB records use one checkpoint per MiB, rather than one fsync per Bluetooth extent.</summary>
+    public async Task ImportChunkAsync(long offset, ReadOnlyMemory<byte> data, CancellationToken token)
+    {
+        await _finishGate.WaitAsync(token);
+        try
+        {
+            if (_writerClosed || offset < 0 || offset % _extentSize != 0 || offset + data.Length > _size ||
+                (data.Length % _extentSize != 0 && offset + data.Length != _size))
+                throw new InvalidDataException("Invalid USB import range");
+            _stream.Position = offset;
+            await _stream.WriteAsync(data, token);
+            await _stream.FlushAsync(token);
+            for (long i = offset / _extentSize; i < (offset + data.Length + _extentSize - 1) / _extentSize; i++) _completed[i] = true;
+            await PersistResumeAsync(token);
+        }
+        finally { _finishGate.Release(); }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _finishGate.WaitAsync();
@@ -127,13 +149,25 @@ public sealed class TransferReceiver : IAsyncDisposable
     private async Task CommitWithRetryAsync(CancellationToken token)
     {
         Exception? lastFailure = null;
+        var suffix = 0;
         for (var attempt = 0; attempt < CommitRetryDelays.Length; attempt++)
         {
             var delay = CommitRetryDelays[attempt];
             if (delay > TimeSpan.Zero) await Task.Delay(delay, token);
             try
             {
-                File.Move(_partial, _target, true);
+                token.ThrowIfCancellationRequested();
+                while (true)
+                {
+                    try { File.Move(_partial, _target, _duplicatePolicy == "overwrite"); break; }
+                    catch (IOException) when (_duplicatePolicy == "rename" && (File.Exists(_target) || Directory.Exists(_target)))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (++suffix > 10000) throw new IOException("无法分配可用的文件名");
+                        _target = Path.Combine(Path.GetDirectoryName(_requestedTarget)!,
+                            $"{Path.GetFileNameWithoutExtension(_requestedTarget)} ({suffix}){Path.GetExtension(_requestedTarget)}");
+                    }
+                }
                 return;
             }
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)

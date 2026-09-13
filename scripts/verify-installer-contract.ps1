@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 $required = @(
@@ -78,17 +78,42 @@ if ($installerWindow.Contains('IndexOf("\"ProductId\"') -or $ownership.Contains(
     throw 'Installer must parse the ownership manifest semantically instead of matching JSON formatting.'
 }
 $installerPrompt = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs') -Raw
-foreach ($token in @('new Wpf.Ui.Controls.MessageBox', 'Application.Current?.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox))', 'SaveSnapshot(owner, dialog, autoCancelSnapshotPath)', 'WaitForDialogResult', 'Dispatcher.PushFrame(frame)')) {
-    if (-not $installerPrompt.Contains($token)) { throw "Installer official MessageBox contract missing: $token" }
+foreach ($token in @('new InstallerDialogWindow', 'SaveSnapshot(owner, dialog, autoCancelSnapshotPath)', 'dialog.ShowDialog()', 'dialog.Confirmed')) {
+    if (-not $installerPrompt.Contains($token)) { throw "Installer shared dialog contract missing: $token" }
 }
 if ($installerPrompt.Contains('TestableMessageBox') -or $installerPrompt.Contains('InvokeCloseButton')) {
     throw 'Installer contains the removed MessageBox test subclass or internal close shortcut.'
+}
+
+# Audit the production entry points, not only a separately rendered component.
+$uninstaller = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.Uninstall\UninstallWindow.xaml.cs') -Raw
+foreach ($token in @('var dialog = CreateRemovalConfirmation()', 'InstallerConfirmationDialog.Create(this', 'ReadRegistration(this.installRoot)', 'PathsEqual(folder, expectedInstallRoot)')) {
+    if (-not $uninstaller.Contains($token)) { throw "Standalone uninstall entry-point contract missing: $token" }
+}
+if (-not $installerPrompt.Contains('InstallerConfirmationDialog.Create(owner, title, message)')) { throw 'Burn confirmation bypasses the shared prototype dialog.' }
+foreach ($project in @('BlueLink.SetupUI', 'BlueLink.Uninstall')) {
+    $definition = Get-Content -LiteralPath (Join-Path $root "installer\$project\$project.csproj") -Raw
+    if (-not $definition.Contains('SharedUI\InstallerConfirmationDialog.cs')) { throw "Shared confirmation is not linked by $project" }
 }
 
 $package = Get-Content -LiteralPath (Join-Path $root 'installer\BlueLink.Package\Package.wxs') -Raw
 foreach ($token in @('LauncherComponent', 'UninstallerComponent', 'InstallManifestComponent', 'APPFOLDER', 'BOOTSTRAPFOLDER', 'DownloadFolder', 'PublishedPayloadComponents', 'MsiProductCode', 'BundleUpgradeCode', 'BundleProviderKey', 'ARPSYSTEMCOMPONENT', 'ARPINSTALLLOCATION')) {
     if (-not $package.Contains($token)) { throw "MSI installed-structure contract missing: $token" }
 }
+
+# Review artifacts intentionally reuse VERSION, so every rebuilt MSI must upgrade
+# the previous product inside the transaction before writing its shared paths.
+$reviewBuild = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-review.ps1') -Raw
+foreach ($token in @('-p:MajorUpgradeSchedule=afterInstallInitialize', '-p:AllowSameVersionUpgrades=yes', '-p:ManifestPath=$manifest')) {
+    if (-not $reviewBuild.Contains($token)) { throw "Review repeat-install contract missing: $token" }
+}
+foreach ($token in @('$(var.MajorUpgradeSchedule)', '$(var.AllowSameVersionUpgrades)')) {
+    if (-not $package.Contains($token)) { throw "MSI upgrade configuration is disconnected: $token" }
+}
+foreach ($token in @('InstallDirectoryValidator = this.ValidateInstallDirectory', 'this.ValidateInstallDirectory(this.installFolder)', 'CanRecoverRegisteredInstall', 'incoming-install-manifest.json')) {
+    if (-not $bootstrapper.Contains($token)) { throw "MSI recovery entry-point contract missing: $token" }
+}
+if (-not $bundle.Contains('Name="incoming-install-manifest.json" SourceFile="$(var.ManifestPath)"')) { throw 'Recovery manifest is not included in the actual bundle.' }
 
 $build = Get-Content -LiteralPath (Join-Path $root 'scripts\build-windows-release.ps1') -Raw
 if ($build -match '(?i)inno|iscc|BlueLink\.iss') { throw 'Windows release script still references Inno Setup.' }

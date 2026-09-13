@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_device_count">%1$d 台</string>
+    <string name="connection_bluetooth">蓝牙</string>
+    <string name="connection_discoverable">允许发现本机</string>
+    <string name="connection_device">本机设备</string>
+    <string name="connection_name">本机设备名称</string>
+    <string name="connection_trusted">已信任设备</string>
+    <string name="connection_behavior">连接偏好</string>
+    <string name="connection_reconnect">断线后自动重连</string>
+    <string name="connection_auto_connect">自动连接已信任设备</string>
+    <string name="connection_edit_name">修改本机设备名称</string>
+    <string name="connection_name_label">设备名称</string>
+    <string name="connection_name_description">名称用于蓝联设备信息与连接请求。请输入简短的名称。</string>
+    <string name="connection_save">保存</string>
+    <string name="connection_trusted_description">可信设备可免去重复确认；移除后需要重新配对。</string>
+    <string name="connection_trusted_count">已保存 %1$d 台可信设备</string>
+    <string name="connection_trusted_empty">暂无可信设备</string>
+    <string name="connection_trusted_empty_description">完成设备配对后，可信设备会显示在这里</string>
+    <string name="connection_last_connected">最近连接：%1$s</string>
+    <string name="connection_no_connection_time">未记录</string>
+    <string name="connection_remove">移除</string>
+    <string name="connection_remove_device">移除可信设备</string>
+    <string name="connection_remove_all">移除全部可信设备</string>
+    <string name="connection_remove_message">确定移除 %1$s 吗？</string>
+    <string name="connection_remove_all_message">确定移除全部可信设备吗？</string>
+    <string name="connection_remove_note">再次连接需要重新核对安全码，聊天记录和已接收文件会保留。</string>
+    <string name="connection_request_title">新设备连接请求</string>
+    <string name="connection_request_message">%1$s 希望建立蓝联连接。</string>
+    <string name="connection_request_note">允许后仍需核对两台设备上的首次安全码。此操作不会自动信任设备。</string>
+    <string name="connection_allow">允许连接</string>
+    <string name="connection_reject">拒绝</string>
+    <string name="connection_system_error">无法打开蓝牙设置，请稍后重试。</string>
+    <string name="connection_trust_management">信任管理</string>
+</resources>

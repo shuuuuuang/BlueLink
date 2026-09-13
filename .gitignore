@@ -14,6 +14,7 @@
 .nuget/
 .nuget-local/
 .nuget-mirror-test/
+.nuget-installer/
 .build/
 build/
 **/build/
@@ -31,3 +32,6 @@ artifacts/
 *.part
 design/prototypes/prototypes.zip
 codex-history-repair-*.json
+.gradle-user-home/
+__pycache__/
+*.py[cod]

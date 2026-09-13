@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_device_count">%1$d</string>
+    <string name="connection_bluetooth">Bluetooth</string>
+    <string name="connection_discoverable">Allow device discovery</string>
+    <string name="connection_device">This device</string>
+    <string name="connection_name">Device name</string>
+    <string name="connection_trusted">Trusted devices</string>
+    <string name="connection_behavior">Connection preferences</string>
+    <string name="connection_reconnect">Reconnect after disconnection</string>
+    <string name="connection_auto_connect">Automatically connect trusted devices</string>
+    <string name="connection_edit_name">Edit device name</string>
+    <string name="connection_name_label">Device name</string>
+    <string name="connection_name_description">Used in BlueLink device information and connection requests. Choose a short name.</string>
+    <string name="connection_save">Save</string>
+    <string name="connection_trusted_description">Trusted devices do not need repeated verification. Removing one requires pairing again.</string>
+    <string name="connection_trusted_count">Saved trusted devices: %1$d</string>
+    <string name="connection_trusted_empty">No trusted devices</string>
+    <string name="connection_trusted_empty_description">Devices appear here after connecting and verifying the safety code.</string>
+    <string name="connection_last_connected">Last connected: %1$s</string>
+    <string name="connection_no_connection_time">Not recorded</string>
+    <string name="connection_remove">Remove</string>
+    <string name="connection_remove_device">Remove trusted device</string>
+    <string name="connection_remove_all">Remove all trusted devices</string>
+    <string name="connection_remove_message">Remove %1$s from trusted devices?</string>
+    <string name="connection_remove_all_message">Remove all trusted devices?</string>
+    <string name="connection_remove_note">Verify the safety code again on the next connection. Chat history and received files are preserved.</string>
+    <string name="connection_request_title">New device connection request</string>
+    <string name="connection_request_message">%1$s wants to connect with BlueLink.</string>
+    <string name="connection_request_note">After allowing, compare the first-time safety code on both devices. This does not automatically trust the device.</string>
+    <string name="connection_allow">Allow connection</string>
+    <string name="connection_reject">Reject</string>
+    <string name="connection_system_error">Unable to open Bluetooth settings. Please try again.</string>
+    <string name="connection_trust_management">Trust management</string>
+</resources>

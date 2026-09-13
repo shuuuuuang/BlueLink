@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="support_article_connection">
+        <item>連線與配對</item>
+        <item>使用說明 · Android</item>
+        <item>先確認兩台裝置已開啟藍牙，並允許藍聯存取附近裝置。</item>
+        <item>找不到附近裝置</item>
+        <item>在兩台裝置上開啟藍聯，確認藍牙與附近裝置權限已開啟。返回裝置清單重新掃描，並讓兩台裝置保持靠近。</item>
+        <item>安全碼不一致或配對失敗</item>
+        <item>核對兩台裝置顯示的安全碼。安全碼不一致時取消連線，再重新發起；只有確認一致後，才選擇「確認並信任」。</item>
+        <item>已信任裝置無法自動連線</item>
+        <item>確認對端在線、藍牙已開啟且藍聯可執行。可從離線裝置卡片重新連線；若裝置身分已重設，需要重新確認安全碼。</item>
+        <item>USB 高速傳輸</item>
+        <item>先透過藍牙連線並核對安全碼，再開啟兩端的 USB 高速傳輸，以資料線連接手機並選擇「傳輸檔案」。首次開啟時，選擇並授權藍聯專用中轉資料夾，例如 Download/BlueLinkUSB；取消授權後，可關閉再開啟此開關重試。裝置名稱旁的閃電代表已核驗的 USB 檔案通道就緒。共用資料夾只保存加密中轉檔案。同一手機的雙向檔案依序傳輸，後續檔案排隊等待；暫停隊首會讓後續檔案繼續等待，取消則讓下一項繼續。中斷後重新傳送整個檔案。無需 USB 偵錯或替換驅動程式，檔案總管仍可瀏覽手機；被其他程式占用時會等待通道可用。</item>
+    </string-array>
+    <string-array name="support_article_messages">
+        <item>訊息與檔案</item>
+        <item>使用說明 · Android</item>
+        <item>會話與檔案記錄儲存在本機；查看歷史不需要開啟藍牙。</item>
+        <item>查看離線歷史會話</item>
+        <item>在「裝置與會話」中選擇離線裝置，即可查看已有訊息和傳輸記錄。傳送新訊息或檔案時，需要先連線至該裝置。</item>
+        <item>傳送訊息與檔案</item>
+        <item>進入已連線裝置的會話後輸入訊息，或透過附件入口選擇檔案。接收完成的檔案可在 Download/BlueLink 中查看。</item>
+        <item>傳輸中斷後如何處理</item>
+        <item>先恢復裝置連線。失敗記錄僅供查看原因或刪除；如仍需傳輸，請重新選擇檔案傳送，建立新的傳輸工作。</item>
+    </string-array>
+    <string-array name="support_article_faq">
+        <item>常見問題</item>
+        <item>使用說明 · Android</item>
+        <item>瞭解本機資料、連線權限和回饋資訊的使用範圍。</item>
+        <item>必須連線至網際網路嗎？</item>
+        <item>訊息與檔案透過 Bluetooth 在裝置間傳輸；查看本機歷史無需連網。檢查更新和下載新版本則需要網際網路連線。</item>
+        <item>清除記錄會刪除檔案嗎？</item>
+        <item>不會。聊天記錄和傳輸記錄可分別清除，Download/BlueLink 中已接收的檔案會保留，可在檔案管理員中單獨管理。</item>
+        <item>診斷資訊何時產生？</item>
+        <item>附加診斷資訊預設關閉。開啟後，只有點選「產生回饋套件」時才一起打包；開啟或填寫表單不會產生診斷記錄，也不會自動上傳。</item>
+    </string-array>
+    <string-array name="support_article_privacy">
+        <item>藍聯隱私權政策</item>
+        <item>生效日期：2026 年 9 月 4 日</item>
+        <item>藍聯以本機處理為原則，訊息與檔案傳輸不依賴雲端服務。</item>
+        <item>我們處理的資料</item>
+        <item>藍聯處理裝置名稱、裝置識別碼、連線狀態、聊天記錄與傳輸記錄，用於建立藍牙連線及展示歷史。資料預設儲存在本機。</item>
+        <item>藍牙傳輸與本機儲存</item>
+        <item>訊息和檔案僅在使用者授權的裝置之間透過 Bluetooth 傳輸，不透過網際網路同步。已接收檔案儲存在 Download/BlueLink。</item>
+        <item>診斷與回饋</item>
+        <item>應用程式不會自動上傳診斷資料。產生回饋資訊後，只有在你選擇系統分享應用程式時，相關資訊才會離開本機；診斷資訊預設不附加。</item>
+        <item>權限使用</item>
+        <item>附近裝置與 Bluetooth 權限僅用於探索、連線和傳輸；通知權限用於展示連線或傳輸狀態。</item>
+        <item>資料刪除</item>
+        <item>你可以分別清除聊天記錄與傳輸記錄。清除記錄不會刪除 Download/BlueLink 中已接收的檔案。</item>
+    </string-array>
+    <string-array name="support_article_agreement">
+        <item>藍聯使用者協議</item>
+        <item>生效日期：2026 年 9 月 4 日</item>
+        <item>使用藍聯即表示你理解並同意以下使用規則。</item>
+        <item>服務範圍</item>
+        <item>藍聯用於使用者授權裝置之間的 Bluetooth 訊息與檔案傳輸，並提供本機歷史記錄管理。應用程式不提供雲端帳戶或雲端備份。</item>
+        <item>使用者責任</item>
+        <item>你應確保傳送內容合法且已取得必要授權，並妥善管理裝置存取權限、安全碼和可信裝置清單。</item>
+        <item>裝置與資料安全</item>
+        <item>重設裝置識別碼或移除可信裝置後，需要重新核對安全碼。請自行備份重要檔案和記錄。</item>
+        <item>更新與連網</item>
+        <item>檢查更新和下載新版本需要連網；訊息與檔案傳輸仍僅透過 Bluetooth 完成。</item>
+        <item>責任限制與終止</item>
+        <item>因裝置相容性、Bluetooth 環境或使用者操作造成的中斷與資料損失，應結合實際情況處理。你可以隨時停止使用並解除安裝應用程式。</item>
+    </string-array>
+</resources>

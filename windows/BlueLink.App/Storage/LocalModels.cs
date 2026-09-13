@@ -1,6 +1,6 @@
 namespace BlueLink.Storage;
 
-public enum StoredTrustState { Unknown, Trusted, Blocked }
+public enum StoredTrustState { Unknown, Trusted, Blocked, Retired, Removed }
 public enum StoredMessageDirection { Incoming, Outgoing }
 public enum StoredMessageType { Text, Image, File, System }
 
@@ -13,7 +13,8 @@ public sealed record StoredPeer(
     long CreatedAt,
     long LastSeenAt,
     long? LastConnectedAt = null,
-    string TransportAddress = "");
+    string TransportAddress = "",
+    string UsbTransportAddress = "");
 
 public sealed record StoredConversation(
     string ConversationId,
@@ -84,7 +85,6 @@ public sealed record BlueLinkSettings(
     bool AutoConnectTrustedDevices = true,
     bool ScanOnStartup = true,
     bool KeepBackgroundSessions = true,
-    int MaxConcurrentConnections = 4,
     bool AutoDownloadFiles = true,
     bool ReceiveSizeLimitEnabled = true,
     long ReceiveSizeLimitBytes = 500L * 1024 * 1024,
@@ -94,7 +94,16 @@ public sealed record BlueLinkSettings(
     bool DiagnosticsEnabled = true,
     string RetentionPeriod = "forever",
     string DownloadDirectory = "",
-    bool TransferPanelExpanded = true)
+    string LocalDeviceName = "",
+    string Theme = "system",
+    string Language = "zh-CN",
+    bool UsbEnabled = false,
+    bool AllowDiscovery = true,
+    bool ReconnectAfterDisconnect = true,
+    string DuplicateFilePolicy = "rename",
+    bool MessageNotifications = true,
+    bool ConnectionNotifications = true,
+    bool TransferNotifications = true)
 {
     public static BlueLinkSettings Defaults(string downloadDirectory) => new(DownloadDirectory: downloadDirectory);
 }

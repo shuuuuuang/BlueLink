@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "figma": {
+    "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+    "board": "1375:291"
+  },
+  "source": "design/figma/phosphor-file-icons/pictogram-v2",
+  "fallback": "file",
+  "mimePrefixes": {
+    "image/": "file-image",
+    "audio/": "file-audio",
+    "video/": "file-video",
+    "font/": "file-font",
+    "model/": "file-3d",
+    "text/": "file-text"
+  },
+  "icons": [
+    {
+      "id": "file-pdf-symbol",
+      "label": "PDF",
+      "figmaNode": "1381:305",
+      "light": "#D92D20",
+      "dark": "#FF9C93",
+      "extensions": [
+        "pdf"
+      ],
+      "mimeTypes": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "file-word-symbol",
+      "label": "Word",
+      "figmaNode": "1394:295",
+      "light": "#176BFF",
+      "dark": "#87B6FF",
+      "extensions": [
+        "doc",
+        "docx",
+        "docm",
+        "dot",
+        "dotx",
+        "dotm"
+      ],
+      "mimeTypes": [
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        "application/vnd.ms-word.document.macroenabled.12"
+      ]
+    },
+    {
+      "id": "file-sql-symbol",
+      "label": "SQL",
+      "figmaNode": "1385:318",
+      "light": "#087D7B",
+      "dark": "#70DDCE",
+      "extensions": [
+        "sql"
+      ],
+      "mimeTypes": [
+        "application/sql",
+        "text/x-sql"
+      ]
+    },
+    {
+      "id": "file-text",
+      "label": "文档",
+      "figmaNode": "1375:307",
+      "light": "#176BFF",
+      "dark": "#87B6FF",
+      "extensions": [
+        "txt",
+        "md",
+        "markdown",
+        "rtf",
+        "odt",
+        "log"
+      ],
+      "mimeTypes": [
+        "text/plain",
+        "text/markdown",
+        "application/rtf",
+        "text/rtf",
+        "application/vnd.oasis.opendocument.text"
+      ]
+    },
+    {
+      "id": "file-image",
+      "label": "图片",
+      "figmaNode": "1375:330",
+      "light": "#117BA3",
+      "dark": "#75D5F6",
+      "extensions": [
+        "png",
+        "jpg",
+        "jpeg",
+        "svg",
+        "gif",
+        "webp",
+        "bmp",
+        "tif",
+        "tiff",
+        "ico",
+        "heic",
+        "heif",
+        "avif"
+      ],
+      "mimeTypes": []
+    },
+    {
+      "id": "file-archive",
+      "label": "压缩包",
+      "figmaNode": "1375:353",
+      "light": "#AD7312",
+      "dark": "#FFD184",
+      "extensions": [
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+        "bz2",
+        "xz",
+        "tgz",
+        "tbz2",
+        "txz",
+        "zst"
+      ],
+      "mimeTypes": [
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-rar-compressed",
+        "application/vnd.rar",
+        "application/x-7z-compressed",
+        "application/x-tar",
+        "application/gzip",
+        "application/x-gzip",
+        "application/x-bzip2",
+        "application/x-xz",
+        "application/zstd"
+      ]
+    },
+    {
+      "id": "file-code",
+      "label": "代码与数据",
+      "figmaNode": "1375:376",
+      "light": "#087D7B",
+      "dark": "#70DDCE",
+      "extensions": [
+        "bash",
+        "bat",
+        "c",
+        "cc",
+        "cjs",
+        "cmd",
+        "cpp",
+        "cs",
+        "css",
+        "cts",
+        "cxx",
+        "dart",
+        "go",
+        "groovy",
+        "h",
+        "hpp",
+        "htm",
+        "html",
+        "hxx",
+        "ipynb",
+        "java",
+        "js",
+        "json",
+        "jsonc",
+        "jsx",
+        "kt",
+        "kts",
+        "less",
+        "lua",
+        "mjs",
+        "mts",
+        "php",
+        "ps1",
+        "py",
+        "pyw",
+        "r",
+        "rb",
+        "rs",
+        "sass",
+        "scala",
+        "scss",
+        "sh",
+        "svelte",
+        "swift",
+        "ts",
+        "tsx",
+        "vue",
+        "xml",
+        "zsh"
+      ],
+      "mimeTypes": [
+        "application/json",
+        "application/ld+json",
+        "application/xml",
+        "text/xml",
+        "text/html",
+        "text/css",
+        "text/javascript",
+        "application/javascript",
+        "text/x-java-source",
+        "text/x-python",
+        "application/x-sh",
+        "text/x-c",
+        "text/x-c++"
+      ]
+    },
+    {
+      "id": "file-config",
+      "label": "配置文件",
+      "figmaNode": "1404:297",
+      "light": "#536D91",
+      "dark": "#AAC2E0",
+      "extensions": [
+        "conf",
+        "config",
+        "yaml",
+        "yml",
+        "properties",
+        "ini"
+      ],
+      "mimeTypes": [
+        "application/yaml",
+        "application/x-yaml",
+        "text/yaml",
+        "text/x-yaml"
+      ]
+    },
+    {
+      "id": "file-table",
+      "label": "表格",
+      "figmaNode": "1396:295",
+      "light": "#16804A",
+      "dark": "#71DBA1",
+      "extensions": [
+        "xls",
+        "xlsx",
+        "xlsm",
+        "xlsb",
+        "xlt",
+        "xltx",
+        "csv",
+        "tsv",
+        "ods"
+      ],
+      "mimeTypes": [
+        "text/csv",
+        "text/tab-separated-values",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.oasis.opendocument.spreadsheet"
+      ]
+    },
+    {
+      "id": "file-presentation",
+      "label": "演示文稿",
+      "figmaNode": "1397:295",
+      "light": "#C25E12",
+      "dark": "#FFB76A",
+      "extensions": [
+        "ppt",
+        "pptx",
+        "pptm",
+        "pps",
+        "ppsx",
+        "pot",
+        "potx",
+        "odp"
+      ],
+      "mimeTypes": [
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.presentation"
+      ]
+    },
+    {
+      "id": "file-audio",
+      "label": "音频",
+      "figmaNode": "1413:299",
+      "light": "#8054D4",
+      "dark": "#C1A2FF",
+      "extensions": [
+        "mp3",
+        "wav",
+        "flac",
+        "m4a",
+        "aac",
+        "ogg",
+        "opus",
+        "wma",
+        "aiff",
+        "mid",
+        "midi"
+      ],
+      "mimeTypes": []
+    },
+    {
+      "id": "file-video",
+      "label": "视频",
+      "figmaNode": "1410:302",
+      "light": "#B2448A",
+      "dark": "#F49DCE",
+      "extensions": [
+        "mp4",
+        "mkv",
+        "mov",
+        "avi",
+        "webm",
+        "m4v",
+        "wmv",
+        "flv",
+        "mpg",
+        "mpeg"
+      ],
+      "mimeTypes": []
+    },
+    {
+      "id": "package",
+      "label": "安装包",
+      "figmaNode": "1376:380",
+      "light": "#8054D4",
+      "dark": "#C1A2FF",
+      "extensions": [
+        "apk",
+        "exe",
+        "msi",
+        "appx",
+        "msix",
+        "appxbundle",
+        "msixbundle",
+        "aab"
+      ],
+      "mimeTypes": [
+        "application/vnd.android.package-archive",
+        "application/x-msdownload",
+        "application/x-msi"
+      ]
+    },
+    {
+      "id": "file",
+      "label": "其他文件",
+      "figmaNode": "1376:403",
+      "light": "#687386",
+      "dark": "#B0C0D8",
+      "extensions": [],
+      "mimeTypes": []
+    },
+    {
+      "id": "file-font",
+      "label": "字体",
+      "figmaNode": "1419:340",
+      "light": "#7152BB",
+      "dark": "#BEA5F2",
+      "extensions": [
+        "ttf",
+        "otf",
+        "woff",
+        "woff2",
+        "ttc"
+      ],
+      "mimeTypes": [
+        "application/font-woff",
+        "application/x-font-ttf",
+        "application/x-font-opentype"
+      ]
+    },
+    {
+      "id": "file-disk-image",
+      "label": "镜像",
+      "figmaNode": "1419:417",
+      "light": "#4868AF",
+      "dark": "#9EBCFF",
+      "extensions": [
+        "iso",
+        "img",
+        "vhd",
+        "vhdx",
+        "vmdk",
+        "qcow",
+        "qcow2",
+        "vdi",
+        "ova",
+        "ovf"
+      ],
+      "mimeTypes": [
+        "application/x-iso9660-image",
+        "application/x-qemu-disk",
+        "application/x-virtualbox-ova",
+        "application/x-virtualbox-ovf"
+      ]
+    },
+    {
+      "id": "file-design-source",
+      "label": "设计源文件",
+      "figmaNode": "1423:297",
+      "light": "#B04479",
+      "dark": "#F4A3CB",
+      "extensions": [
+        "psd",
+        "psb",
+        "ai",
+        "sketch",
+        "fig",
+        "xd"
+      ],
+      "mimeTypes": [
+        "image/vnd.adobe.photoshop",
+        "application/vnd.adobe.photoshop"
+      ]
+    },
+    {
+      "id": "file-3d",
+      "label": "3D / CAD",
+      "figmaNode": "1424:297",
+      "light": "#07888B",
+      "dark": "#6DDCE0",
+      "extensions": [
+        "blend",
+        "fbx",
+        "obj",
+        "stl",
+        "gltf",
+        "glb",
+        "3mf",
+        "step",
+        "stp",
+        "dwg",
+        "dxf"
+      ],
+      "mimeTypes": [
+        "application/sla",
+        "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+        "application/acad",
+        "image/vnd.dwg",
+        "image/vnd.dxf"
+      ]
+    },
+    {
+      "id": "file-certificate",
+      "label": "证书",
+      "figmaNode": "1419:673",
+      "light": "#B47B12",
+      "dark": "#F1CC75",
+      "extensions": [
+        "crt",
+        "cer",
+        "pem",
+        "pfx",
+        "p12",
+        "p7b"
+      ],
+      "mimeTypes": [
+        "application/pkix-cert",
+        "application/x-x509-ca-cert",
+        "application/x-pem-file",
+        "application/x-pkcs12",
+        "application/pkcs7-mime"
+      ]
+    }
+  ]
+}

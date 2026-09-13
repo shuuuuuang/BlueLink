@@ -1,0 +1,111 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "captured": "2026-09-05",
+  "method": "Existing Figma node exportAsync PNG SCALE 3; original exported pixels, no redrawing or image generation.",
+  "logo": {
+    "source": "design/brand/final/bluelink-final-logo.png",
+    "figmaNode": "I415:25;414:35",
+    "sha1": "492d7cfd91d943060c02c24c0805c83907cdd5c4"
+  },
+  "assets": [
+    {
+      "file": "figma_bluetooth_off_notice.png",
+      "nodeId": "417:31",
+      "sha256": "b9734a6fd405302db86f047b0a82971532275c90ede5b94cb6a99f3093700a80"
+    },
+    {
+      "file": "figma_bluetooth_off.png",
+      "nodeId": "I562:3404;414:86;414:28",
+      "sha256": "a055385748748eb220d693cc879941cc1d4df0c5f70bb2f4b600758ff41c1eae"
+    },
+    {
+      "file": "figma_chevron.png",
+      "nodeId": "414:95",
+      "sha256": "1b129d1eb2f0718426035db02e952ca7319d025bfba6ea31975c8c1e43322add"
+    },
+    {
+      "file": "figma_connected_zero.png",
+      "nodeId": "414:22",
+      "sha256": "e8323b858d7f553216ea321cbae07f3366208a476080e3bff1c5db77d994fdf1"
+    },
+    {
+      "file": "figma_connected.png",
+      "nodeId": "414:16",
+      "sha256": "84449c99e5728f7c831b0db291f6cb319d17454b68e13ef86c92ac2fb209fbf3"
+    },
+    {
+      "file": "figma_desktop.png",
+      "nodeId": "417:19",
+      "sha256": "95e910bec58df5ddcf340a1f89e0fa6cf0e3586678381e96f86103b2f38a15e9"
+    },
+    {
+      "file": "figma_generic.xml",
+      "nodeId": "417:24",
+      "originalPngSha256": "ef2fee75a567b88406e890783e1472f01073a2f2332859fe257b23c1e0f98173",
+      "source": "design/figma/android-generic-device.svg",
+      "sourceSha256": "03b15b554d0f8fc6c0441dd4a5439249d653bcc0ae3d82f20a45807d98d9ad25",
+      "method": "2026-09-09: Original Figma SVG paths converted to Android VectorDrawable; only phone screen fill changed from opaque #F6F8FC to transparent. All strokes and home indicator retained. Replaces tinted PNG in every existing figma_generic usage.",
+      "sha256": "facc081e921dc196456c32210c66fb10ca725a1372449ac3c99bd49859ffd41e"
+    },
+    {
+      "file": "figma_nav_conversation_off.png",
+      "nodeId": "414:166",
+      "sha256": "8c9723ef1cdd4c78a22c1f0e4eb802037c715f8fb316a5c33fbbe9e0565d8308"
+    },
+    {
+      "file": "figma_nav_conversation.png",
+      "nodeId": "414:152",
+      "sha256": "8bd7af7ceff5d473a01f09ffb741ad4d9e812dcbe0e67674026e799c318ac7c5"
+    },
+    {
+      "file": "figma_nav_files_on.png",
+      "nodeId": "414:191",
+      "sha256": "c0a40786ecb50c7c93327b275e13b8bba1fd31bf30036d45e067701f25bdcaad"
+    },
+    {
+      "file": "figma_nav_files.png",
+      "nodeId": "414:155",
+      "sha256": "3aebaf8a15d5c551d68c4832d383c975ed9269a680efe3540b10a00ecd916f72"
+    },
+    {
+      "file": "figma_nav_settings_on.png",
+      "nodeId": "414:171",
+      "sha256": "512e6c43f7160c9162c5e253f96ba480ddc8045b8dec98025a765fd56f4224ed"
+    },
+    {
+      "file": "figma_nav_settings.png",
+      "nodeId": "414:157",
+      "sha256": "31b1c350c0a61dbd7ba7b1f80af656e8d72396a5579563adf12b1b53317509bf"
+    },
+    {
+      "file": "figma_permission.png",
+      "nodeId": "562:78",
+      "sha256": "c9266214788f053a3820743887276fcad877ddb61260896d695907fd45580243"
+    },
+    {
+      "file": "figma_phone.png",
+      "nodeId": "417:14",
+      "sha256": "7b92da837de6004a31a5fe890aaaa7ad9ab1077dfef0a617480598aa46e50285"
+    },
+    {
+      "file": "figma_scan.png",
+      "nodeId": "414:111",
+      "sha256": "649a47eb8e59acc81478833b3501d230739cafbbc17dd1eb3cd8c5ab582d4075"
+    },
+    {
+      "file": "figma_search_empty.png",
+      "nodeId": "I562:3767;503:77",
+      "sha256": "2ac746909d9ab06c41b41af7c1eeba209ec2c85d6599044360d70ac046ccb4b3"
+    },
+    {
+      "file": "figma_search.png",
+      "nodeId": "419:53",
+      "sha256": "c7b9a4498b653ed6ec0515acdb610e896b26c64812de16279bc6d2fa4cc076f9"
+    },
+    {
+      "file": "noto_sans_sc.ttf",
+      "nodeId": null,
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da"
+    }
+  ]
+}

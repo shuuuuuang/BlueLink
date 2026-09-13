@@ -86,12 +86,19 @@ public final class VerificationMain {
     }
 
     private void verifyProtocol11Payloads() throws Exception {
-        check(HexFormat.of().formatHex(ProtocolGreeting.current().encode()).equals("010100000000001f"),
+        check(HexFormat.of().formatHex(ProtocolGreeting.current().encode()).equals("010100000000003f"),
                 "BTX/1.1 greeting vector");
         ProtocolGreeting legacy = ProtocolGreeting.decode(new byte[]{1, 0, 0, 0});
         check(ProtocolGreeting.current().negotiate(legacy).minor() == 0
                         && ProtocolGreeting.current().negotiate(legacy).capabilities() == 0,
                 "BTX/1.0 capability downgrade");
+        var previous = ProtocolGreeting.decode(HexFormat.of().parseHex("010100000000001f"));
+        var previousNegotiation = ProtocolGreeting.current().negotiate(previous);
+        check(previousNegotiation.capabilities() == 0x1f
+                        && !previousNegotiation.supports(BtxCapabilities.MTP_FILES),
+                "previous BTX/1.1 peer preserves Bluetooth capabilities without MTP");
+        check(WireMessageType.fromCode(33) == WireMessageType.MTP_CONTROL,
+                "MTP control message code");
 
         byte[] hash = new byte[32];
         for (int index = 0; index < hash.length; index++) hash[index] = (byte) index;

@@ -1,0 +1,63 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "format": "PNG",
+  "scale": 3,
+  "assets": [
+    {
+      "id": "195:12705",
+      "file": "settings-back.png",
+      "width": 17,
+      "height": 15,
+      "sha256": "ba0b80a822b755a4a768fed6401e243fdb77c89215afc885991ee076ac505701"
+    },
+    {
+      "id": "554:15506",
+      "file": "settings-connections.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "bc0007673cd8fdff2d02a19804a61f3d95dfb03f99b082bf2f00bebe451b78d9"
+    },
+    {
+      "id": "219:12661",
+      "file": "settings-files.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "8e747fe3a4065d0accbc4f678e931045abc0a0a4d28f61c0780662d7482af7c4"
+    },
+    {
+      "id": "223:12637",
+      "file": "settings-privacy.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "e743191319b0d4dcf3aed3b69d124685d1b25dcb4d56f80c865f955aba907ec6"
+    },
+    {
+      "id": "224:12635",
+      "file": "settings-about.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "e605375aec167c1300c4ad02e9b8e72417cbe5629856136356399077d3615393"
+    },
+    {
+      "id": "195:12740",
+      "file": "settings-info.png",
+      "width": 48,
+      "height": 48,
+      "sha256": "281cb0b15b6d80c4dd9006cc05ea49cfc3ff24f81d069545f7924c2408b5b7f7"
+    },
+    {
+      "id": "1002:21251",
+      "file": "feedback-success.png",
+      "width": 48,
+      "height": 48,
+      "sha256": "e5f59d4ab12f7a0e464e9f5dc7fe3e3b964505931d316de4f10e239f427e5d2c"
+    },
+    {
+      "id": "312:14144",
+      "file": "settings-trust-empty.png",
+      "width": 34,
+      "height": 34,
+      "sha256": "aed05c70a3ed6c13bfe36fa4671d7a633b3a516e684f071603987dfdbf938a29"
+    }
+  ]
+}

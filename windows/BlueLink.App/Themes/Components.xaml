@@ -2,37 +2,84 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <!-- Product composition styles only; base templates come from WPF UI. -->
+    <!-- Suppress focus adorners without changing keyboard focus or selection. -->
+    <x:Null x:Key="DefaultControlFocusVisualStyle"/>
+    <x:Null x:Key="{x:Static SystemParameters.FocusVisualStyleKey}"/>
+    <!-- WPF UI overlays scrollbars; allocate a lane only while the bar is visible. -->
+    <Style x:Key="ContentScrollViewerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource UiScrollViewer}">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        <Style.Triggers>
+            <Trigger Property="ComputedHorizontalScrollBarVisibility" Value="Visible">
+                <Setter Property="Padding" Value="0,0,0,14" />
+            </Trigger>
+            <Trigger Property="ComputedVerticalScrollBarVisibility" Value="Visible">
+                <Setter Property="Padding" Value="0,0,14,0" />
+            </Trigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="ComputedVerticalScrollBarVisibility" Value="Visible" />
+                    <Condition Property="ComputedHorizontalScrollBarVisibility" Value="Visible" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Padding" Value="0,0,14,14" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style TargetType="ScrollViewer" BasedOn="{StaticResource ContentScrollViewerStyle}" />
+    <Style TargetType="ui:PassiveScrollViewer" BasedOn="{StaticResource ContentScrollViewerStyle}" />
+    <Style x:Key="BlueLinkUiButtonStyle" TargetType="ui:Button" BasedOn="{StaticResource DefaultUiButtonStyle}">
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Style.Triggers>
+            <Trigger Property="Appearance" Value="Transparent">
+                <Setter Property="BorderThickness" Value="0" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <Style TargetType="ui:Button" BasedOn="{StaticResource BlueLinkUiButtonStyle}"/>
+    <Style x:Key="LinkButtonStyle" TargetType="ui:Button" BasedOn="{StaticResource BlueLinkUiButtonStyle}">
+        <Setter Property="Appearance" Value="Transparent"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="MouseOverBackground" Value="Transparent"/>
+        <Setter Property="MouseOverBorderBrush" Value="Transparent"/>
+        <Setter Property="PressedBackground" Value="Transparent"/>
+        <Setter Property="PressedBorderBrush" Value="Transparent"/>
+    </Style>
     <Style TargetType="Window" BasedOn="{StaticResource DefaultWindowStyle}">
         <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
     </Style>
     <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontSize" Value="{StaticResource ClientFont20}" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
     </Style>
     <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontSize" Value="{StaticResource ClientFont15}" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
     </Style>
     <Style x:Key="CaptionStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
     </Style>
     <Style x:Key="PanelCardStyle" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
         <Setter Property="CornerRadius" Value="20" />
-        <Setter Property="BorderBrush" Value="#11000000" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Border11000000Brush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Effect" Value="{StaticResource PanelShadow}" />
     </Style>
     <Style x:Key="SettingsTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionTitleStyle}" />
     <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="15,7" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="MinHeight" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="Padding" Value="15,0" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Cursor" Value="Hand" />
@@ -40,28 +87,32 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="15,7" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="MinHeight" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="Padding" Value="15,0" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-        <Setter Property="Background" Value="{StaticResource BlueBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource BlueBrush}" />
-        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{DynamicResource BlueBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BlueBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
     </Style>
     <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Height" Value="38" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="Background" Value="{StaticResource SoftDangerBrush}" />
-        <Setter Property="BorderBrush" Value="#F6C7C3" />
-        <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="Background" Value="{DynamicResource SoftDangerBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderF6C7C3Brush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
@@ -72,13 +123,13 @@
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="DeviceConnectButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
-        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="Padding" Value="10,0" />
         <Setter Property="MinHeight" Value="36" />
     </Style>
     <Style x:Key="CompactToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="13,7" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="MinHeight" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="Padding" Value="13,0" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="ComposerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
@@ -93,14 +144,14 @@
         <Setter Property="Height" Value="{StaticResource ComposerControlHeight}" />
         <Setter Property="MinHeight" Value="{StaticResource ComposerControlHeight}" />
         <Setter Property="MinWidth" Value="80" />
-        <Setter Property="Padding" Value="15,7" />
+        <Setter Property="Padding" Value="15,0" />
     </Style>
     <Style x:Key="SegmentedRadioButtonStyle" TargetType="RadioButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="Padding" Value="10,0" />
         <Setter Property="MinHeight" Value="34" />
         <Setter Property="MinWidth" Value="58" />
         <Setter Property="FontSize" Value="11" />
@@ -111,22 +162,34 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource SoftBlueBrush}" />
-                <Setter Property="BorderBrush" Value="#C8D9FA" />
+                <Setter Property="Background" Value="{DynamicResource SoftBlueBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderC8D9FABrush}" />
             </Trigger>
             <Trigger Property="IsChecked" Value="True">
-                <Setter Property="Background" Value="{StaticResource BlueBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource BlueBrush}" />
-                <Setter Property="Foreground" Value="White" />
+                <Setter Property="Background" Value="{DynamicResource BlueBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BlueBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
             </Trigger>
         </Style.Triggers>
     </Style>
+    <Style x:Key="BlueLinkUiTextBoxStyle" TargetType="ui:TextBox" BasedOn="{StaticResource DefaultUiTextBoxStyle}">
+        <!-- Compact single-line fields need the full line box, not the default 15 DIP vertical padding. -->
+        <Setter Property="Padding" Value="10,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Style.Triggers>
+            <Trigger Property="AcceptsReturn" Value="True">
+                <Setter Property="Padding" Value="10,8"/>
+                <Setter Property="VerticalContentAlignment" Value="Top"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <Style TargetType="ui:TextBox" BasedOn="{StaticResource BlueLinkUiTextBoxStyle}"/>
     <Style x:Key="BlueLinkTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="MinHeight" Value="{StaticResource ClientControlHeight}" />
         <Setter Property="Padding" Value="13,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="CaretBrush" Value="{StaticResource BlueBrush}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource BlueBrush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="ComposerTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource BlueLinkTextBoxStyle}">
@@ -145,13 +208,13 @@
     </Style>
     <Style x:Key="BlueLinkComboBoxItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource DefaultComboBoxItemStyle}">
         <Setter Property="MinHeight" Value="34" />
-        <Setter Property="Padding" Value="11,7" />
+        <Setter Property="Padding" Value="11,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
-        <Setter Property="Height" Value="38" />
-        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="Height" Value="{StaticResource ClientControlHeight}" />
+        <Setter Property="MinHeight" Value="{StaticResource ClientControlHeight}" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="MaxDropDownHeight" Value="320" />
@@ -179,31 +242,34 @@
         </Style.Triggers>
     </Style>
     <Style x:Key="BlueLinkContextMenuStyle" TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}">
-        <Setter Property="MinWidth" Value="178" />
-        <Setter Property="Padding" Value="6" />
-        <Setter Property="Background" Value="White" />
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="MinWidth" Value="240" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="FontFamily" Value="{DynamicResource HomeFont}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="HasDropShadow" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style x:Key="BlueLinkMenuItemStyle" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
-        <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="FontSize" Value="{StaticResource ClientFont13}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Style.Triggers><Trigger Property="CommandParameter" Value="danger"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></Trigger></Style.Triggers>
     </Style>
     <Style x:Key="BlueLinkMenuSeparatorStyle" TargetType="Separator" BasedOn="{StaticResource {x:Type Separator}}">
         <Setter Property="Height" Value="1" />
-        <Setter Property="Margin" Value="8,5" />
-        <Setter Property="Background" Value="{StaticResource BorderBrush}" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style TargetType="ProgressBar" BasedOn="{StaticResource {x:Type ProgressBar}}">
         <Setter Property="Height" Value="6" />
-        <Setter Property="Foreground" Value="{StaticResource BlueBrush}" />
-        <Setter Property="Background" Value="#E4E9F2" />
+        <Setter Property="Foreground" Value="{DynamicResource BlueBrush}" />
+        <Setter Property="Background" Value="{DynamicResource PanelE4E9F2Brush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
     <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">

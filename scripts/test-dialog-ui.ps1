@@ -127,7 +127,7 @@ try {
     if ($process.ExitCode -ne 0) { throw "BlueLink dialog smoke process failed: $($process.ExitCode)" }
     if (-not (Test-Path -LiteralPath $appReport)) { throw 'The application dialog result report is missing.' }
     $appResult = Get-Content -LiteralPath $appReport -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not $appResult.Confirmed -or -not $appResult.OfficialMessageBox) {
+    if (-not $appResult.Confirmed -or -not $appResult.OfficialFluentWindow) {
         throw 'The application did not record the official primary-button result.'
     }
     if ($Mode -eq 'Trust' -and -not $appResult.TrustConfirmation) {

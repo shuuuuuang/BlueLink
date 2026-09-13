@@ -102,10 +102,11 @@ class NearbyDeviceTrackerTest {
     }
 
     @Test
-    fun `projection priority is connected then trusted offline then nearby`() {
-        assertEquals(DeviceAvailability.CONNECTED, DeviceProjectionPolicy.availability(true, true, true))
-        assertEquals(DeviceAvailability.OFFLINE, DeviceProjectionPolicy.availability(false, true, true))
-        assertEquals(DeviceAvailability.CONNECTABLE, DeviceProjectionPolicy.availability(false, false, true))
+    fun `discovery availability is independent of trust and yields to a live session`() {
+        assertEquals(DeviceAvailability.CONNECTED, DeviceProjectionPolicy.availability(true, true))
+        assertEquals(DeviceAvailability.CONNECTED, DeviceProjectionPolicy.availability(true, false))
+        assertEquals(DeviceAvailability.CONNECTABLE, DeviceProjectionPolicy.availability(false, true))
+        assertEquals(DeviceAvailability.OFFLINE, DeviceProjectionPolicy.availability(false, false))
     }
 
     @Test

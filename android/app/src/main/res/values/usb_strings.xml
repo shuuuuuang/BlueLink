@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="usb_title">USB 高速传输</string>
+    <string name="usb_automatic_description">开启后，自动优先使用设备间可用的 USB 连接。</string>
+    <string name="usb_session_ready">USB 加速已就绪</string>
+    <string name="usb_notice_authorization">请在手机上允许蓝联使用 USB 连接。</string>
+    <string name="usb_notice_verifying">正在验证 USB 连接；原有会话可继续使用。</string>
+    <string name="usb_notice_fallback">USB 连接已断开，新传输将使用蓝牙。</string>
+    <string name="usb_notice_offline">USB 连接已断开，设备当前离线。</string>
+    <string name="usb_notice_unavailable">USB 暂不可用，请在帮助中查看连接指引。</string>
+</resources>

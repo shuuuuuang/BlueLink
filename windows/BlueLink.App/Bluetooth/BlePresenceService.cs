@@ -21,9 +21,18 @@ public sealed class BlePresenceService : IDisposable
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private BluetoothLEAdvertisementWatcher? _watcher;
     private GattServiceProvider? _rendezvous;
+    private GattLocalCharacteristic? _transportOffer;
     private ulong _localAddress;
+    private bool _initialized;
 
+    public bool AllowDiscovery { get; set; } = true;
+    public async Task SetDiscoveryAsync(bool enabled)
+    {
+        AllowDiscovery = enabled;
+        if (_initialized) await StartAsync();
+    }
     public string? LastError { get; private set; }
+    public string LocalDeviceName { get; set; } = Environment.MachineName;
     public event Action<IReadOnlyList<NearbyDevice>>? DevicesChanged;
 
     public BlePresenceService(byte[] identityPublicKey)
@@ -41,14 +50,17 @@ public sealed class BlePresenceService : IDisposable
                 ?? throw new IOException("未找到 Windows 蓝牙适配器");
             if (!adapter.IsLowEnergySupported || !adapter.IsCentralRoleSupported)
                 throw new IOException("此蓝牙适配器不支持 BLE 扫描");
+            Session.SessionLog.Write("Bluetooth", $"BLE adapter: central={adapter.IsCentralRoleSupported}, peripheral={adapter.IsPeripheralRoleSupported}, discovery={AllowDiscovery}");
             _localAddress = adapter.BluetoothAddress;
+            _initialized = true;
 
             // Scanning is independent from peripheral advertising. A publisher or GATT
             // failure must not prevent Windows from discovering an Android peer.
-            EnsureWatcherStarted();
+            // Listening/advertising does not start a scan. ScanOnStartup and explicit scans own that action.
 
             var warnings = new List<string>();
-            if (adapter.IsPeripheralRoleSupported)
+            if (!AllowDiscovery) StopRendezvous();
+            else if (adapter.IsPeripheralRoleSupported)
             {
                 try { await EnsureRendezvousStartedAsync(); }
                 catch (Exception failure)
@@ -64,6 +76,7 @@ public sealed class BlePresenceService : IDisposable
             }
 
             LastError = warnings.Count == 0 ? null : string.Join("；", warnings);
+            if (LastError is not null) Session.SessionLog.Write("Bluetooth", LastError);
         }
         finally
         {
@@ -73,7 +86,8 @@ public sealed class BlePresenceService : IDisposable
 
     public async Task<IReadOnlyList<NearbyDevice>> ScanAsync(CancellationToken token = default)
     {
-        if (_watcher is null) await StartAsync();
+        if (!_initialized) await StartAsync();
+        EnsureWatcherStarted();
         if (_watcher is null) throw new IOException("BLE 扫描器未初始化");
         if (_watcher.Status != BluetoothLEAdvertisementWatcherStatus.Started) _watcher.Start();
         PublishSnapshot();
@@ -118,6 +132,7 @@ public sealed class BlePresenceService : IDisposable
             throw new IOException($"创建服务失败：{result.Error}");
 
         var provider = result.ServiceProvider;
+        provider.AdvertisementStatusChanged += RendezvousAdvertisementStatusChanged;
         try
         {
             var characteristic = await provider.Service.CreateCharacteristicAsync(TransportOfferUuid,
@@ -125,11 +140,12 @@ public sealed class BlePresenceService : IDisposable
                 {
                     CharacteristicProperties = GattCharacteristicProperties.Read,
                     ReadProtectionLevel = GattProtectionLevel.Plain,
-                    StaticValue = Buffer(TransportOffer(_localAddress)),
                     UserDescription = "BlueLink RFCOMM transport offer",
                 });
             if (characteristic.Error != BluetoothError.Success)
                 throw new IOException($"创建 Transport Offer 特征失败：{characteristic.Error}");
+            _transportOffer = characteristic.Characteristic;
+            _transportOffer.ReadRequested += TransportOffer_ReadRequested;
             provider.StartAdvertising(new GattServiceProviderAdvertisingParameters
             {
                 IsConnectable = true,
@@ -137,13 +153,19 @@ public sealed class BlePresenceService : IDisposable
                 ServiceData = Buffer(RendezvousPresencePayload(_presenceId)),
             });
             _rendezvous = provider;
+            Session.SessionLog.Write("Bluetooth", $"GATT advertising requested: status={provider.AdvertisementStatus}");
         }
         catch
         {
+            provider.AdvertisementStatusChanged -= RendezvousAdvertisementStatusChanged;
             try { provider.StopAdvertising(); } catch { }
             throw;
         }
     }
+
+    private void RendezvousAdvertisementStatusChanged(GattServiceProvider sender,
+        GattServiceProviderAdvertisementStatusChangedEventArgs args) =>
+        Session.SessionLog.Write("Bluetooth", $"GATT advertising state: {args.Status}; error={args.Error}");
 
     public IReadOnlyList<NearbyDevice> Snapshot()
     {
@@ -244,8 +266,9 @@ public sealed class BlePresenceService : IDisposable
                         _seen[address] = current with
                         {
                             Name = string.IsNullOrWhiteSpace(peerName) ? current.Name : peerName,
-                            CanInitiate = requestResult.Status == GattCommunicationStatus.Success &&
-                                requestResult.Characteristics.Count > 0,
+                            // A transient metadata read must not erase a live connectable advertisement.
+                            CanInitiate = current.CanInitiate || (requestResult.Status == GattCommunicationStatus.Success &&
+                                requestResult.Characteristics.Count > 0),
                             LastSeen = DateTimeOffset.UtcNow,
                         };
                         PublishSnapshot();
@@ -260,11 +283,13 @@ public sealed class BlePresenceService : IDisposable
 
     public async Task RequestConnectionAsync(NearbyDevice device, CancellationToken token)
     {
+        Session.SessionLog.Write("Bluetooth", "Requesting Android RFCOMM callback via GATT");
         token.ThrowIfCancellationRequested();
         var address = ParseAddress(device.Address);
         using var peer = await BluetoothLEDevice.FromBluetoothAddressAsync(address)
             ?? throw new IOException("无法打开 Android GATT 设备");
         var services = await peer.GetGattServicesForUuidAsync(RendezvousUuid, BluetoothCacheMode.Uncached);
+        Session.SessionLog.Write("Bluetooth", $"Android rendezvous lookup: {services.Status}, count={services.Services.Count}");
         if (services.Status != GattCommunicationStatus.Success)
             throw new IOException($"无法发现 Android Rendezvous：{services.Status}");
         foreach (var service in services.Services)
@@ -273,11 +298,13 @@ public sealed class BlePresenceService : IDisposable
             {
                 var characteristics = await service.GetCharacteristicsForUuidAsync(ConnectRequestUuid,
                     BluetoothCacheMode.Uncached);
+                Session.SessionLog.Write("Bluetooth", $"Android connect-request lookup: {characteristics.Status}, count={characteristics.Characteristics.Count}");
                 var request = characteristics.Characteristics.FirstOrDefault();
                 if (request is null) continue;
                 token.ThrowIfCancellationRequested();
                 var result = await request.WriteValueWithResultAsync(Buffer(TransportOffer(_localAddress)),
                     GattWriteOption.WriteWithResponse);
+                Session.SessionLog.Write("Bluetooth", $"Android connect-request write: {result.Status}");
                 if (result.Status != GattCommunicationStatus.Success)
                     throw new IOException($"Android 拒绝回连请求：{result.Status}");
                 return;
@@ -301,10 +328,25 @@ public sealed class BlePresenceService : IDisposable
         return payload;
     }
 
-    private static byte[] TransportOffer(ulong classicAddress)
+    private async void TransportOffer_ReadRequested(GattLocalCharacteristic sender, GattReadRequestedEventArgs args)
     {
-        var name = System.Text.Encoding.UTF8.GetBytes(Environment.MachineName);
-        if (name.Length > 80) name = name[..80];
+        var deferral = args.GetDeferral();
+        try
+        {
+            var request = await args.GetRequestAsync();
+            Session.SessionLog.Write("Bluetooth", $"Transport offer requested: present={request is not null}");
+            request?.RespondWithValue(Buffer(TransportOffer(_localAddress)));
+        }
+        catch (Exception failure) { LastError = $"读取本机连接信息失败：{FailureDetail(failure)}"; }
+        finally { deferral.Complete(); }
+    }
+
+    private byte[] TransportOffer(ulong classicAddress)
+    {
+        var encoder = System.Text.Encoding.UTF8.GetEncoder();
+        var name = new byte[80];
+        encoder.Convert(LocalDeviceName.AsSpan(), name.AsSpan(), true, out _, out var bytesUsed, out _);
+        name = name[..bytesUsed];
         var payload = new byte[8 + name.Length];
         payload[0] = 1;
         for (var index = 0; index < 6; index++) payload[1 + index] = (byte)(classicAddress >> ((5 - index) * 8));
@@ -395,7 +437,13 @@ public sealed class BlePresenceService : IDisposable
 
     private void StopRendezvous()
     {
+        if (_transportOffer is not null)
+        {
+            _transportOffer.ReadRequested -= TransportOffer_ReadRequested;
+            _transportOffer = null;
+        }
         if (_rendezvous is null) return;
+        _rendezvous.AdvertisementStatusChanged -= RendezvousAdvertisementStatusChanged;
         try { _rendezvous.StopAdvertising(); } catch { }
         _rendezvous = null;
     }

@@ -59,17 +59,8 @@ namespace BlueLink.Launcher
             var client = Path.Combine(root, "app", "BlueLink.exe");
             if (!File.Exists(client))
             {
-                var dialog = new Wpf.Ui.Controls.MessageBox
-                {
-                    Title = "无法启动蓝联",
-                    Content = "蓝联应用文件不完整，请从安装向导执行修复。",
-                    CloseButtonText = "关闭",
-                    IsPrimaryButtonEnabled = false,
-                    IsSecondaryButtonEnabled = false,
-                };
-                dialog.Style = Current.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style
-                    ?? throw new InvalidOperationException("WPF UI 官方 MessageBox 样式未加载。");
-                dialog.ShowDialogAsync().GetAwaiter().GetResult();
+                new BlueLink.Installation.InstallerNoticeWindow("无法启动蓝联",
+                    "蓝联应用文件不完整，请从安装向导执行修复。").ShowDialog();
                 return 2;
             }
             var forwarded = originalArguments.Where(value =>

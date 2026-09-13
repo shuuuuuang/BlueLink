@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="usb_title">USB 高速傳輸</string>
+    <string name="usb_automatic_description">開啟後，自動優先使用裝置間可用的 USB 連線。</string>
+    <string name="usb_session_ready">USB 加速已就緒</string>
+    <string name="usb_notice_authorization">請在手機上允許藍聯使用 USB 連線。</string>
+    <string name="usb_notice_verifying">正在驗證 USB 連線；原有會話可繼續使用。</string>
+    <string name="usb_notice_fallback">USB 連線已中斷，新傳輸將使用藍牙。</string>
+    <string name="usb_notice_offline">USB 連線已中斷，裝置目前離線。</string>
+    <string name="usb_notice_unavailable">USB 暫不可用，請在說明中查看連線指引。</string>
+</resources>

@@ -1,0 +1,79 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "updated": "2026-09-10",
+  "scope": "Windows/Android settings functional alignment; preserve platform-specific behavior",
+  "windows": {
+    "general": "195:12681",
+    "connection": "196:12683",
+    "files": "197:12694",
+    "privacy": "198:12696",
+    "languageMenu": "623:16778",
+    "trustEmpty": "309:13315",
+    "receiveConfirmation": "1358:16367",
+    "duplicateConfirmation": "1358:16597"
+  },
+  "android": {
+    "general": "374:565",
+    "connection": "377:3",
+    "files": "377:58",
+    "privacy": "377:115",
+    "maxConnections": "570:4278",
+    "retention": "570:4396",
+    "duplicatePolicy": "570:4337",
+    "languageMenu": "570:4227",
+    "maxConnectionsComponent": "570:96"
+  },
+  "sharedPolicy": {
+    "languages": [
+      "zh-CN",
+      "zh-TW",
+      "en-US/en"
+    ],
+    "connectionCounts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "retention": [
+      "7d",
+      "30d",
+      "90d",
+      "1y",
+      "forever"
+    ],
+    "duplicateFiles": [
+      "rename",
+      "ask",
+      "overwrite"
+    ],
+    "receiveLimitDefaultMiB": 500,
+    "firstConnectionSafetyCode": "mandatory"
+  },
+  "platformSpecific": {
+    "windows": [
+      "draft/save/cancel settings",
+      "close to tray or exit",
+      "window size persistence",
+      "Windows update distribution"
+    ],
+    "android": [
+      "immediate preference saving with restore-default confirmation",
+      "public-directory publishing choice",
+      "charging-only large-file receipt",
+      "background connection/service lifecycle",
+      "Bluetooth system action",
+      "local APK update"
+    ]
+  },
+  "implementation": [
+    "windows/BlueLink.App/SettingsPage.xaml",
+    "windows/BlueLink.App/IncomingFilePrompt.cs",
+    "android/app/src/main/java/com/bluelink/android/ui/settings"
+  ],
+  "verification": "See docs/IMPLEMENTATION_STATUS.md. Android physical-device acceptance is pending."
+}

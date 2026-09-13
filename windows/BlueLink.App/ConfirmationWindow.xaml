@@ -1,0 +1,46 @@
+<ui:FluentWindow x:Class="BlueLink.ConfirmationWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:dialog="clr-namespace:BlueLink.Presentation"
+    xmlns:loc="clr-namespace:BlueLink.Localization"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Width="{x:Static dialog:WindowsDialogLayout.Width}" MinHeight="{x:Static dialog:WindowsDialogLayout.ConfirmationMinHeight}" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+    Title="{Binding Title}" FontFamily="{StaticResource HomeFont}" Background="{DynamicResource SurfaceBrush}"
+    ExtendsContentIntoTitleBar="True" WindowBackdropType="None" ShowInTaskbar="False" Style="{DynamicResource {x:Type ui:FluentWindow}}">
+    <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource InformationBorderBrush}" BorderThickness="1" CornerRadius="12">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="{x:Static dialog:WindowsDialogLayout.HeaderRow}"/><RowDefinition Height="*"/><RowDefinition Height="{x:Static dialog:WindowsDialogLayout.FooterRow}"/></Grid.RowDefinitions>
+            <Grid Background="Transparent" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <TextBlock x:Name="ConfirmationTitle" Text="{Binding Title}" ToolTip="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="{StaticResource ClientFont16}" FontWeight="Medium" Foreground="{DynamicResource InkBrush}" Margin="16,0,62,0" VerticalAlignment="Center"/>
+                <ui:Button CornerRadius="8" x:Name="ConfirmationCloseButton" Width="32" Height="32" MinWidth="0" MinHeight="0" Margin="0,0,12,0"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Appearance="Transparent" Padding="6" BorderThickness="0"
+                    AutomationProperties.Name="{loc:Text '关闭'}" ToolTip="{loc:Text '关闭'}" Click="Cancel_Click">
+                    <ui:SymbolIcon Symbol="Dismiss20" Width="20" Height="20" FontSize="16" Foreground="{DynamicResource MutedBrush}"/>
+                </ui:Button>
+                <Border Height="1" VerticalAlignment="Bottom" Background="{DynamicResource InformationDividerBrush}"/>
+            </Grid>
+            <ScrollViewer x:Name="ConfirmationBodyScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="{x:Static dialog:WindowsDialogLayout.BodyMargin}">
+                    <Grid x:Name="ConfirmationMessageRow" MinHeight="44">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="36"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border x:Name="ConfirmationIconTile" Width="36" Height="36" VerticalAlignment="Center" Background="{DynamicResource PanelFFF1F0Brush}" CornerRadius="10">
+                            <Image x:Name="ConfirmationIcon" Width="20" Height="20" Source="/BlueLink;component/Assets/Figma/confirmation-warning.png"/>
+                        </Border>
+                        <TextBlock x:Name="ConfirmationQuestion" Grid.Column="1" Text="{Binding Question}" FontSize="13" Foreground="{DynamicResource TextInformationValueBrush}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    </Grid>
+                    <ContentControl x:Name="ConfirmationOptions" HorizontalContentAlignment="Stretch"/>
+                    <Border x:Name="ConfirmationImpactTile" MinHeight="36" Background="{DynamicResource ConfirmationImpactBrush}" CornerRadius="8" Margin="0,10,0,0" Padding="10,7">
+                        <TextBlock x:Name="ConfirmationImpact" Text="{Binding Impact}" Foreground="{DynamicResource Text8A5700Brush}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+            <Border Grid.Row="2" BorderBrush="{DynamicResource InformationDividerBrush}" BorderThickness="0,1,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="16,0">
+                    <ui:Button CornerRadius="8" x:Name="ConfirmationSecondaryButton" Content="{Binding SecondaryText}" Visibility="Collapsed" MinWidth="76" Height="{x:Static dialog:WindowsDialogLayout.ActionHeight}" MinHeight="{x:Static dialog:WindowsDialogLayout.ActionHeight}" Padding="10,0" Margin="0,0,8,0" FontSize="13" Click="Secondary_Click"/>
+                    <ui:Button CornerRadius="8" x:Name="ConfirmationCancelButton" Content="{loc:Text '取消'}" MinWidth="76" Height="{x:Static dialog:WindowsDialogLayout.ActionHeight}" MinHeight="{x:Static dialog:WindowsDialogLayout.ActionHeight}" Padding="10,0" FontSize="13" Click="Cancel_Click"/>
+                    <ui:Button CornerRadius="8" x:Name="ConfirmationPrimaryButton" Content="{Binding PrimaryText}" MinWidth="{Binding PrimaryMinWidth}" Height="{x:Static dialog:WindowsDialogLayout.ActionHeight}" MinHeight="{x:Static dialog:WindowsDialogLayout.ActionHeight}" Padding="10,0" Margin="8,0,0,0" FontSize="13" Appearance="Danger" Foreground="{DynamicResource OnAccentBrush}" Background="{DynamicResource ConfirmationDangerBrush}" BorderBrush="{DynamicResource ConfirmationDangerBrush}" Click="Confirm_Click"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</ui:FluentWindow>

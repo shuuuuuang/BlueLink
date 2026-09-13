@@ -6,8 +6,10 @@ using Windows.Networking.Sockets;
 namespace BlueLink.Bluetooth;
 
 public sealed record RfcommConnection(StreamSocket Socket, Stream Input, Stream Output, string PeerName,
-    bool ListenerRole) : IAsyncDisposable
+    bool ListenerRole) : BlueLink.Transport.IPeerConnection
 {
+    public BlueLink.Transport.TransportKind Transport => BlueLink.Transport.TransportKind.Bluetooth;
+    public PeerPlatform Platform { get; init; } = PeerPlatform.Unknown;
     public string TransportAddress => Socket.Information.RemoteAddress?.DisplayName ?? string.Empty;
 
     public async ValueTask DisposeAsync()
@@ -25,8 +27,9 @@ public sealed class RfcommBluetoothService : IDisposable
     private StreamSocketListener? _listener;
     private RfcommServiceProvider? _provider;
     private readonly BlePresenceService _presence;
-    private TaskCompletionSource<RfcommConnection>? _pendingCallback;
+    private CallbackConnectionRequest<RfcommConnection>? _pendingCallback;
     private string? _rfcommError;
+    public string LocalDeviceName { get => _presence.LocalDeviceName; set => _presence.LocalDeviceName = value; }
     public event Func<RfcommConnection, Task>? ConnectionAccepted;
     public event Action<IReadOnlyList<NearbyDevice>>? DevicesChanged
     {
@@ -39,6 +42,19 @@ public sealed class RfcommBluetoothService : IDisposable
     public RfcommBluetoothService(byte[] identityPublicKey)
     {
         _presence = new BlePresenceService(identityPublicKey);
+    }
+
+    public bool AllowDiscovery { get => _presence.AllowDiscovery; set => _presence.AllowDiscovery = value; }
+    public async Task SetDiscoveryAsync(bool enabled)
+    {
+        var changed = AllowDiscovery != enabled;
+        AllowDiscovery = enabled;
+        if (changed && _provider is not null && _listener is not null)
+        {
+            _provider.StopAdvertising();
+            _provider.StartAdvertising(_listener, enabled);
+        }
+        await _presence.SetDiscoveryAsync(enabled);
     }
 
     public async Task StartAsync()
@@ -54,7 +70,7 @@ public sealed class RfcommBluetoothService : IDisposable
                 listener.ConnectionReceived += ListenerOnConnectionReceived;
                 await listener.BindServiceNameAsync(provider.ServiceId.AsString(),
                     SocketProtectionLevel.BluetoothEncryptionAllowNullAuthentication);
-                provider.StartAdvertising(listener, true);
+                provider.StartAdvertising(listener, AllowDiscovery);
                 _provider = provider;
                 _listener = listener;
                 _rfcommError = null;
@@ -86,19 +102,14 @@ public sealed class RfcommBluetoothService : IDisposable
             throw new InvalidOperationException("该设备未公开可用的 BlueLink 连接请求服务");
         if (device.Platform == PeerPlatform.Android)
         {
-            var completion = new TaskCompletionSource<RfcommConnection>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var completion = new CallbackConnectionRequest<RfcommConnection>();
             if (Interlocked.CompareExchange(ref _pendingCallback, completion, null) is not null)
                 throw new InvalidOperationException("已有 Android 回连请求正在等待处理");
             try
             {
-                await _presence.RequestConnectionAsync(device, token);
-                var connection = await completion.Task.WaitAsync(TimeSpan.FromSeconds(30), token);
-                return connection with { PeerName = device.Name };
-            }
-            catch
-            {
-                Interlocked.CompareExchange(ref _pendingCallback, null, completion);
-                throw;
+                var connection = await completion.WaitAsync(
+                    requestToken => _presence.RequestConnectionAsync(device, requestToken), TimeSpan.FromSeconds(30), token);
+                return connection with { PeerName = device.Name, Platform = device.Platform };
             }
             finally { Interlocked.CompareExchange(ref _pendingCallback, null, completion); }
         }
@@ -108,7 +119,7 @@ public sealed class RfcommBluetoothService : IDisposable
         using var registration = token.Register(socket.Dispose);
         await socket.ConnectAsync(service.ConnectionHostName, service.ConnectionServiceName,
             SocketProtectionLevel.BluetoothEncryptionAllowNullAuthentication);
-        return Wrap(socket, device.Name, listenerRole: false);
+        return Wrap(socket, device.Name, listenerRole: false) with { Platform = device.Platform };
     }
 
     private async void ListenerOnConnectionReceived(StreamSocketListener sender, StreamSocketListenerConnectionReceivedEventArgs args)
@@ -117,9 +128,9 @@ public sealed class RfcommBluetoothService : IDisposable
         {
             var connection = Wrap(args.Socket, args.Socket.Information.RemoteAddress?.DisplayName ?? "附近设备",
                 listenerRole: true);
-            var pending = Interlocked.Exchange(ref _pendingCallback, null);
-            if (pending is not null) pending.TrySetResult(connection);
-            else if (ConnectionAccepted is { } handler) await handler(connection);
+            var pending = Volatile.Read(ref _pendingCallback);
+            if (pending?.TryAccept(connection) == true) return;
+            if (ConnectionAccepted is { } handler) await handler(connection);
             else args.Socket.Dispose();
         }
         catch { args.Socket.Dispose(); }
@@ -135,7 +146,7 @@ public sealed class RfcommBluetoothService : IDisposable
         _listener?.Dispose();
         _listener = null;
         _provider = null;
-        Interlocked.Exchange(ref _pendingCallback, null)?.TrySetCanceled();
+        Interlocked.Exchange(ref _pendingCallback, null)?.Cancel();
         _presence.Dispose();
     }
 }

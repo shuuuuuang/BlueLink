@@ -1,0 +1,15 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "assets": [
+    {
+      "nodeId": "898:4415",
+      "file": "android\\app\\src\\main\\res\\drawable-nodpi\\figma_security_shield.png",
+      "sha256": "7c61b22d45dccd84761a1268400eddfb092b43830b32cc3a58ea7a22f29f5b29"
+    },
+    {
+      "nodeId": "929:4387",
+      "file": "android\\app\\src\\main\\res\\drawable-nodpi\\figma_security_fingerprint.png",
+      "sha256": "a8061fda9bcf0036fe372da227a4761c53d1cee4936a916c931f37acf5303581"
+    }
+  ]
+}

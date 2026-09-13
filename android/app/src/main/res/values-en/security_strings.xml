@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="security_confirm">Confirm secure connection</string>
+    <string name="security_waiting">Waiting for confirmation</string>
+    <string name="security_rejected">Connection request declined</string>
+    <string name="security_timeout">Security confirmation timed out</string>
+    <string name="security_changed">Device identity changed</string>
+    <string name="security_closed">Connection closed</string>
+    <string name="security_revoked">Trust has changed</string>
+    <string name="security_code">Safety code</string>
+    <string name="security_status">Connection status</string>
+    <string name="security_declined">Declined by the other device</string>
+    <string name="security_expired">This safety code has expired</string>
+    <string name="security_blocked">Connection blocked</string>
+    <string name="security_not_connected">No secure connection established</string>
+    <string name="security_confirm_note">Check that both devices show the same safety code.</string>
+    <string name="security_wait_note">This device has confirmed. Wait for confirmation on the other device.</string>
+    <string name="security_reject_note">No secure connection or new trust was established.</string>
+    <string name="security_timeout_note">No trust was established. Reconnect and verify a new safety code.</string>
+    <string name="security_changed_note">This fingerprint differs from the trusted device fingerprint.</string>
+    <string name="security_changed_help">If the other device reset its identity, verify this before removing the old trust.</string>
+    <string name="security_closed_note">The other device closed the connection. Reconnect to verify. No new trust was added.</string>
+    <string name="security_failed_note">The secure connection could not be completed. Reconnect and verify again.</string>
+    <string name="security_revoked_note">Identity or trust was updated. Reconnect and verify again.</string>
+    <string name="security_local_fingerprint">This device</string>
+    <string name="security_remote_fingerprint">Other device</string>
+    <string name="security_current_fingerprint">Current fingerprint</string>
+    <string name="security_trusted_fingerprint">Trusted fingerprint</string>
+    <string name="security_cancel_connection">Cancel connection</string>
+    <string name="security_trust">Confirm and trust</string>
+    <string name="security_confirmed">Confirmed</string>
+    <string name="security_retry">Reconnect</string>
+    <string name="security_manage_trust">Manage trust</string>
+    <string name="security_identity_candidate">Possible known device</string>
+    <string name="security_candidate_detail">Connection details match “%1$s”, but its identity has changed. Link only if this is the same device and both safety codes match. Keep its conversation and file records, and replace trust in the previous identity.</string>
+    <string name="security_link_identity">Verify and link</string>
+</resources>

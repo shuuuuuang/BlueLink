@@ -21,6 +21,15 @@
     <Compile Include="..\..\shared\WindowsAppControlChannel.cs" Link="Shared\WindowsAppControlChannel.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="Assets\Figma\*.png" />
+    <Resource Include="..\..\shared\file-icons\res\drawable-nodpi\*.png" Link="Assets\FileTypes\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\shared\file-icons\assets\licenses\PhosphorIcons.txt" LogicalName="BlueLink.Assets.Licenses.PhosphorIcons.txt" />
+    <Resource Include="Assets\Fonts\*.ttf" />
+    <EmbeddedResource Include="Assets\Licenses\*.txt" />
+    <EmbeddedResource Include="Localization\en-US.json" LogicalName="BlueLink.Localization.en-US.json" />
+    <EmbeddedResource Include="Localization\zh-TW.json" LogicalName="BlueLink.Localization.zh-TW.json" />
+    <EmbeddedResource Include="..\..\design\fonts\NotoSansSC-OFL.txt" LogicalName="BlueLink.Assets.Licenses.NotoSansSC.txt" />
+    <Content Include="..\..\design\fonts\NotoSansSC-OFL.txt" Link="Assets\Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="..\..\design\brand\final\bluelink-final-logo.png">
       <Link>Assets\bluelink-logo.png</Link>
     </Resource>
@@ -28,4 +37,5 @@
       <Link>Assets\bluelink.ico</Link>
     </Resource>
   </ItemGroup>
+  <ItemGroup><Compile Include="..\..\shared\WindowsDialogLayout.cs" Link="Shared\WindowsDialogLayout.cs" /></ItemGroup>
 </Project>

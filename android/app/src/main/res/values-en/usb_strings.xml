@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="usb_title">USB transfer</string>
+    <string name="usb_automatic_description">Automatically prefer an available USB connection between devices when enabled.</string>
+    <string name="usb_session_ready">USB acceleration ready</string>
+    <string name="usb_notice_authorization">Allow BlueLink to use the USB connection on your phone.</string>
+    <string name="usb_notice_verifying">Verifying the USB connection. The existing session remains available.</string>
+    <string name="usb_notice_fallback">USB disconnected. New transfers will use Bluetooth.</string>
+    <string name="usb_notice_offline">USB disconnected. This device is offline.</string>
+    <string name="usb_notice_unavailable">USB is unavailable. See Help for connection guidance.</string>
+</resources>

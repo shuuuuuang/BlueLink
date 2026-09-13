@@ -1,10 +1,13 @@
 package com.bluelink.android.runtime
 
 import android.bluetooth.BluetoothSocket
+import com.bluelink.android.data.local.findIdentityCandidate
+import com.bluelink.android.data.local.applyIdentityAssociations
 import android.content.Context
 import android.net.Uri
 import com.bluelink.android.CryptoStartup
 import com.bluelink.android.bluetooth.BluetoothRepository
+import com.bluelink.android.bluetooth.readBluetoothAccess
 import com.bluelink.android.data.IdentityStore
 import com.bluelink.android.data.local.AppSettings
 import com.bluelink.android.data.local.BlueLinkRepository
@@ -19,10 +22,12 @@ import com.bluelink.android.domain.DeviceAvailability
 import com.bluelink.android.domain.DeviceProjectionPolicy
 import com.bluelink.android.domain.DiagnosticEntry
 import com.bluelink.android.domain.DiagnosticLevel
+import com.bluelink.android.domain.MessageDeliveryPolicy
 import com.bluelink.android.domain.MessageStatus
 import com.bluelink.android.domain.ManagedSessionState
 import com.bluelink.android.domain.NearbyDevice
 import com.bluelink.android.domain.PeerPlatform
+import com.bluelink.android.domain.TransferStatus
 import com.bluelink.android.domain.TransferItem
 import com.bluelink.android.domain.TrustPrompt
 import com.bluelink.android.session.SessionSupervisor
@@ -40,6 +45,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -56,10 +65,42 @@ class BlueLinkRuntime(
     private val cryptoStartup: CryptoStartup,
     private val repository: BlueLinkRepository,
 ) {
-    val identityFingerprint: String by lazy {
-        java.security.MessageDigest.getInstance("SHA-256").digest(identityStore.identity.publicKey())
-            .take(12).chunked(2).joinToString(":") { bytes -> bytes.joinToString("") { "%02X".format(it) } }
+    private fun currentFingerprint() = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(identityStore.identity.publicKey()).take(12).chunked(2)
+        .joinToString(":") { bytes -> bytes.joinToString("") { "%02X".format(it) } }
+    private val _identityFingerprint = MutableStateFlow(currentFingerprint())
+    val identityFingerprint = _identityFingerprint.asStateFlow()
+    private val sessionAdmission = com.bluelink.android.domain.SessionAdmissionGate()
+    private val privacyMutex = Mutex()
+    private val incomingConfirmation = com.bluelink.android.domain.TrustConfirmationGate()
+    private val incomingConfirmationMutex = Mutex()
+    private val _incomingFileRequest = MutableStateFlow<com.bluelink.android.domain.IncomingFileRequest?>(null)
+    val incomingFileRequest = _incomingFileRequest.asStateFlow()
+    fun confirmIncomingFile(requestId: UUID, accepted: Boolean) { incomingConfirmation.resolve(requestId, accepted) }
+    private suspend fun requestIncomingFile(session: ManagedSessionState, item: TransferItem): Boolean = incomingConfirmationMutex.withLock {
+        val request = com.bluelink.android.domain.IncomingFileRequest(sessionId = session.sessionId, peerName = session.peerName, transfer = item)
+        val result = incomingConfirmation.open(request.requestId)
+        _incomingFileRequest.value = request
+        try { result.await() } finally {
+            incomingConfirmation.close(request.requestId)
+            if (_incomingFileRequest.value?.requestId == request.requestId) _incomingFileRequest.value = null
+        }
     }
+    private val fileConflictMutex = Mutex()
+    private val fileConflictDecisions = ConcurrentHashMap<UUID, CompletableDeferred<com.bluelink.android.files.DuplicateChoice>>()
+    private val _fileConflictRequest = MutableStateFlow<com.bluelink.android.domain.FileConflictRequest?>(null)
+    val fileConflictRequest = _fileConflictRequest.asStateFlow()
+    fun resolveFileConflict(id: UUID, choice: com.bluelink.android.files.DuplicateChoice) { fileConflictDecisions[id]?.complete(choice) }
+    private suspend fun requestFileConflict(name: String) = fileConflictMutex.withLock {
+        val request = com.bluelink.android.domain.FileConflictRequest(fileName = name)
+        val result = CompletableDeferred<com.bluelink.android.files.DuplicateChoice>()
+        fileConflictDecisions[request.requestId] = result
+        _fileConflictRequest.value = request
+        try { kotlinx.coroutines.withTimeoutOrNull(60_000L) { result.await() } ?: com.bluelink.android.files.DuplicateChoice.CANCEL }
+        finally { fileConflictDecisions.remove(request.requestId); if (_fileConflictRequest.value?.requestId == request.requestId) _fileConflictRequest.value = null }
+    }
+    private val eventNotifications = com.bluelink.android.service.BlueLinkNotifications(context)
+    private val notifiedPhases = ConcurrentHashMap<UUID, ConnectionPhase>()
     private val diagnosticSequence = AtomicLong()
     private val _diagnostics = MutableStateFlow<List<DiagnosticEntry>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticEntry>> = _diagnostics.asStateFlow()
@@ -67,25 +108,32 @@ class BlueLinkRuntime(
         context,
         identityStore.identity.peerId().joinToString("") { "%02X".format(it) },
         ::recordDiagnostic,
+        hasActiveConnection = { address -> sessions.value.any {
+            it.transport == com.bluelink.android.domain.SessionTransport.BLUETOOTH &&
+                it.phase != ConnectionPhase.DISCONNECTED && it.transportAddress.equals(address, true)
+        } },
     )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
         CoroutineExceptionHandler { _, failure ->
             CrashReporter.recordNonFatal(context, "RuntimeScope", failure)
             recordDiagnostic(DiagnosticLevel.ERROR, "Runtime", "后台任务失败：${failure.javaClass.simpleName}: ${failure.message ?: "无详情"}")
         })
+    @Volatile private var appForeground = false
     private val started = AtomicBoolean()
-    private val discoveryStarted = AtomicBoolean()
+    private val startupDiscovery = com.bluelink.android.bluetooth.StartupDiscovery()
+    @Volatile private var settingsLoaded = false
     private val cryptoOperational = AtomicBoolean()
     private val dialing = ConcurrentHashMap.newKeySet<String>()
     private val trustMutex = Mutex()
     @Volatile
     private var cryptoFailureDetail = cryptoStartup.detail
-    @Volatile
-    private var trustDecision: CompletableDeferred<Boolean>? = null
+    private val trustConfirmation = com.bluelink.android.domain.TrustConfirmationGate()
     @Volatile private var activeSessionId: UUID? = null
     @Volatile private var activePeerId: String? = null
     @Volatile private var appSettings = AppSettings()
     private val reconnectBackoff = ConcurrentHashMap<String, ReconnectBackoff>()
+    private val connectedThisRun = ConcurrentHashMap.newKeySet<String>()
+    private val manuallyDisconnected = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var latestAutoConnectSnapshot: AutoConnectSnapshot? = null
     private val transferSamples = ConcurrentHashMap<UUID, TransferSample>()
 
@@ -95,67 +143,110 @@ class BlueLinkRuntime(
     val messages: StateFlow<List<ChatItem>> = _messages.asStateFlow()
     private val _transfers = MutableStateFlow<Map<UUID, TransferItem>>(emptyMap())
     val transfers: StateFlow<Map<UUID, TransferItem>> = _transfers.asStateFlow()
+    private val transferIndex = MutableStateFlow(com.bluelink.android.domain.TransferHistoryIndex())
+    private val transferHistoryMutex = Mutex()
+    val allTransfers: StateFlow<Map<UUID, TransferItem>> = transferIndex.map { it.items }
+        .stateIn(scope, SharingStarted.Eagerly, emptyMap())
+    private fun selectedTransfers(): Map<UUID, TransferItem> = transferIndex.value.items
+        .filterValues { activePeerId != null && it.peerId.equals(activePeerId, true) }
+
     private val _trustPrompt = MutableStateFlow<TrustPrompt?>(null)
     val trustPrompt: StateFlow<TrustPrompt?> = _trustPrompt.asStateFlow()
+    private val securityLock = Any()
+    private val securityRequests = linkedMapOf<UUID, com.bluelink.android.domain.SecurityRequest>()
+    private val _securityRequest = MutableStateFlow<com.bluelink.android.domain.SecurityRequest?>(null)
+    val securityRequest = _securityRequest.asStateFlow()
     private val _conversations = MutableStateFlow<List<ConversationSummary>>(emptyList())
     val conversations: StateFlow<List<ConversationSummary>> = _conversations.asStateFlow()
     private val _devices = MutableStateFlow<List<NearbyDevice>>(emptyList())
     val devices: StateFlow<List<NearbyDevice>> = _devices.asStateFlow()
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    private val contentScopes = com.bluelink.android.domain.PeerContentScope()
+    private val queueLocks = ConcurrentHashMap<String, Mutex>()
+    private fun contentId(id: UUID) = contentScopes.key(id)
+    private fun isSelectedContent(id: UUID) = activeSessionId?.let { contentId(it) == contentId(id) } == true
+    private val messagePersistence = com.bluelink.android.data.local.MessagePersistenceQueue(scope)
+    private val conversationReads = com.bluelink.android.domain.ConversationReadTracker { peerId ->
+        messagePersistence.enqueue { repository.markConversationRead(peerId) }
+    }
     private val messagesBySession = ConcurrentHashMap<UUID, List<ChatItem>>()
-    private val transfersBySession = ConcurrentHashMap<UUID, Map<UUID, TransferItem>>()
     private val sessionSupervisor = SessionSupervisor(
         context = context,
         identityStore = identityStore,
-        onTrustRequired = ::requestTrust,
+        expectedTrustedKeys = { repository.trustedKeysAtAddress(it, identityStore) },
+        findIdentityCandidate = { peerId, hint -> repository.findIdentityCandidate(peerId, hint) },
+        applyIdentityAssociation = ::applyIdentityAssociation,
+        peerPlatform = { address -> conversations.value.firstOrNull { it.transportAddress.equals(address, true) }?.platform
+            ?: bluetooth.devices.value.firstOrNull { it.address.equals(address, true) }?.platform ?: PeerPlatform.UNKNOWN },
+        onSecurityRequest = ::presentSecurityRequest,
+        onSecurityFinished = ::finishSecurityRequest,
+        onReceiveConfirmation = ::requestIncomingFile,
+        onFileConflict = ::requestFileConflict,
         onMessage = ::handleMessage,
         onTransfer = ::handleTransfer,
         onEnvelope = ::handleEnvelope,
         onReceipt = ::handleReceipt,
+        onMessageStatus = ::handleMessageStatus,
         onStateChanged = ::handleSessionState,
         onDiagnostic = ::recordDiagnostic,
     )
     val sessions: StateFlow<List<ManagedSessionState>> = sessionSupervisor.states
+    private val liveTransferOwners = ConcurrentHashMap<UUID, UUID>()
+    private val usb = com.bluelink.android.usb.MtpDirectoryController(context, { sessions.value },
+        { sessionSupervisor.mtpEnabled = it }, { sessionSupervisor.refreshMtp() })
+    val usbState = usb.state
+    fun retryUsb() = usb.refresh(retry = true)
 
     fun start() {
         recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "启动 BlueLink Android 运行时")
         if (!started.compareAndSet(false, true)) return
         CrashReporter.drain(context).forEach { recordDiagnostic(DiagnosticLevel.ERROR, "Crash", it) }
-        scope.launch { sessions.collect { updateSelectedConnection(it) } }
+        scope.launch { sessions.collect { updateSelectedConnection(it); usb.observe() } }
+        scope.launch { repository.transferHistory.collect { stored -> transferIndex.update { index -> index.restore(stored.map { value ->
+            if (value.status in com.bluelink.android.domain.HistoryQuery.activeStatuses && liveTransferOwners[value.id] == null)
+                value.copy(status = TransferStatus.FAILED, failureDetail = "设备通道已断开，请由发送方重试传输") else value
+        }) } } }
+        scope.launch { allTransfers.collect { _transfers.value = selectedTransfers() } }
+
         scope.launch {
             repository.initialize(identityStore)
             repository.settings.collect { settings ->
                 appSettings = settings
+                settingsLoaded = true
+                usb.configure(settings.usbTransferEnabled, appForeground || settings.keepBackgroundSessions)
+                bluetooth.localDisplayName = settings.localDeviceName
+                sessionSupervisor.localDeviceName = { bluetooth.deviceDisplayName }
+                bluetooth.setDiscoverable(settings.allowDiscovery && sessionAdmission.ticket() != null)
                 _settings.value = settings
                 if (!settings.diagnosticsEnabled) _diagnostics.value = emptyList()
-                sessionSupervisor.maxConcurrentSessions = settings.maxConcurrentConnections
                 sessionSupervisor.maxReceiveBytes = if (settings.receiveSizeLimitEnabled)
                     settings.receiveSizeLimitBytes else Long.MAX_VALUE
                 sessionSupervisor.downloadDestination = settings.downloadDirectory
                 sessionSupervisor.autoAcceptFiles = settings.autoDownloadFiles
-                repository.applyRetention(settings.retentionPeriod)
-                if (settings.scanOnStartup && discoveryStarted.compareAndSet(false, true))
-                    bluetooth.startDiscovery()
+                sessionSupervisor.duplicateFilePolicy = settings.duplicateFilePolicy
+                sessionSupervisor.autoSaveImages = settings.autoSaveImages
+                sessionSupervisor.autoSaveOtherAttachments = settings.autoSaveOtherAttachments
+                sessionSupervisor.largeFilesOnlyWhileCharging = settings.largeFilesOnlyWhileCharging
+                transferHistoryMutex.withLock {
+                    messagePersistence.run { repository.applyRetention(settings.retentionPeriod) }
+                    com.bluelink.android.domain.RecordRetention.cutoff(settings.retentionPeriod, System.currentTimeMillis())?.let { cutoff ->
+                        transferIndex.update { it.retainSince(cutoff) }
+                    }
+                }
+                scanAtStartupIfReady()
             }
         }
         scope.launch {
-            combine(repository.peers, sessions, bluetooth.devices) { peers, active, nearby ->
-                val trusted = peers.filter { it.trustState == "TRUSTED" }
-                DeviceProjectionPolicy.nearbyCandidates(
-                    devices = nearby,
-                    activePeerIds = active.mapNotNull { it.peerId }.toSet(),
-                    trustedPeerIds = trusted.map { it.peerId }.toSet(),
-                    activeAddresses = active.map { it.transportAddress }.filter { it.isNotBlank() }.toSet(),
-                    trustedAddresses = trusted.map { it.transportAddress }.filter { it.isNotBlank() }.toSet(),
-                )
-            }.collect { _devices.value = it }
+            // Keep all discovered endpoints for historical-device menus and reconnects.
+            // DeviceScreenState alone decides which ones belong in the new-device group.
+            bluetooth.devices.collect { _devices.value = it }
         }
         scope.launch {
-            combine(repository.peers, repository.conversations, sessions, bluetooth.devices) { peers, stored, active, nearby ->
+            combine(repository.peers, repository.conversations, sessions, bluetooth.devices, repository.settings) { peers, stored, active, nearby, preferences ->
                 val conversationsByPeer = stored.associateBy { it.peerId }
                 val sessionsByPeer = active.filter { it.peerId != null && it.phase == ConnectionPhase.CONNECTED }
-                    .associateBy { requireNotNull(it.peerId) }
+                    .groupBy { requireNotNull(it.peerId) }.mapValues { (peer, matches) -> requireNotNull(com.bluelink.android.domain.SessionRoute.preferred(matches, peer)) }
                 val canonicalPeers = peers.groupBy { it.peerId.lowercase() }.values.map { matches ->
                     matches.sortedWith(compareByDescending<com.bluelink.android.data.local.PeerEntity> {
                         if (sessionsByPeer.containsKey(it.peerId)) 1 else 0
@@ -164,18 +255,22 @@ class BlueLinkRuntime(
                 canonicalPeers.map { peer ->
                     val session = sessionsByPeer[peer.peerId]
                     val visible = nearby.any { device ->
-                        device.address.equals(peer.transportAddress, true) ||
-                            (device.discoveryId.isNotBlank() && peer.peerId.startsWith(device.discoveryId, true))
+                        com.bluelink.android.domain.DeviceActions.canConnect(device) &&
+                            (device.address.equals(peer.transportAddress, true) ||
+                                (device.discoveryId.isNotBlank() && peer.peerId.startsWith(device.discoveryId, true)))
                     }
                     ConversationSummary(peer.peerId, peer.displayName.ifBlank { "已信任设备" },
                         runCatching { PeerPlatform.valueOf(peer.platform) }.getOrDefault(PeerPlatform.UNKNOWN),
                         DeviceProjectionPolicy.availability(
                             connected = session != null,
-                            trusted = peer.trustState == "TRUSTED",
                             nearby = visible,
                         ),
                         session?.sessionId, peer.transportAddress, conversationsByPeer[peer.peerId]?.unreadCount ?: 0,
-                        conversationsByPeer[peer.peerId]?.lastActivityAt ?: peer.lastSeenAt)
+                        conversationsByPeer[peer.peerId]?.lastActivityAt ?: peer.lastSeenAt,
+                        lastConnectedAt = peer.lastConnectedAt, isTrusted = peer.trustState == "TRUSTED",
+                        isRemoved = peer.trustState == "REMOVED",
+                         usbReady = com.bluelink.android.usb.UsbStatePolicy.isReady(preferences.usbTransferEnabled, peer.peerId, active),
+                        transport = session?.transport ?: com.bluelink.android.domain.SessionTransport.BLUETOOTH)
                 }.sortedWith(compareBy<ConversationSummary> { when (it.availability) {
                     DeviceAvailability.CONNECTED -> 0; DeviceAvailability.OFFLINE -> 1; DeviceAvailability.CONNECTABLE -> 2
                 } }.thenByDescending { it.lastActivityAt })
@@ -211,26 +306,33 @@ class BlueLinkRuntime(
             }
         }
         startBluetoothEndpoints()
-        recordDiagnostic(DiagnosticLevel.INFO, "Bluetooth", "设备发现、Presence 与 GATT 服务启动完成")
+        recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "本地历史与运行时观察已启动")
     }
 
     fun discover() {
         recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "用户请求重新扫描")
         bluetooth.startPresence()
-        discoveryStarted.set(true)
+        startupDiscovery.manualRequest()
         bluetooth.startDiscovery()
+    }
+
+    private fun scanAtStartupIfReady() {
+        if (startupDiscovery.claim(settingsLoaded, appSettings.scanOnStartup,
+                readBluetoothAccess(context).canUseBluetooth)) bluetooth.startDiscovery()
     }
 
     fun connect(device: com.bluelink.android.domain.NearbyDevice) = connectInternal(device, automatic = false)
 
     private fun connectInternal(device: com.bluelink.android.domain.NearbyDevice, automatic: Boolean) {
+        val admissionTicket = sessionAdmission.ticket() ?: return
+        if (!automatic) conversations.value.filter {
+            it.transportAddress.equals(device.address, true) ||
+                (device.discoveryId.isNotBlank() && it.peerId.startsWith(device.discoveryId, true))
+        }.forEach { manuallyDisconnected.remove(it.peerId.lowercase(java.util.Locale.ROOT)) }
+
         if (!cryptoOperational.get()) {
             recordDiagnostic(DiagnosticLevel.ERROR, "Crypto", "无法连接：$cryptoFailureDetail")
             _connection.value = ConnectionState(ConnectionPhase.OFFLINE, detail = "加密运行时不可用，请查看诊断")
-            return
-        }
-        if (!sessionSupervisor.canAccept) {
-            recordDiagnostic(DiagnosticLevel.WARNING, "Connection", "已达到最大连接数 ${sessionSupervisor.maxConcurrentSessions}")
             return
         }
         if (!dialing.add(device.address)) {
@@ -239,24 +341,23 @@ class BlueLinkRuntime(
         }
         val name = device.name
         recordDiagnostic(DiagnosticLevel.INFO, "Connection", "${if (automatic) "自动" else "开始"}连接 $name")
-        _connection.value = ConnectionState(ConnectionPhase.CONNECTING, name, "正在连接可用的 BLE Rendezvous")
+        _connection.value = ConnectionState(ConnectionPhase.CONNECTING, name, "正在连接可用的 BLE Rendezvous", device.address)
         scope.launch {
             try {
                 runCatching {
-                    bluetooth.connect(device) { stage ->
+                    bluetooth.connect(device, onStage = { stage ->
                         recordDiagnostic(DiagnosticLevel.INFO, "Connection", stage)
-                        _connection.value = ConnectionState(ConnectionPhase.CONNECTING, name, stage)
-                    }
-                }
-                    .onSuccess { connection ->
+                        _connection.value = ConnectionState(ConnectionPhase.CONNECTING, name, stage, device.address)
+                    }, onConnected = { connection ->
                         recordDiagnostic(DiagnosticLevel.INFO, "Connection", "RFCOMM 已连接，进入安全会话")
-                        startSession(connection.socket, listenerRole = false, connection.peerName)
-                    }
+                        startSession(connection.socket, listenerRole = false, connection.peerName, admissionTicket)
+                    })
+                }
                     .onFailure {
                         val detail = it.message ?: it.javaClass.simpleName
                         recordDiagnostic(DiagnosticLevel.ERROR, "Connection",
                             "连接失败：${it.javaClass.simpleName}: $detail")
-                        _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, name, detail)
+                        _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, name, detail, device.address)
                         if (automatic) registerReconnectFailure(device.address)
                     }
             } finally {
@@ -268,26 +369,20 @@ class BlueLinkRuntime(
     fun sendChat(text: String) {
         val value = text.trim()
         if (value.isEmpty()) return
+        val state = com.bluelink.android.domain.SessionRoute.preferred(sessions.value, activePeerId, appSettings.usbTransferEnabled) ?: return
+        val sessionId = state.sessionId
         val item = ChatItem(text = value, outgoing = true, status = MessageStatus.SENDING)
-        val sessionId = activeSessionId ?: return
-        messagesBySession.compute(sessionId) { _, items -> (items ?: emptyList()) + item }
-        _messages.value = messagesBySession[sessionId].orEmpty()
-        sessions.value.firstOrNull { it.sessionId == sessionId }?.let { state ->
-            if (appSettings.saveChatHistory) scope.launch { repository.saveChat(state, item) }
-        }
+        messagesBySession.compute(contentId(sessionId)) { _, items -> (items ?: emptyList()) + item }
+        _messages.value = messagesBySession[contentId(sessionId)].orEmpty()
+        if (appSettings.saveChatHistory) messagePersistence.enqueue { repository.saveChat(state, item) }
         sessionSupervisor.sendChat(sessionId, value, item.id) { sent ->
-            val finalStatus = if (sent) MessageStatus.SENT else MessageStatus.LOCAL_QUEUED
-            messagesBySession.computeIfPresent(sessionId) { _, items ->
-                items.map { if (it.id == item.id) it.copy(status = finalStatus) else it }
-            }
-            if (activeSessionId == sessionId) _messages.value = messagesBySession[sessionId].orEmpty()
-            if (appSettings.saveChatHistory)
-                scope.launch { repository.updateMessageStatus(item.id.toString(), finalStatus) }
+            handleMessageStatus(state, item.id, if (sent) MessageStatus.SENT else MessageStatus.LOCAL_QUEUED)
         }
     }
 
     fun sendFile(uri: Uri, name: String, size: Long) {
-        activeSessionId?.let { sessionSupervisor.sendFile(it, uri, name, size) }
+        com.bluelink.android.domain.SessionRoute.preferred(sessions.value, activePeerId, appSettings.usbTransferEnabled)
+            ?.let { sessionSupervisor.sendFile(it.sessionId, uri, name, size) }
     }
 
     fun retryTransfer(value: TransferItem) {
@@ -308,27 +403,29 @@ class BlueLinkRuntime(
     }
 
     private fun resolveTransferSession(value: TransferItem): UUID? =
-        sessions.value.firstOrNull { !value.peerId.isNullOrBlank() && it.peerId.equals(value.peerId, true) }?.sessionId
-            ?: activeSessionId
+        com.bluelink.android.domain.TransferSessionSelector.resolve(value, sessions.value,
+            setOfNotNull(liveTransferOwners[value.id]))
 
-    fun confirmTrust(accepted: Boolean) {
-        trustDecision?.complete(accepted)
-        trustDecision = null
-        _trustPrompt.value = null
+    fun confirmTrust(accepted: Boolean, requestId: UUID) {
+        trustConfirmation.resolve(requestId, accepted)
     }
 
     fun disconnect() {
         val id = activeSessionId ?: return
         recordDiagnostic(DiagnosticLevel.INFO, "Connection", "用户请求断开当前会话")
-        sessionSupervisor.disconnect(id)
+        sessions.value.firstOrNull { it.sessionId == id }?.peerId?.let {
+            manuallyDisconnected.add(it.lowercase(java.util.Locale.ROOT))
+        }
+        sessions.value.filter { it.peerId.equals(activePeerId, true) }.forEach { sessionSupervisor.disconnect(it.sessionId) }
         _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, detail = "已断开")
     }
 
     fun disconnectPeer(peerId: String) {
         val session = sessions.value.firstOrNull { it.peerId.equals(peerId, true) } ?: return
         recordDiagnostic(DiagnosticLevel.INFO, "Connection", "用户请求断开 ${session.peerName}")
-        sessionSupervisor.disconnect(session.sessionId)
-        if (activeSessionId == session.sessionId)
+        manuallyDisconnected.add(peerId.lowercase(java.util.Locale.ROOT))
+        sessions.value.filter { it.peerId.equals(peerId, true) }.forEach { sessionSupervisor.disconnect(it.sessionId) }
+        if (isSelectedContent(session.sessionId))
             _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, session.peerName, "已断开")
     }
 
@@ -336,28 +433,35 @@ class BlueLinkRuntime(
         activeSessionId = sessionId
         val state = sessions.value.firstOrNull { it.sessionId == sessionId }
         activePeerId = state?.peerId
-        _messages.value = messagesBySession[sessionId].orEmpty()
-        _transfers.value = transfersBySession[sessionId].orEmpty()
+        _messages.value = messagesBySession[contentId(sessionId)].orEmpty()
+        _transfers.value = selectedTransfers()
         state?.let {
-            _connection.value = ConnectionState(it.phase, it.peerName, it.detail)
+            _connection.value = ConnectionState(it.phase, it.peerName, it.detail, transport = it.transport)
             it.peerId?.let { peerId ->
-                scope.launch { repository.markConversationRead(peerId) }
                 loadHistory(peerId, sessionId)
             }
         }
     }
 
+    fun setVisibleMessagePeer(peerId: String?) = conversationReads.setVisiblePeer(peerId)
+
+    fun setMessagePageResumed(resumed: Boolean) = conversationReads.setResumed(resumed)
+
     fun selectPeer(peerId: String) {
         activePeerId = peerId
-        val connected = sessions.value.firstOrNull { it.peerId.equals(peerId, true) && it.phase == ConnectionPhase.CONNECTED }
+        val connected = com.bluelink.android.domain.SessionRoute.preferred(sessions.value, peerId)
         if (connected != null) selectSession(connected.sessionId) else {
             activeSessionId = null
+            _messages.value = emptyList()
+            _transfers.value = selectedTransfers()
+            val summary = conversations.value.firstOrNull { it.peerId == peerId }
+            _connection.value = ConnectionState(ConnectionPhase.OFFLINE, summary?.peerName, "设备离线 · 可查看历史记录")
             scope.launch {
-                repository.markConversationRead(peerId)
-                _messages.value = repository.loadHistory(peerId)
-                _transfers.value = repository.loadTransfers(peerId).associateBy { it.id }
-                val summary = conversations.value.firstOrNull { it.peerId == peerId }
-                _connection.value = ConnectionState(ConnectionPhase.OFFLINE, summary?.peerName, "设备离线 · 可查看历史记录")
+                val history = repository.loadHistory(peerId)
+                // A slower previous selection must not replace the newly selected conversation.
+                if (activeSessionId != null || !activePeerId.equals(peerId, true)) return@launch
+                _messages.value = history
+                _transfers.value = selectedTransfers()
             }
         }
     }
@@ -370,6 +474,7 @@ class BlueLinkRuntime(
     fun saveSettings(value: AppSettings) {
         _settings.value = value
         appSettings = value
+        eventNotifications.settingsChanged(value)
         if (!value.diagnosticsEnabled) _diagnostics.value = emptyList()
         scope.launch { repository.saveSettings(value) }
     }
@@ -377,99 +482,208 @@ class BlueLinkRuntime(
     fun keepBackgroundSessionsEnabled(): Boolean = appSettings.keepBackgroundSessions
 
     fun onAppBackgrounded() {
+        appForeground = false
         if (appSettings.keepBackgroundSessions) return
         recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "后台会话已关闭，应用离开前台后停止蓝牙端点")
+        usb.configure(appSettings.usbTransferEnabled, false)
         sessionSupervisor.disconnectAll("后台会话已关闭")
         bluetooth.suspendBackgroundWork()
-        discoveryStarted.set(false)
     }
 
     fun onAppForegrounded() {
-        if (!started.get()) return
+        appForeground = true
+        // History/settings must load on a cold start even without Bluetooth access.
+        if (!started.get()) {
+            start()
+            return
+        }
+        usb.configure(appSettings.usbTransferEnabled, true)
+        usb.refresh()
+        if (!readBluetoothAccess(context).canUseBluetooth || sessionAdmission.ticket() == null) return
+        bluetooth.setDiscoverable(appSettings.allowDiscovery)
         startBluetoothEndpoints()
-        if (appSettings.scanOnStartup && discoveryStarted.compareAndSet(false, true)) bluetooth.startDiscovery()
+        scanAtStartupIfReady()
     }
 
-    fun forgetPeer(peerId: String) {
-        scope.launch { repository.removeTrust(peerId, identityStore) }
+    private val _operationFailed = MutableStateFlow(false)
+    val operationFailed = _operationFailed.asStateFlow()
+    fun dismissOperationFailure() { _operationFailed.value = false }
+    fun forgetAllPeers() { scope.launch {
+        try { performPrivacyAction(com.bluelink.android.domain.PrivacyAction.REMOVE_ALL_TRUST) }
+        catch (canceled: kotlinx.coroutines.CancellationException) { throw canceled }
+        catch (_: Exception) { _operationFailed.value = true }
+    } }
+    fun forgetPeer(peerId: String) { scope.launch {
+        privacyMutex.withLock {
+            try {
+                manuallyDisconnected.add(peerId.lowercase(java.util.Locale.ROOT))
+                sessions.value.filter { it.peerId.equals(peerId, true) }.forEach {
+                    sessionSupervisor.disconnect(it.sessionId, "设备信任已移除")
+                }
+                identityStore.removeTrust(peerId)
+                repository.synchronizeTrust(peerId, identityStore, removeFromDeviceList = true)
+            } catch (canceled: kotlinx.coroutines.CancellationException) { throw canceled }
+            catch (_: Exception) { _operationFailed.value = true }
+        }
+    } }
+
+    /** Only invoked after the app confirmation; no received files are removed. */
+    suspend fun performPrivacyAction(action: com.bluelink.android.domain.PrivacyAction) = privacyMutex.withLock {
+        kotlinx.coroutines.withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+            when (action) {
+                com.bluelink.android.domain.PrivacyAction.CLEAR_MESSAGES -> {
+                    messagePersistence.run { repository.clearChatHistory() }
+                    messagesBySession.clear(); _messages.value = emptyList()
+                }
+                com.bluelink.android.domain.PrivacyAction.CLEAR_TRANSFERS -> {
+                    clearTransferRecords()
+                }
+                else -> {
+                    sessionAdmission.pause()
+                    try {
+                        bluetooth.setDiscoverable(false)
+                        bluetooth.suspendBackgroundWork()
+                        manuallyDisconnected.addAll(conversations.value.map { it.peerId.lowercase(java.util.Locale.ROOT) })
+                        sessionSupervisor.disconnectAll("设备身份或信任已更改")
+                        trustConfirmation.cancelAll(); incomingConfirmation.cancelAll()
+                        fileConflictDecisions.values.forEach { it.complete(com.bluelink.android.files.DuplicateChoice.CANCEL) }
+                        if (action == com.bluelink.android.domain.PrivacyAction.RESET_IDENTITY) identityStore.resetIdentity()
+                        else identityStore.removeAllTrust()
+                        _identityFingerprint.value = currentFingerprint()
+                        connectedThisRun.clear(); reconnectBackoff.clear()
+                        repository.synchronizeAllTrust(identityStore,
+                            removeFromDeviceList = action == com.bluelink.android.domain.PrivacyAction.REMOVE_ALL_TRUST)
+                    } finally {
+                        bluetooth.updateIdentity(identityStore.identity.peerId().joinToString("") { "%02X".format(it) })
+                        sessionAdmission.resume()
+                        if (appForeground || appSettings.keepBackgroundSessions) {
+                            bluetooth.setDiscoverable(appSettings.allowDiscovery)
+                            startBluetoothEndpoints()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun clearChatHistory() {
         messagesBySession.clear(); _messages.value = emptyList()
-        scope.launch { repository.clearChatHistory() }
+        messagePersistence.enqueue { repository.clearChatHistory() }
     }
 
     fun deleteMessage(messageId: UUID) {
         messagesBySession.replaceAll { _, items -> items.filterNot { it.id == messageId } }
         _messages.value = _messages.value.filterNot { it.id == messageId }
-        scope.launch { repository.deleteMessage(messageId) }
+        messagePersistence.enqueue { repository.deleteMessage(messageId) }
     }
 
     fun clearConversation(peerId: String) {
         sessions.value.filter { it.peerId.equals(peerId, true) }.forEach { state ->
-            messagesBySession[state.sessionId] = emptyList()
+            messagesBySession[contentId(state.sessionId)] = emptyList()
         }
         if (activePeerId.equals(peerId, true)) _messages.value = emptyList()
-        scope.launch { repository.clearConversation(peerId) }
+        messagePersistence.enqueue { repository.clearConversation(peerId) }
     }
 
-    fun clearTransferHistory() {
-        transfersBySession.clear(); _transfers.value = emptyMap()
-        scope.launch { repository.clearTransferHistory() }
+    private suspend fun clearTransferRecords() = transferHistoryMutex.withLock {
+        val removedIds = transferIndex.value.items.keys
+        repository.clearTransferHistory()
+        transferIndex.update { it.forget(removedIds) }
+        _transfers.value = selectedTransfers()
     }
 
-    fun deleteTransfer(transferId: UUID) {
-        transfersBySession.replaceAll { _, items -> items - transferId }
-        _transfers.value = _transfers.value - transferId
-        scope.launch { repository.deleteTransfer(transferId) }
-    }
+    fun clearTransferHistory() { scope.launch { clearTransferRecords() } }
 
-    private fun startSession(socket: BluetoothSocket, listenerRole: Boolean, preferredName: String? = null) {
-        val id = sessionSupervisor.add(socket, listenerRole, preferredName)
+    fun deleteTransfer(transferId: UUID) { scope.launch {
+        transferHistoryMutex.withLock {
+            repository.deleteTransfer(transferId)
+            transferIndex.update { it.forget(setOf(transferId)) }
+            _transfers.value = selectedTransfers()
+        }
+    } }
+
+    private fun startSession(socket: BluetoothSocket, listenerRole: Boolean, preferredName: String? = null, admissionTicket: Long) {
+        val id = sessionAdmission.admit(admissionTicket) { sessionSupervisor.add(socket, listenerRole, preferredName) }
         if (id == null) {
-            recordDiagnostic(DiagnosticLevel.WARNING, "Connection", "已达到最大连接数，拒绝新的 RFCOMM 通道")
+            runCatching { socket.close() }
+            recordDiagnostic(DiagnosticLevel.WARNING, "Connection", "连接请求已过期，拒绝新的 RFCOMM 通道")
             return
         }
         if (activeSessionId == null) selectSession(id)
     }
 
-    private suspend fun requestTrust(sessionId: UUID, peerId: String, publicKey: ByteArray,
-                                     safetyCode: String, peerName: String): Boolean = trustMutex.withLock {
-        val request = TrustPrompt(peerId = peerId, peerName = peerName, safetyCode = safetyCode)
-        _connection.value = ConnectionState(ConnectionPhase.TRUST_REQUIRED, peerName, "请核对两端安全代码")
-        _trustPrompt.value = request
-        val fingerprint = publicKey.take(4).joinToString("") { "%02x".format(it) }
-        recordDiagnostic(DiagnosticLevel.WARNING, "Handshake",
-            "会话 ${sessionId.toString().take(8)} 等待信任确认（身份指纹=$fingerprint…）")
-        try { CompletableDeferred<Boolean>().also { trustDecision = it }.await() }
-        finally { trustDecision = null; if (_trustPrompt.value?.requestId == request.requestId) _trustPrompt.value = null }
+    private fun presentSecurityRequest(request: com.bluelink.android.domain.SecurityRequest) = synchronized(securityLock) {
+        securityRequests[request.id] = request
+        _securityRequest.value = securityRequests.values.firstOrNull()
     }
-
+    private fun finishSecurityRequest(request: com.bluelink.android.domain.SecurityRequest) {
+        if (request.stage.value in setOf(com.bluelink.android.domain.TrustStage.COMPLETED, com.bluelink.android.domain.TrustStage.CANCELED))
+            dismissSecurityRequest(request.id)
+    }
+    fun confirmSecurityRequest(id: UUID) = synchronized(securityLock) { securityRequests[id]?.confirm(); Unit }
+    fun dismissSecurityRequest(id: UUID) = synchronized(securityLock) {
+        securityRequests.remove(id)?.cancel()
+        _securityRequest.value = securityRequests.values.firstOrNull()
+    }
+    fun retrySecurityRequest(id: UUID) {
+        val request = synchronized(securityLock) { securityRequests[id] } ?: return
+        if (request.stage.value !in setOf(com.bluelink.android.domain.TrustStage.REJECTED,
+                com.bluelink.android.domain.TrustStage.TIMED_OUT, com.bluelink.android.domain.TrustStage.REMOTE_CLOSED,
+                com.bluelink.android.domain.TrustStage.FAILED)) return
+        dismissSecurityRequest(id)
+        if (request.transportAddress.startsWith("usb:", ignoreCase = true)) {
+            retryUsb()
+            return
+        }
+        val target = bluetooth.devices.value.firstOrNull { it.address.equals(request.transportAddress, true) }
+        if (target != null) connect(target) else scope.launch {
+            _connection.value = ConnectionState(ConnectionPhase.CONNECTING, request.peerName, "正在查找设备以重新连接", request.transportAddress)
+            discover()
+            val found = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                bluetooth.devices.first { list -> list.any { it.address.equals(request.transportAddress, true) && it.rendezvousAvailable && it.connectable } }
+                    .first { it.address.equals(request.transportAddress, true) && it.rendezvousAvailable && it.connectable }
+            }
+            if (found != null) connect(found)
+            else _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, request.peerName, "暂未发现该设备，请确认对端蓝联已打开", request.transportAddress)
+        }
+    }
     private fun handleMessage(session: ManagedSessionState, message: ChatItem) {
-        messagesBySession.compute(session.sessionId) { _, items -> (items ?: emptyList()) + message }
-        if (activeSessionId == session.sessionId) _messages.value = messagesBySession[session.sessionId].orEmpty()
-        if (appSettings.saveChatHistory)
-            scope.launch { repository.saveChat(session, message, unread = activePeerId != session.peerId) }
+        if (!message.outgoing && !appForeground) eventNotifications.message(session, message.id.toString(), appSettings)
+        messagesBySession.compute(contentId(session.sessionId)) { _, items -> (items ?: emptyList()) + message }
+        if (isSelectedContent(session.sessionId)) _messages.value = messagesBySession[contentId(session.sessionId)].orEmpty()
+        if (appSettings.saveChatHistory) conversationReads.recordMessage(session.peerId, message.outgoing) { unread ->
+            messagePersistence.enqueue { repository.saveChat(session, message, unread = unread) }
+        }
     }
 
     private fun handleTransfer(session: ManagedSessionState, transfer: TransferItem) {
-        val now = System.currentTimeMillis()
-        val previous = transferSamples[transfer.id]
-        val elapsed = previous?.let { (now - it.updatedAt).coerceAtLeast(1) } ?: 0
-        val instant = if (previous != null && transfer.completedBytes > previous.bytes && elapsed >= 120)
-            (transfer.completedBytes - previous.bytes) * 1000.0 / elapsed else 0.0
-        val speed = when {
-            instant <= 0.0 -> previous?.speed ?: 0.0
-            previous == null || previous.speed <= 0.0 -> instant
-            else -> previous.speed * .65 + instant * .35
+        if (transfer.status in setOf(TransferStatus.OFFERED, TransferStatus.QUEUED, TransferStatus.TRANSFERRING,
+                TransferStatus.PAUSED, TransferStatus.REMOTE_PAUSED, TransferStatus.RESUMING, TransferStatus.VERIFYING, TransferStatus.COMMITTING))
+            liveTransferOwners[transfer.id] = session.sessionId
+        else liveTransferOwners.remove(transfer.id, session.sessionId)
+        val oldState = transferIndex.value.items[transfer.id]?.status
+        if (transfer.status == com.bluelink.android.domain.TransferStatus.COMPLETED &&
+            oldState != com.bluelink.android.domain.TransferStatus.COMPLETED && transfer.role != AttachmentRole.IMAGE_PREVIEW) {
+            eventNotifications.completed(transfer, appSettings)
         }
-        val startedAt = previous?.startedAt ?: now
-        transferSamples[transfer.id] = TransferSample(transfer.completedBytes, now, startedAt, speed)
-        val scoped = transfer.copy(peerId = session.peerId, startedAtEpochMs = startedAt,
-            updatedAtEpochMs = now, bytesPerSecond = speed)
-        if (scoped.role != AttachmentRole.IMAGE_PREVIEW)
-            transfersBySession.compute(session.sessionId) { _, items -> (items ?: emptyMap()) + (scoped.id to scoped) }
-        scoped.messageId?.let { messageId -> messagesBySession.computeIfPresent(session.sessionId) { _, items ->
+        val now = System.currentTimeMillis()
+        val sample = requireNotNull(transferSamples.compute(transfer.id) { _, previous ->
+            val updatedAt = maxOf(now, (previous?.updatedAt ?: 0L) + 1L)
+            val elapsed = previous?.let { (updatedAt - it.updatedAt).coerceAtLeast(1) } ?: 0L
+            val instant = if (previous != null && transfer.completedBytes > previous.bytes && elapsed >= 120)
+                (transfer.completedBytes - previous.bytes) * 1000.0 / elapsed else 0.0
+            val speed = when {
+                instant <= 0.0 -> previous?.speed ?: 0.0
+                previous == null || previous.speed <= 0.0 -> instant
+                else -> previous.speed * .65 + instant * .35
+            }
+            TransferSample(transfer.completedBytes, updatedAt,
+                previous?.startedAt ?: transferIndex.value.items[transfer.id]?.startedAtEpochMs ?: transfer.startedAtEpochMs, speed)
+        })
+        val scoped = transfer.copy(peerId = session.peerId, startedAtEpochMs = sample.startedAt,
+            updatedAtEpochMs = sample.updatedAt, bytesPerSecond = sample.speed)
+        transferIndex.update { it.receive(scoped) }
+        scoped.messageId?.let { messageId -> messagesBySession.computeIfPresent(contentId(session.sessionId)) { _, items ->
             items.map { message -> if (message.id != messageId) message else message.copy(
                 attachments = message.attachments.map { attachment ->
                     if (scoped.role == AttachmentRole.IMAGE_PREVIEW && attachment.isImage) attachment.copy(
@@ -480,16 +694,24 @@ class BlueLinkRuntime(
                 })
             }
         } }
-        if (activeSessionId == session.sessionId) _messages.value = messagesBySession[session.sessionId].orEmpty()
-        if (activeSessionId == session.sessionId) _transfers.value = transfersBySession[session.sessionId].orEmpty()
-        if (appSettings.saveTransferHistory) scope.launch { repository.saveTransfer(session, scoped) }
+        if (isSelectedContent(session.sessionId)) _messages.value = messagesBySession[contentId(session.sessionId)].orEmpty()
+        if (isSelectedContent(session.sessionId)) _transfers.value = selectedTransfers()
+        if (appSettings.saveTransferHistory) scope.launch {
+            transferHistoryMutex.withLock {
+                if (transferIndex.value.accepts(scoped.id)) repository.saveTransfer(session, scoped)
+            }
+        }
     }
 
     private fun handleEnvelope(session: ManagedSessionState, envelope: ChatEnvelope, outgoing: Boolean) {
+        if (!outgoing && !appForeground && envelope.attachments().isNotEmpty()) eventNotifications.message(session, envelope.messageId().toString(), appSettings)
         recordDiagnostic(DiagnosticLevel.INFO, "Message",
             "收到结构化消息（session=${session.sessionId.toString().take(8)}，type=${envelope.kind()}，attachments=${envelope.attachments().size}）")
-        if (appSettings.saveChatHistory && envelope.attachments().isNotEmpty())
-            scope.launch { repository.saveEnvelope(session, envelope, outgoing, unread = !outgoing && activePeerId != session.peerId) }
+        if (appSettings.saveChatHistory && envelope.attachments().isNotEmpty()) {
+            conversationReads.recordMessage(session.peerId, outgoing) { unread ->
+                messagePersistence.enqueue { repository.saveEnvelope(session, envelope, outgoing, unread = unread) }
+            }
+        }
         if (envelope.attachments().isNotEmpty()) {
             val descriptors = if (envelope.kind() == com.bluelink.core.ChatPayloadKind.IMAGE)
                 envelope.attachments().filter { it.role() == AttachmentRole.IMAGE_ORIGINAL }
@@ -498,37 +720,63 @@ class BlueLinkRuntime(
                 value.fileName(), value.mimeType(), value.size()) }
             val item = ChatItem(envelope.messageId(), envelope.body(), outgoing,
                 java.time.Instant.ofEpochMilli(envelope.createdAt()),
-                if (outgoing) MessageStatus.SENT else MessageStatus.RECEIVED,
+                if (outgoing) MessageStatus.SENDING else MessageStatus.RECEIVED,
                 if (envelope.kind() == com.bluelink.core.ChatPayloadKind.IMAGE) ChatItemKind.IMAGE else ChatItemKind.FILE,
                 attachments)
-            messagesBySession.compute(session.sessionId) { _, items ->
-                (items ?: emptyList()).filterNot { it.id == item.id } + item
+            messagesBySession.compute(contentId(session.sessionId)) { _, items ->
+                val previous = items?.firstOrNull { it.id == item.id }
+                (items ?: emptyList()).filterNot { it.id == item.id } + if (previous == null) item
+                else item.copy(status = MessageDeliveryPolicy.merge(previous.status, item.status), attachments = previous.attachments)
             }
-            if (activeSessionId == session.sessionId) _messages.value = messagesBySession[session.sessionId].orEmpty()
+            if (isSelectedContent(session.sessionId)) _messages.value = messagesBySession[contentId(session.sessionId)].orEmpty()
         }
     }
 
     private fun handleReceipt(session: ManagedSessionState, receipt: ChatReceipt) {
-        messagesBySession.computeIfPresent(session.sessionId) { _, items -> items.map { item ->
-            if (item.id != receipt.messageId()) item else item.copy(status = when (receipt.state()) {
-                ReceiptState.FAILED -> MessageStatus.FAILED
-                ReceiptState.READ -> MessageStatus.READ
-                ReceiptState.DELIVERED -> MessageStatus.DELIVERED
-                null -> MessageStatus.FAILED
-            })
-        } }
-        if (activeSessionId == session.sessionId) _messages.value = messagesBySession[session.sessionId].orEmpty()
-        if (appSettings.saveChatHistory) scope.launch { repository.updateMessageStatus(receipt.messageId().toString(), when (receipt.state()) {
+        val status = when (receipt.state()) {
             ReceiptState.FAILED -> MessageStatus.FAILED
             ReceiptState.READ -> MessageStatus.READ
             ReceiptState.DELIVERED -> MessageStatus.DELIVERED
-            null -> MessageStatus.FAILED
-        }) }
+            null -> return
+        }
+        handleMessageStatus(session, receipt.messageId(), status)
+    }
+
+    private fun handleMessageStatus(session: ManagedSessionState, messageId: UUID, status: MessageStatus) {
+        var found = false
+        messagesBySession.computeIfPresent(contentId(session.sessionId)) { _, items -> items.map { item ->
+            if (item.id != messageId || !item.outgoing) item else {
+                found = true
+                item.copy(status = MessageDeliveryPolicy.merge(item.status, status))
+            }
+        } }
+        if (!found) return
+        if (isSelectedContent(session.sessionId)) _messages.value = messagesBySession[contentId(session.sessionId)].orEmpty()
+        val peerId = session.peerId ?: return
+        if (appSettings.saveChatHistory) messagePersistence.enqueue {
+            repository.updateMessageStatus(messageId.toString(), peerId, status)
+        }
+    }
+
+    private suspend fun applyIdentityAssociation() = transferHistoryMutex.withLock {
+        messagePersistence.run {
+            repository.applyIdentityAssociations(identityStore)
+            val associations = identityStore.identityAssociations()
+            while (activePeerId?.let { associations[it] } != null) activePeerId = associations[activePeerId]
+        }
     }
 
     private fun handleSessionState(state: ManagedSessionState) {
+        state.peerId?.let { contentScopes.bind(state.sessionId, it) }
+        val previousPhase = notifiedPhases.put(state.sessionId, state.phase)
+        if (previousPhase != state.phase && (state.phase == ConnectionPhase.CONNECTED ||
+                (state.phase == ConnectionPhase.DISCONNECTED && previousPhase == ConnectionPhase.CONNECTED))) {
+            eventNotifications.connection(state, appSettings)
+        }
+        if (state.phase == ConnectionPhase.DISCONNECTED) notifiedPhases.remove(state.sessionId)
         when (state.phase) {
             ConnectionPhase.CONNECTED -> {
+                state.peerId?.let { connectedThisRun.add(it.lowercase(java.util.Locale.ROOT)) }
                 if (activeSessionId == state.sessionId) activePeerId = state.peerId
                 reconnectBackoff.remove(state.transportAddress.uppercase())
                 scope.launch {
@@ -539,49 +787,58 @@ class BlueLinkRuntime(
                     }
                 }
             }
-            ConnectionPhase.DISCONNECTED -> scope.launch { repository.recordDisconnectedSession(state) }
+            ConnectionPhase.DISCONNECTED -> {
+                val interrupted = transferIndex.value.items.values.filter {
+                    liveTransferOwners[it.id] == state.sessionId
+                }
+                interrupted.forEach { handleTransfer(state, it.copy(status = TransferStatus.FAILED,
+                    failureDetail = "设备通道已断开，请重试传输")) }
+                scope.launch { repository.recordDisconnectedSession(state) }
+            }
             else -> Unit
         }
     }
 
     private fun loadHistory(peerId: String, sessionId: UUID) {
         scope.launch {
-            val persisted = repository.loadHistory(peerId)
-            val persistedTransfers = repository.loadTransfers(peerId)
-            val transient = messagesBySession[sessionId].orEmpty()
-            val merged = (persisted + transient).associateBy { it.id }.values.sortedBy { it.timestamp }
-            messagesBySession[sessionId] = merged
-            val currentTransfers = transfersBySession[sessionId].orEmpty()
-            transfersBySession[sessionId] = (persistedTransfers.associateBy { it.id } + currentTransfers)
-            if (activeSessionId == sessionId) _messages.value = merged
-            if (activeSessionId == sessionId) _transfers.value = transfersBySession[sessionId].orEmpty()
+            val persisted = repository.loadHistory(peerId).map { message -> message.copy(attachments = message.attachments.map { attachment ->
+                if (attachment.isTransferActive && liveTransferOwners[attachment.transferId] == null)
+                    attachment.copy(state = TransferStatus.FAILED.name) else attachment
+            }) }
+            messagesBySession.compute(contentId(sessionId)) { _, current ->
+                (persisted + current.orEmpty()).associateBy { it.id }.values.sortedBy { it.timestamp }
+            }
+            if (isSelectedContent(sessionId)) _messages.value = messagesBySession[contentId(sessionId)].orEmpty()
+            if (isSelectedContent(sessionId)) _transfers.value = selectedTransfers()
         }
     }
 
-    private suspend fun flushQueuedMessages(state: ManagedSessionState, peerId: String) {
+    private suspend fun flushQueuedMessages(state: ManagedSessionState, peerId: String): Unit =
+        queueLocks.computeIfAbsent(peerId.lowercase(java.util.Locale.ROOT)) { Mutex() }.withLock {
+        if (com.bluelink.android.domain.SessionRoute.preferred(sessions.value, peerId)?.sessionId != state.sessionId) return@withLock
         val persisted = repository.loadHistory(peerId)
-        val transient = messagesBySession[state.sessionId].orEmpty()
-        val merged = (persisted + transient).associateBy { it.id }.values.sortedBy { it.timestamp }
-        messagesBySession[state.sessionId] = merged
+        val merged = messagesBySession.compute(contentId(state.sessionId)) { _, current ->
+            (persisted + current.orEmpty()).associateBy { it.id }.values.sortedBy { it.timestamp }
+        }.orEmpty()
         for (queued in merged.filter { it.outgoing && it.status == MessageStatus.LOCAL_QUEUED }) {
             val sent = CompletableDeferred<Boolean>()
             sessionSupervisor.sendChat(state.sessionId, queued.text, queued.id) { sent.complete(it) }
             if (!sent.await()) break
-            messagesBySession.computeIfPresent(state.sessionId) { _, items ->
-                items.map { if (it.id == queued.id) it.copy(status = MessageStatus.SENT) else it }
-            }
-            repository.updateMessageStatus(queued.id.toString(), MessageStatus.SENT)
-            if (activeSessionId == state.sessionId)
-                _messages.value = messagesBySession[state.sessionId].orEmpty()
+            handleMessageStatus(state, queued.id, MessageStatus.SENT)
         }
     }
 
     private fun attemptAutoConnect(snapshot: AutoConnectSnapshot) {
-        if (!snapshot.settings.autoConnectTrustedDevices || !cryptoOperational.get()) return
+        if (!cryptoOperational.get() ||
+            !readBluetoothAccess(context).canUseBluetooth) return
         val activeAddresses = snapshot.sessions.filter { it.phase != ConnectionPhase.DISCONNECTED }
             .map { it.transportAddress.uppercase() }.toSet()
         val now = System.currentTimeMillis()
         snapshot.peers.forEach { peer ->
+            val key = peer.peerId.lowercase(java.util.Locale.ROOT)
+            if (!com.bluelink.android.domain.AutoConnectionPolicy.shouldConnect(
+                    peer.trustState == "TRUSTED", key in connectedThisRun, key in manuallyDisconnected,
+                    snapshot.settings.autoConnectTrustedDevices, snapshot.settings.reconnectAfterDisconnect)) return@forEach
             val address = peer.transportAddress.takeIf { it.isNotBlank() } ?: return@forEach
             if (address.uppercase() in activeAddresses || reconnectBackoff[address.uppercase()]?.nextAttemptAt?.let { it > now } == true) return@forEach
             val device = snapshot.devices.firstOrNull {
@@ -604,20 +861,21 @@ class BlueLinkRuntime(
     }
 
     private fun updateSelectedConnection(states: List<ManagedSessionState>) {
-        val selected = states.firstOrNull { it.sessionId == activeSessionId }
-            ?: states.firstOrNull { it.phase == ConnectionPhase.CONNECTED }
-            ?: states.firstOrNull()
+        val selected = com.bluelink.android.domain.SessionRoute.preferred(states, activePeerId)
+            ?: states.firstOrNull { it.sessionId == activeSessionId }
         if (selected != null) {
-            if (activeSessionId == null || states.none { it.sessionId == activeSessionId }) activeSessionId = selected.sessionId
+            if (activeSessionId != selected.sessionId) {
+                activeSessionId = selected.sessionId
+                selected.peerId?.let { loadHistory(it, selected.sessionId) }
+            }
             activePeerId = selected.peerId ?: activePeerId
-            _connection.value = ConnectionState(selected.phase, selected.peerName, selected.detail)
-            _messages.value = messagesBySession[selected.sessionId].orEmpty()
-            _transfers.value = transfersBySession[selected.sessionId].orEmpty()
+            _connection.value = ConnectionState(selected.phase, selected.peerName, selected.detail, transport = selected.transport)
+            _messages.value = messagesBySession[contentId(selected.sessionId)].orEmpty()
+            _transfers.value = selectedTransfers()
         } else if (activeSessionId != null) {
             activeSessionId = null
-            _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, detail = "所有会话均已断开")
-            _messages.value = emptyList()
-            _transfers.value = emptyMap()
+            // Keep the selected peer and its history instead of jumping to another connected device.
+            _connection.value = ConnectionState(ConnectionPhase.DISCONNECTED, detail = "设备已断开")
         }
     }
 
@@ -633,17 +891,19 @@ class BlueLinkRuntime(
     }
 
     private fun startBluetoothEndpoints() {
+        val admissionTicket = sessionAdmission.ticket() ?: return
+        if (!readBluetoothAccess(context).canUseBluetooth) return
         bluetooth.startPresence { connection ->
             if (cryptoOperational.get()) {
                 recordDiagnostic(DiagnosticLevel.INFO, "Connection", "正在响应 Windows 发起的连接请求")
-                startSession(connection.socket, listenerRole = false, preferredName = connection.peerName)
+                startSession(connection.socket, listenerRole = false, preferredName = connection.peerName, admissionTicket = admissionTicket)
             } else {
                 recordDiagnostic(DiagnosticLevel.ERROR, "Crypto", "拒绝安全会话：$cryptoFailureDetail")
                 connection.socket.close()
             }
         }
         bluetooth.startServer { accepted ->
-            if (cryptoOperational.get()) startSession(accepted, listenerRole = true)
+            if (cryptoOperational.get()) startSession(accepted, listenerRole = true, admissionTicket = admissionTicket)
             else {
                 recordDiagnostic(DiagnosticLevel.ERROR, "Crypto", "拒绝传入会话：$cryptoFailureDetail")
                 accepted.close()

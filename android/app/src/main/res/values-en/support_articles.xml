@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="support_article_connection">
+        <item>Connection and pairing</item>
+        <item>Help · Android</item>
+        <item>Turn on Bluetooth on both devices and allow BlueLink to access nearby devices.</item>
+        <item>Cannot find a nearby device</item>
+        <item>Open BlueLink on both devices and check Bluetooth and nearby-device permissions. Return to the device list, scan again and keep the devices close together.</item>
+        <item>Safety codes differ or pairing fails</item>
+        <item>Compare the safety codes on both devices. Cancel and reconnect if they differ. Confirm and trust the device only after the codes match.</item>
+        <item>A trusted device does not reconnect automatically</item>
+        <item>Check that the other device is online, Bluetooth is enabled and BlueLink can run. Reconnect from its offline device card. If its identity was reset, verify the safety code again.</item>
+        <item>USB acceleration</item>
+        <item>Connect and verify the safety code over Bluetooth, enable USB acceleration on both devices, connect a data cable, and select File transfer on the phone. On first use, grant BlueLink a dedicated transfer folder such as Download/BlueLinkUSB. If you cancel the grant, turn USB acceleration off and on to retry. Lightning marks a verified USB file channel for that device. The shared folder contains encrypted temporary files only. Uploads and downloads for one phone share a queue: later files wait, pausing the first holds the queue, and canceling it lets the next file start. Retry an interrupted file from the beginning. USB debugging and driver replacement are unnecessary. File Explorer remains available; BlueLink waits if another program occupies the channel.</item>
+    </string-array>
+    <string-array name="support_article_messages">
+        <item>Messages and files</item>
+        <item>Help · Android</item>
+        <item>Conversation and transfer history is stored on this device. Bluetooth is not required to browse history.</item>
+        <item>View offline conversations</item>
+        <item>Select an offline device in Devices and conversations to browse existing messages and transfers. Connect to that device before sending new messages or files.</item>
+        <item>Send messages and files</item>
+        <item>Open a conversation with a connected device, then enter a message or use the attachment button to choose a file. Completed downloads are available in Download/BlueLink.</item>
+        <item>Handle an interrupted transfer</item>
+        <item>Restore the connection first. Failed records let you review the reason or delete the record. To send the file again, select it and start a new transfer.</item>
+    </string-array>
+    <string-array name="support_article_faq">
+        <item>Common questions</item>
+        <item>Help · Android</item>
+        <item>Learn how local data, connection permissions and feedback information are used.</item>
+        <item>Is an internet connection required?</item>
+        <item>Messages and files use Bluetooth between devices. Local history can be viewed offline. Checking for updates and downloading a new version require internet access.</item>
+        <item>Does clearing history delete downloaded files?</item>
+        <item>No. Chat and transfer records can be cleared separately. Received files in Download/BlueLink are preserved and can be managed separately in a file manager.</item>
+        <item>When are diagnostics generated?</item>
+        <item>Include diagnostics is off by default. When enabled, diagnostic events are included only after you select Generate feedback package. Opening or filling in the form does not generate diagnostic files or upload data.</item>
+    </string-array>
+    <string-array name="support_article_privacy">
+        <item>BlueLink privacy policy</item>
+        <item>Effective date: September 4, 2026</item>
+        <item>BlueLink prioritizes local processing. Message and file transfers do not rely on cloud services.</item>
+        <item>Data we process</item>
+        <item>BlueLink processes device names, identifiers, connection state, chat history and transfer history to establish Bluetooth connections and display past activity. Data is stored locally by default.</item>
+        <item>Bluetooth transfer and local storage</item>
+        <item>Messages and files are transferred only between user-authorized devices over Bluetooth, without internet synchronization. Received files are stored in Download/BlueLink.</item>
+        <item>Diagnostics and feedback</item>
+        <item>The app does not upload diagnostic data automatically. After feedback is generated, information leaves the device only when you choose an app in the system share flow. Diagnostics are excluded by default.</item>
+        <item>Permission use</item>
+        <item>Nearby-device and Bluetooth permissions are used only for discovery, connection and transfer. Notification permission is used to display connection and transfer status.</item>
+        <item>Deleting data</item>
+        <item>You can clear chat and transfer history separately. Clearing history does not delete received files in Download/BlueLink.</item>
+    </string-array>
+    <string-array name="support_article_agreement">
+        <item>BlueLink user agreement</item>
+        <item>Effective date: September 4, 2026</item>
+        <item>Using BlueLink means you understand and agree to the following rules.</item>
+        <item>Scope of service</item>
+        <item>BlueLink provides Bluetooth message and file transfers between user-authorized devices and local history management. It does not provide cloud accounts or cloud backups.</item>
+        <item>User responsibilities</item>
+        <item>Ensure that content you send is lawful and you have the necessary authorization. Manage device access permissions, safety codes and trusted devices carefully.</item>
+        <item>Device and data security</item>
+        <item>After resetting a device identity or removing a trusted device, verify the safety code again. Back up important files and records yourself.</item>
+        <item>Updates and internet access</item>
+        <item>Checking for updates and downloading new versions requires internet access. Messages and files continue to be transferred only over Bluetooth.</item>
+        <item>Limitations and termination</item>
+        <item>Interruptions or data loss caused by device compatibility, Bluetooth conditions or user actions must be addressed according to the circumstances. You may stop using and uninstall the app at any time.</item>
+    </string-array>
+</resources>

@@ -41,20 +41,20 @@ $legacyMarkers = @('x:Name="FileNameText"', 'x:Name="FileDetailText"',
     'ToggleMaximize_Click', 'x:Name="FullscreenButton"')
 $legacyMarker = $legacyMarkers | Where-Object { $xaml.Contains($_) } | Select-Object -First 1
 Assert-True ($null -eq $legacyMarker) "Legacy metadata row or custom fullscreen action remains: $legacyMarker"
-Assert-True ($code -match 'TitleBarFileName\.Text = fileName' -and $code -match 'Path\.GetFileName\(_path\)') 'The title bar is not populated from the actual file name.'
+Assert-True ($code -match 'TitleBarFileName\.Text = fileName' -and $code -match 'Path\.GetFileName\(fullPath\)') 'The title bar is not populated from the actual file name.'
 Assert-True ($xaml -notmatch '<ScrollViewer\b|HorizontalScrollBarVisibility|VerticalScrollBarVisibility') 'Image preview must not expose ScrollViewer scrollbars.'
 Assert-True ($xaml -notmatch '#101624|#0D1320|Background="Black"') 'Image preview must not retain a black viewport background.'
-Assert-True ($xaml -match 'Background="\{StaticResource TransparencyGridBrush\}"') 'The preview viewport must be fully covered by the checkerboard brush.'
+Assert-True ($xaml -match 'Background="\{DynamicResource TransparencyGridBrush\}"') 'The preview viewport must be fully covered by the checkerboard brush.'
 Assert-True ($xaml -match 'x:Name="Navigator"' -and $xaml -match 'x:Name="NavigatorCrop"') 'Navigator and crop rectangle are required.'
 Assert-True ($xaml -match 'x:Name="ImageSurface"' -and $xaml -match '<MatrixTransform x:Name="ImageTransform"') 'The preview must use an unclipped surface and one matrix transform.'
 Assert-True ($xaml -notmatch 'ImageScale|ImageRotation|ImageTranslation|ZoomTextButton') 'Legacy split transforms or clickable zoom percentage remain.'
-Assert-True ($xaml -match 'x:Name="ZoomText"' -and $xaml -match 'PreviewZoomSegmentChromeStyle') 'The continuous three-part zoom control is missing.'
-Assert-True ($xaml -match '<ColumnDefinition Width="48"\s*/>\s*<ColumnDefinition Width="68"\s*/>\s*<ColumnDefinition Width="48"\s*/>') 'Zoom segments must have zero spacing.'
+Assert-True ($xaml -match 'x:Name="ZoomText"' -and $xaml -match 'PreviewZoomSegmentButtonStyle') 'The continuous three-part zoom control is missing.'
+Assert-True ($xaml -match '<ColumnDefinition Width="38"\s*/>\s*<ColumnDefinition Width="64"\s*/>\s*<ColumnDefinition Width="38"\s*/>') 'Zoom segments must have zero spacing.'
 Assert-True ($xaml -notmatch 'Separator.*Zoom|Zoom.*Separator') 'Zoom control must not contain vertical separators.'
-foreach ($action in @('Fit_Click', 'ActualSize_Click', 'RotateLeft_Click', 'RotateRight_Click', 'Reset_Click', 'Locate_Click')) {
+foreach ($action in @('Fit_Click', 'ActualSize_Click', 'RotateLeft_Click', 'RotateRight_Click', 'Reset_Click')) {
     Assert-True ($xaml -match $action) "Missing image preview action: $action"
 }
-Assert-True ($xaml -match '<ui:Button[^>]*Content="[^"]+"[^>]*Click="Locate_Click"') 'Explorer action button is missing or has no visible label.'
+Assert-True ($xaml -notmatch 'Locate_Click|SaveAs_Click|PreviewFileActions|Esc 关闭') 'Duplicate file actions or Escape hint remain in the preview.'
 Assert-True ($xaml -notmatch 'DownloadOriginal|Download_Click|<ControlTemplate\b') 'A download action or hand-written button template remains.'
 Assert-True ($code -match 'LoadZoomedVisualFixture' -and $math -match 'VisibleMapRect' -and
     $math -match 'CreateImageMatrix' -and $math -match 'TransformedBounds') 'Unified viewport geometry or zoomed navigator smoke support is missing.'
@@ -91,7 +91,9 @@ function Assert-CheckerboardCorners([string]$path) {
         )
         foreach ($sample in $samples) {
             $color = $bitmap.GetPixel($sample[0], $sample[1])
-            Assert-True (($color.R + $color.G + $color.B) -gt 540) "Dark/black preview background detected at $($sample[0]),$($sample[1])."
+            $checkerColors = @('F6F8FB', 'E4E9F0', '232B38', '2B3544')
+            $sampleColor = '{0:X2}{1:X2}{2:X2}' -f $color.R, $color.G, $color.B
+            Assert-True ($sampleColor -in $checkerColors) "Unexpected preview checkerboard color at $($sample[0]),$($sample[1]): $sampleColor"
         }
     }
     finally { $bitmap.Dispose() }
@@ -108,9 +110,8 @@ function Assert-NavigatorVisible([string]$path) {
             for ($y = $top; $y -lt $bitmap.Height - 78; $y += 2) {
                 $color = $bitmap.GetPixel($x, $y)
                 if ($color.B -gt $color.R + 70 -and $color.G -gt $color.R + 30) { $bluePixels++ }
-                if ($color.R -ge 60 -and $color.R -le 170 -and
-                    [Math]::Abs($color.R - $color.G) -lt 22 -and
-                    [Math]::Abs($color.G - $color.B) -lt 22) { $darkBorderPixels++ }
+                $borderColor = '{0:X2}{1:X2}{2:X2}' -f $color.R, $color.G, $color.B
+                if ($borderColor -in @('DCE3EF', '3A465B')) { $darkBorderPixels++ }
             }
         }
         Assert-True ($bluePixels -gt 20 -and $darkBorderPixels -gt 20) 'Zoomed screenshot does not contain the navigator image and crop border.'

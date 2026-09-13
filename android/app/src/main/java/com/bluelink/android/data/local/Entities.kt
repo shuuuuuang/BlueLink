@@ -17,6 +17,10 @@ data class PeerEntity(
     val transportAddress: String = "",
 )
 
+@Entity(tableName = "peer_hint", primaryKeys = ["peerId", "hint"],
+    foreignKeys = [ForeignKey(entity = PeerEntity::class, parentColumns = ["peerId"], childColumns = ["peerId"], onDelete = ForeignKey.CASCADE)])
+data class PeerHintEntity(val peerId: String, val hint: String)
+
 @Entity(
     tableName = "conversation",
     foreignKeys = [ForeignKey(
@@ -179,11 +183,23 @@ data class AppSettingEntity(
 )
 
 data class AppSettings(
+    val theme: String = "system",
+    val language: String = "zh-CN",
+    val messageNotifications: Boolean = true,
+    val connectionNotifications: Boolean = true,
+    val transferNotifications: Boolean = true,
     val autoConnectTrustedDevices: Boolean = true,
+    val reconnectAfterDisconnect: Boolean = true,
+    val allowDiscovery: Boolean = true,
+    val usbTransferEnabled: Boolean = false,
+    val localDeviceName: String = "",
     val scanOnStartup: Boolean = true,
     val keepBackgroundSessions: Boolean = true,
-    val maxConcurrentConnections: Int = 4,
     val autoDownloadFiles: Boolean = true,
+    val autoSaveImages: Boolean = true,
+    val autoSaveOtherAttachments: Boolean = false,
+    val largeFilesOnlyWhileCharging: Boolean = false,
+    val duplicateFilePolicy: String = "rename",
     val receiveSizeLimitEnabled: Boolean = true,
     val receiveSizeLimitBytes: Long = 500L * 1024 * 1024,
     val showImageThumbnails: Boolean = true,

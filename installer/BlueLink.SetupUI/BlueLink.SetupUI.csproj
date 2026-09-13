@@ -41,4 +41,16 @@
   <ItemGroup>
     <Content Include="BlueLink.SetupUI.BootstrapperCore.config" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="..\SharedUI\Assets\*.png" Link="Assets\Installer\%(Filename)%(Extension)" />
+    <Resource Include="..\..\windows\BlueLink.App\Assets\Fonts\*.ttf" Link="Assets\Fonts\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedUI\InstallerConfirmationDialog.cs" Link="InstallerConfirmationDialog.cs" />
+    <Compile Include="..\SharedUI\InstallerNoticeWindow.cs" Link="InstallerNoticeWindow.cs" />
+    <Page Include="..\SharedUI\UninstallView.xaml" Link="UninstallView.xaml" />
+    <Compile Include="..\SharedUI\UninstallView.xaml.cs" Link="UninstallView.xaml.cs" />
+    <Compile Include="..\..\shared\UserDataCleanup.cs" Link="Shared\UserDataCleanup.cs" />
+  </ItemGroup>
+  <ItemGroup><Compile Include="..\..\shared\WindowsDialogLayout.cs" Link="Shared\WindowsDialogLayout.cs" /></ItemGroup>
 </Project>

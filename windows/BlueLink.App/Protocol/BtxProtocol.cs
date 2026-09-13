@@ -10,7 +10,7 @@ public enum WireMessageType : byte
     TransferReject = 22, TransferExtent = 23, TransferFinish = 24,
     ResumeQuery = 25, ResumeState = 26, TransferExtentAck = 27,
     TransferComplete = 28, TransferFailed = 29, WindowUpdate = 30, StreamCancel = 31,
-    TransferControl = 32
+    TransferControl = 32, MtpControl = 33
 }
 
 public static class WireMessagePriority
@@ -22,7 +22,7 @@ public static class WireMessagePriority
         WireMessageType.Ping or WireMessageType.Pong or WireMessageType.Chat or WireMessageType.ChatReceipt => 1,
         WireMessageType.TransferOffer or WireMessageType.TransferAccept or WireMessageType.TransferReject
             or WireMessageType.ResumeQuery or WireMessageType.ResumeState or WireMessageType.TransferExtentAck
-            or WireMessageType.TransferComplete or WireMessageType.TransferFailed => 2,
+            or WireMessageType.TransferComplete or WireMessageType.TransferFailed or WireMessageType.MtpControl => 2,
         WireMessageType.TransferExtent or WireMessageType.TransferFinish => 5,
         _ => 6
     };

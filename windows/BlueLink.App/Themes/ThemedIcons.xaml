@@ -1,0 +1,366 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Original Figma PNG alpha masks; geometry and source assets are unchanged. -->
+    <DrawingImage x:Key="FigmaIcon-settings">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-active">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource SettingsBlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-about">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-about.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-about-active">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-about.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource SettingsBlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-connections">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-connections.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-connections-active">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-connections.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource SettingsBlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-files">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-files.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-files-active">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-files.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource SettingsBlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-privacy">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-privacy.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-privacy-active">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-privacy.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource SettingsBlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-settings-back">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/settings-back.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-chevron">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/chevron.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-search">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/search.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-attachment">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/attachment.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-file">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/file-outline.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-pause">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/pause.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-fit">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-fit.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-left">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-left.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-minus">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-minus.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-plus">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-plus.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-reset">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-reset.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-preview-right">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/preview-right.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-alert">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-alert.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource DangerBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-cancel">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-cancel.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource DangerBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-connect-device">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-connect-device.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-copy">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-copy.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-details">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-details.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-download">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-download.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-folder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-folder.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-info">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-info.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-message">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-message.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-open">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-open.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-pause">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-pause.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-play">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-play.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-preview">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-preview.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-shieldx">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-shieldx.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource DangerBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-menu-trash">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/menu-trash.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+                <GeometryDrawing Brush="{DynamicResource DangerBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-usb-device">
+        <DrawingImage.Drawing><DrawingGroup>
+            <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/usb-device.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+            <GeometryDrawing Brush="{DynamicResource InkBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+        </DrawingGroup></DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-waiting"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-waiting.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource MutedBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-sending"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-sending.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-failed"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-failed.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource DangerBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-delivered"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-delivered.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource MutedBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-read"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-read.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-drop-send"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/drop-send.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-drop-blocked"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/drop-blocked.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource WarningBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-file-empty"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/file-empty.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-file-filter-empty"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/file-filter-empty.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-file-search-empty"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/file-search-empty.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource MutedBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <DrawingImage x:Key="FigmaIcon-message-search-empty"><DrawingImage.Drawing><DrawingGroup>
+        <DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/message-search-empty.png" Stretch="Fill"/></DrawingGroup.OpacityMask>
+        <GeometryDrawing Brush="{DynamicResource MutedBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing>
+    </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+<DrawingImage x:Key="FigmaIcon-device-search-empty"><DrawingImage.Drawing><DrawingGroup><DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/device-search-empty.png" Stretch="Fill"/></DrawingGroup.OpacityMask><GeometryDrawing Brush="{DynamicResource MutedBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing></DrawingGroup></DrawingImage.Drawing></DrawingImage>
+<DrawingImage x:Key="FigmaIcon-search-active"><DrawingImage.Drawing><DrawingGroup><DrawingGroup.OpacityMask><ImageBrush ImageSource="/BlueLink;component/Assets/Figma/search.png" Stretch="Fill"/></DrawingGroup.OpacityMask><GeometryDrawing Brush="{DynamicResource BlueBrush}"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,1,1"/></GeometryDrawing.Geometry></GeometryDrawing></DrawingGroup></DrawingImage.Drawing></DrawingImage>
+    <!-- Exact path from Figma 1290:291; transparent bounds preserve its 20x20 viewport. -->
+    <DrawingImage x:Key="FigmaIcon-usb-ready">
+        <DrawingImage.Drawing><DrawingGroup>
+            <GeometryDrawing Brush="Transparent"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,20,20"/></GeometryDrawing.Geometry></GeometryDrawing>
+            <GeometryDrawing Brush="{DynamicResource BlueBrush}" Geometry="M10.8333 8.33333H16.6666L9.16658 19.1667V11.6667H3.33325L10.8333 0.833336V8.33333Z"/>
+        </DrawingGroup></DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

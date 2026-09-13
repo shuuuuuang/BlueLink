@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Output = (Join-Path (Split-Path -Parent $PSScriptRoot) '.acceptance\installer\BlueLink-Acceptance.exe'),
     [ValidatePattern('^[A-Za-z0-9]+$')]
     [string]$AcceptanceId = 'Acceptance',
@@ -103,7 +103,7 @@ $msi = Join-Path $root 'installer\BlueLink.Package\bin\x64\Release\BlueLink.Pack
 $bundleArguments = @(
     'build', $bundleProject, '-c', 'Release', '--no-restore', '-t:Rebuild',
     "-p:ProductVersion=$version", "-p:BundleName=BlueLink Acceptance $AcceptanceId",
-    "-p:ProductCode=$acceptanceProductCode", "-p:PayloadFingerprint=$payloadFingerprint",
+    "-p:ProductCode=$acceptanceProductCode", "-p:PayloadFingerprint=$payloadFingerprint", "-p:ManifestPath=$manifestPath",
     "-p:BundleUpgradeCode=$(Get-AcceptanceGuid 'BundleUpgrade')",
     "-p:PackageUpgradeCode=$(Get-AcceptanceGuid 'PackageUpgrade')",
     "-p:BundleProviderKey=$acceptanceProviderKey",

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="device_no_results">No devices or conversations found</string>
+    <string name="device_search_hint">Try another name or device ID.</string>
+    <string name="device_connected">Connected</string>
+    <string name="device_no_connected">No connected devices</string>
+    <string name="device_history_available">Message and file history is still available.</string>
+    <string name="device_reconnect_bluetooth">Turn on Bluetooth to reconnect.</string>
+    <string name="device_offline">Offline</string>
+    <string name="device_no_offline">No offline devices</string>
+    <string name="device_history_here">Past conversations will appear here.</string>
+    <string name="device_nearby">Nearby devices</string>
+    <string name="device_refresh">Refresh nearby devices</string>
+    <string name="device_scanning_nearby">Scanning for nearby devices…</string>
+    <string name="device_no_nearby">No nearby devices</string>
+    <string name="device_keep_bluetooth">Keep Bluetooth turned on.</string>
+    <string name="device_check_peer">Pull down to find devices with BlueLink and Bluetooth turned on.</string>
+    <string name="device_search">Search devices or conversations</string>
+    <string name="device_search_history">Search conversation history</string>
+    <string name="device_expanded">Expanded</string>
+    <string name="device_collapsed">Collapsed</string>
+    <string name="device_scanning">Scanning</string>
+    <string name="device_scan">Scan</string>
+    <string name="device_sending_progress">Sending file · %1$d%%</string>
+    <string name="device_receiving_progress">Receiving file · %1$d%%</string>
+    <string name="device_current_conversation">Current conversation</string>
+    <string name="device_last_connection">Last connected %1$s</string>
+    <string name="device_offline_history">Offline · History available</string>
+    <string name="device_establishing">Establishing a secure connection…</string>
+    <string name="device_failed">Connection failed</string>
+    <string name="device_generic">Device</string>
+    <string name="device_connecting">Connecting</string>
+    <string name="device_retry">Retry</string>
+    <string name="device_connect">Connect</string>
+    <string name="device_permission_denied">Bluetooth permission is off</string>
+    <string name="device_permission_needed">Bluetooth permission needed</string>
+    <string name="device_permission_denied_body">Allow Nearby devices in system settings, then try again.</string>
+    <string name="device_permission_body">Allow BlueLink to find and connect to nearby devices.</string>
+    <string name="device_open_settings">Open system settings</string>
+    <string name="device_allow_permission">Allow Bluetooth access</string>
+    <string name="device_recheck_permission">Permissions are checked again when you return.</string>
+    <string name="device_permission_note">Used only to communicate with nearby devices.</string>
+    <string name="device_bluetooth_off">Bluetooth is off</string>
+    <string name="device_bluetooth_off_body">Turn on Bluetooth to find nearby devices.</string>
+    <string name="device_permission_short">Allow Bluetooth</string>
+    <string name="device_nearby_connectable">Nearby · available to connect</string>
+</resources>

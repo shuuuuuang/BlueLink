@@ -1,0 +1,217 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "format": "PNG",
+  "scale": 3,
+  "assets": [
+    {
+      "id": "8:9",
+      "name": "Icon/Search",
+      "width": 20,
+      "height": 20,
+      "file": "search.png",
+      "sha256": "de626a3dc97c1a2df7af7615975675ffae6382bd5a9a1f684f66ea982902ea3b",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:13",
+      "name": "Icon/Refresh",
+      "width": 20,
+      "height": 20,
+      "file": "scan.png",
+      "sha256": "a26ead45ad884d9d1b90692cf3cc2d2d59bdc2cc37fb48ac8ae5b6c796e3abdf",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:17",
+      "name": "Icon/Phone",
+      "width": 20,
+      "height": 20,
+      "file": "phone.png",
+      "sha256": "5b13950d3a371b0ea3bee4a0427b786279fd20e98fa9e24a8edd0a2bb7373d95",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:25",
+      "name": "Icon/Desktop",
+      "width": 20,
+      "height": 20,
+      "file": "desktop.png",
+      "sha256": "394746618dc75552b9a0c78d8bcd32ad364cae3f5dff4c881cfb16f8bee4fe7f",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:28",
+      "name": "Icon/Bluetooth",
+      "width": 20,
+      "height": 20,
+      "file": "bluetooth.png",
+      "sha256": "96aafb698fd208a90ac33e43f2ee03b204555a0d1e2946a4dcce69c8dd7e74ac",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:32",
+      "name": "Icon/Settings",
+      "width": 20,
+      "height": 20,
+      "file": "settings.png",
+      "sha256": "dc3ffd16f16015f82f863877c3346b6f150644d8fbd507e94e988c2c40072e12",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:36",
+      "name": "Icon/Message",
+      "width": 20,
+      "height": 20,
+      "file": "message.png",
+      "sha256": "6d7372a87440132b74bd9670fa2c5889053714990f1297f30552175ddde73cc1",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:39",
+      "name": "Icon/File",
+      "width": 20,
+      "height": 20,
+      "file": "file.png",
+      "sha256": "26973bb6c78060333335bd2e00ccd6d6225c48c9c63bd9bee2b5c6f9ff6d4049",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "8:42",
+      "name": "Icon/Chevron Down",
+      "width": 20,
+      "height": 20,
+      "file": "chevron.png",
+      "sha256": "055b2bd7fb80098de95508da8c9ec7dc6e01944fc3c1642e7a4a5293692d30dc",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "148:103",
+      "name": "Icon/Generic Device",
+      "width": 20,
+      "height": 20,
+      "file": "generic.png",
+      "sha256": "de5e007b43fe436ff7e7cc5ff3d7f563d0cdb33fa79adc2f716efb2902d6a06c",
+      "sourceSvg": "design/figma/windows-generic-device.svg",
+      "sourceSvgSha256": "6b771e5a9819e9fad1143faafa1b5853b2646afcef6192101856a5a96e420678",
+      "conversion": "WPF software vector rendering at 3x; preserve all four Figma paths/strokes, omit only the phone screen #F6F8FC fill to keep it transparent under tint and dark themes.",
+      "pixelWidth": 60,
+      "pixelHeight": 60
+    },
+    {
+      "id": "297:12711",
+      "name": "privacy-data-icon",
+      "children": [
+        {
+          "id": "297:12712",
+          "name": "Vector",
+          "x": 2.700000286102295,
+          "y": 1.8000001907348633,
+          "w": 13.5,
+          "h": 14.399999618530273,
+          "text": null
+        }
+      ],
+      "file": "connected-zero.png",
+      "sha256": "31ac487ed3081409e649983494cc9dd3bd3ab5484c4f69d5413edd10dc3c1353",
+      "pixelWidth": 54,
+      "pixelHeight": 54
+    },
+    {
+      "id": "299:13651",
+      "name": "Icon/Conversation Empty",
+      "children": [
+        {
+          "id": "299:13652",
+          "name": "Vector",
+          "x": 3.999999523162842,
+          "y": 6.666666507720947,
+          "w": 24,
+          "h": 18.666667938232422,
+          "text": null
+        },
+        {
+          "id": "299:13653",
+          "name": "Vector",
+          "x": 9.333333015441895,
+          "y": 12,
+          "w": 13.333333969116211,
+          "h": 5.333333492279053,
+          "text": null
+        }
+      ],
+      "file": "conversation-empty.png",
+      "sha256": "2abdc28c0f9ceb4ffff38f4301e54d17c6c83de832da2a11bb30da8864140a36",
+      "pixelWidth": 96,
+      "pixelHeight": 96
+    },
+    {
+      "id": "234:12699",
+      "name": "connected",
+      "width": 18,
+      "height": 18,
+      "file": "connected.png",
+      "sha256": "ef0a2f87c8311009ad3ee539d9999dfc0dbcce0a5dd89cf8ecae81bbb32b2c29",
+      "pixelWidth": 54,
+      "pixelHeight": 54
+    },
+    {
+      "id": "120:6248",
+      "name": "connection-spinner",
+      "width": 14,
+      "height": 14,
+      "file": "connection-spinner.png",
+      "sha256": "075fe0415488f7c0513127292dc6d4954416d96dc542dac68deeab528f988e83",
+      "pixelWidth": 42,
+      "pixelHeight": 42
+    },
+    {
+      "id": "28:348",
+      "name": "bluetooth-off",
+      "width": 18,
+      "height": 18,
+      "file": "bluetooth-off.png",
+      "sha256": "d82ae5ae4905438f8c49e3411959126abdf5ab37f30d07a53c4d591940e2cb45",
+      "pixelWidth": 54,
+      "pixelHeight": 54
+    },
+    {
+      "id": "41:743",
+      "name": "bluetooth-off-notice",
+      "width": 22,
+      "height": 22,
+      "file": "bluetooth-off-notice.png",
+      "sha256": "19dea6c2b6d28593ac02a19f700f1b35b737f5951a805c1b571658625875f9e1",
+      "pixelWidth": 66,
+      "pixelHeight": 66
+    },
+    {
+      "height": 20,
+      "id": "I120:6124;10:49;8:78",
+      "pixelHeight": 60,
+      "pixelWidth": 60,
+      "sha256": "0c1489b8c84a8506b45d40c03efa806773ed4cb3f91f790ad533f044ed0c8012",
+      "width": 20,
+      "file": "message-selected.png",
+      "name": "Icon/Message selected"
+    },
+    {
+      "height": 20,
+      "id": "I120:6124;10:56;8:85",
+      "pixelHeight": 60,
+      "pixelWidth": 60,
+      "sha256": "f50d497a564c97e1220a84fde3b703229ecd531693f5d956eaeb66cce5e1abf9",
+      "width": 20,
+      "file": "file-outline.png",
+      "name": "Icon/File outline"
+    }
+  ]
+}

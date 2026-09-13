@@ -16,25 +16,57 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly MainViewModel _model;
     private bool _disposed;
+    private System.Windows.Interop.HwndSource? _usbEventSource;
+    internal MainViewModel ViewModel => _model;
     private System.Windows.Point? _attachmentDragStart;
     private ChatAttachment? _dragAttachment;
     private ICollectionView? _transferPanelView;
     private string _transferFilter = "All";
     private ScrollViewer? _messageScrollViewer;
     private bool _messagePinnedToBottom = true;
+    internal Appearance.WindowSizePersistence WindowSizing { get; }
+    internal SettingsPage? ActiveSettingsPage { get; private set; }
 
     public MainWindow(bool initializeRuntime = true, string? dataRoot = null)
     {
         _model = new MainViewModel(dataRoot);
         InitializeComponent();
+        PreviewMouseDown += (_, args) => ClearMessageSelectionExcept(MessageTextAt(args.OriginalSource as DependencyObject));
+        PreviewGotKeyboardFocus += (_, args) => ClearMessageSelectionExcept(MessageTextAt(args.NewFocus as DependencyObject));
+        Deactivated += (_, _) => { if (_selectedMessageText?.ContextMenu?.IsOpen != true) ClearMessageSelectionExcept(null); };
+        WindowSizing = new(this, "main", _model.DataDirectory);
         DataContext = _model;
+        _model.TransientNoticeRequested += OnTransientNoticeRequested;
         ConfigureTransferView();
         _model.Messages.CollectionChanged += Messages_CollectionChanged;
         Loaded += (_, _) => AttachMessageScrollViewer();
+        Activated += async (_, _) => { await _model.SetWindowFocusAsync(true); if (initializeRuntime) await _model.RefreshBluetoothStatusAsync(); };
+        Deactivated += async (_, _) => await _model.SetWindowFocusAsync(false);
+        _model.PropertyChanged += async (_, args) => { if (args.PropertyName == nameof(MainViewModel.ShowMessageSurface) && IsActive) await _model.SetWindowFocusAsync(true); };
+        _model.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.Settings)) Dispatcher.BeginInvoke(new Action(() =>
+            {
+                RefreshFileDeviceChoices();
+                UpdateFileResultCount();
+                UpdateFileToolbarLayout();
+            }));
+        };
+        if (initializeRuntime) SourceInitialized += (_, _) =>
+        {
+            _usbEventSource = System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+            _usbEventSource?.AddHook(UsbDeviceChange);
+        };
         if (initializeRuntime)
-            Loaded += async (_, _) => { await _model.InitializeAsync(); ApplyTransferPanel(_model.Settings.TransferPanelExpanded); };
-        else
-            ApplyTransferPanel(expanded: true);
+            Loaded += async (_, _) => await _model.InitializeAsync();
+    }
+
+    private IntPtr UsbDeviceChange(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        // WM_DEVICECHANGE / DBT_DEVNODES_CHANGED is broadcast even while the window is hidden in the tray.
+        if (!_disposed && message == 0x0219 && wParam.ToInt64() is 0x0007 or 0x8000 or 0x8004)
+            _model.RefreshUsbDiscovery();
+        return IntPtr.Zero;
     }
 
     internal void LoadVisualFixture(bool expanded = true)
@@ -71,10 +103,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _model.AllTransfers.Add(transfer);
         _model.UseVisualFixture(connected);
         MessageList.Items.Refresh();
-        ApplyTransferPanel(expanded);
+        _model.ShowFiles = false;
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e) => await _model.ScanAsync();
+    private async void RefreshNearby_Click(object sender, RoutedEventArgs e) => await _model.ScanAsync();
     private async void Connect_Click(object sender, RoutedEventArgs e) => await _model.ConnectAsync();
     private void CancelConnection_Click(object sender, RoutedEventArgs e) => _model.CancelConnection();
     private async void ConnectDevice_Click(object sender, RoutedEventArgs e)
@@ -100,7 +132,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void File_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new OpenFileDialog { Title = "选择要通过蓝牙发送的文件", Multiselect = true };
+        var picker = new OpenFileDialog { Title = "选择要发送的文件", Multiselect = true };
         if (picker.ShowDialog(this) == true) await SendFilesAsync(picker.FileNames);
     }
 
@@ -162,26 +194,33 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void UpdateFileDropFeedback(DragEventArgs e)
     {
         var files = FileDragDropService.ExtractFilePaths(e.Data);
-        var canSend = _model.IsConnected && files.Count > 0;
+        e.Effects = ShowFileDropFeedback(files.Count) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    internal bool ShowFileDropFeedback(int fileCount)
+    {
+        var canSend = _model.IsConnected && fileCount > 0;
         FileDropOverlay.Visibility = Visibility.Visible;
-        FileDropOverlay.BorderBrush = (System.Windows.Media.Brush)FindResource(canSend ? "BlueBrush" : "WarningBrush");
+        FileDropOutline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, canSend ? "BlueBrush" : "WarningBrush");
+        FileDropOutline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, canSend ? "SoftBlueBrush" : "SoftWarningBrush");
+        FileDropIcon.SetResourceReference(System.Windows.Controls.Image.SourceProperty, canSend ? "FigmaIcon-drop-send" : "FigmaIcon-drop-blocked");
         if (!_model.IsConnected)
         {
-            FileDropTitle.Text = "设备离线，无法发送文件";
-            FileDropDetail.Text = "重新连接设备后再拖入文件";
+            FileDropTitle.Text = Localization.Strings.Get("设备未连接，无法发送文件");
+            FileDropDetail.Text = Localization.Strings.Get("重新连接设备后再拖放文件");
         }
-        else if (files.Count == 0)
+        else if (fileCount == 0)
         {
-            FileDropTitle.Text = "这里只接受文件";
-            FileDropDetail.Text = "文件夹不会被自动压缩或发送";
+            FileDropTitle.Text = Localization.Strings.Get("这里只接受文件");
+            FileDropDetail.Text = Localization.Strings.Get("文件夹不会被自动压缩或发送");
         }
         else
         {
-            FileDropTitle.Text = $"释放以发送给 {_model.ActivePeerTitle}";
-            FileDropDetail.Text = $"{files.Count} 个文件 · {FileDragDropService.FormatBytes(FileDragDropService.TotalBytes(files))}";
+            FileDropTitle.Text = Localization.Strings.Get("释放以发送文件");
+            FileDropDetail.Text = Localization.Strings.Format($"文件将发送至 {_model.ActivePeerTitle}");
         }
-        e.Effects = canSend ? DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
+        return canSend;
     }
 
     private async Task SendFilesAsync(IEnumerable<string> paths)
@@ -189,16 +228,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var files = FileDragDropService.NormalizeFilePaths(paths);
         if (!_model.IsConnected || files.Count == 0) return;
         var failures = new List<string>();
-        foreach (var path in files)
+        await Task.WhenAll(files.Select(async path =>
         {
-            if (!_model.IsConnected)
-            {
-                failures.Add($"{Path.GetFileName(path)}：设备连接已断开");
-                continue;
-            }
             try { await _model.SendFileAsync(path); }
+            catch (OperationCanceledException) { }
             catch (Exception failure) { failures.Add($"{Path.GetFileName(path)}：{failure.Message}"); }
-        }
+        }));
         if (failures.Count > 0)
             BlueLinkDialog.Show(this, "部分文件发送失败", string.Join(Environment.NewLine, failures),
                 BlueLinkDialogTone.Error);
@@ -258,32 +293,32 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ConfigureTransferView()
     {
         if (TransferList is null) return;
-        var source = AllTransfersTab?.IsChecked == true ? _model.AllTransfers : _model.Transfers;
-        _transferPanelView = CollectionViewSource.GetDefaultView(source);
-        _transferPanelView.Filter = value => value is TransferItem transfer && TransferMatchesFilter(transfer);
-        _transferPanelView.GroupDescriptions.Clear();
-        _transferPanelView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TransferItem.PeerId)));
-        TransferList.ItemsSource = _transferPanelView;
+        RefreshFileDeviceChoices();
+        _model.FilesAllDevices = _fileDevice != "@current";
+        if (_transferPanelView is null)
+        {
+            var view = new ListCollectionView(_model.AllTransfers);
+            view.Filter = value => value is TransferItem transfer && TransferMatchesFilter(transfer);
+            view.SortDescriptions.Add(new SortDescription(nameof(TransferItem.GroupOrder), ListSortDirection.Ascending));
+            view.SortDescriptions.Add(new SortDescription(nameof(TransferItem.CreatedAt), ListSortDirection.Descending));
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TransferItem.GroupText)));
+            view.LiveFilteringProperties.Add(nameof(TransferItem.Status));
+            view.LiveGroupingProperties.Add(nameof(TransferItem.GroupText));
+            view.LiveSortingProperties.Add(nameof(TransferItem.GroupOrder));
+            view.IsLiveFiltering = true; view.IsLiveGrouping = true; view.IsLiveSorting = true;
+            ((INotifyCollectionChanged)view).CollectionChanged += (_, _) => UpdateFileResultCount();
+            _transferPanelView = view;
+            TransferList.ItemsSource = view;
+        }
+        RefreshFileResults();
     }
 
-    private bool TransferMatchesFilter(TransferItem transfer) => _transferFilter switch
-    {
-        "Active" => transfer.IsActive,
-        "Completed" => transfer.IsCompleted,
-        "Failed" => transfer.IsFailed,
-        _ => true
-    };
-
-    private void TransferScope_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!IsInitialized) return;
-        ConfigureTransferView();
-    }
+    private bool TransferMatchesFilter(TransferItem transfer) => HistoryQuery.Matches(transfer,
+        _fileQuery, _transferFilter, _fileDirection, _fileDevice == "@current" ? _model.ActivePeerId : _fileDevice);
 
     private void TransferFilter_Changed(object sender, RoutedEventArgs e)
     {
-        if (sender is RadioButton { IsChecked: true, Tag: string value }) _transferFilter = value;
-        _transferPanelView?.Refresh();
+        if (sender is RadioButton { IsChecked: true, Tag: string value }) SetTransferFilter(value);
     }
 
     private static ChatAttachment TransferAttachment(TransferItem item) => new(
@@ -294,11 +329,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (sender is FrameworkElement { DataContext: TransferItem item })
             FileInteractionService.Open(this, TransferAttachment(item));
-    }
-
-    private async void RetryTransfer_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: TransferItem item }) await _model.RetryTransferAsync(item);
     }
 
     private void TransferMore_Click(object sender, RoutedEventArgs e)
@@ -335,24 +365,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             FileInteractionService.SaveCopy(this, TransferAttachment(item));
     }
 
-    private void TransferInfoMenu_Click(object sender, RoutedEventArgs e)
+    private async void TransferInfoMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TransferItem item }) return;
-        var detail = $"文件名：{item.Name}{Environment.NewLine}" +
-                     $"方向：{item.Direction}{Environment.NewLine}" +
-                     $"状态：{item.StatusText}{Environment.NewLine}" +
-                     $"进度：{item.Detail}{Environment.NewLine}" +
-                     $"设备：{item.PeerId ?? "未知"}{Environment.NewLine}" +
-                     $"本地位置：{item.LocalPath ?? "尚未保存"}";
-        BlueLinkDialog.Show(this, "传输详情", detail);
+        await ShowAttachmentInformationAsync(TransferAttachment(item), item);
     }
 
     private async void TransferDeleteMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TransferItem item } || !item.CanDelete) return;
-        if (!BlueLinkDialog.Confirm(this, "删除本机记录",
-                $"只删除“{item.Name}”的本机传输记录？\n已保存文件不会被删除。")) return;
-        await _model.DeleteTransferAsync(item);
+        if (!ConfirmationWindow.Show(this, ConfirmationDocument.DeleteRecord(Localization.Strings.Format($"确定删除“{item.Name}”的本机传输记录吗？")))) return;
+        await WithToastAsync(() => _model.DeleteTransferAsync(item), "已删除本机记录", "删除本机记录失败");
         _transferPanelView?.Refresh();
     }
 
@@ -370,35 +393,96 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void CancelTransfer_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: TransferItem transfer })
+        if (sender is FrameworkElement { DataContext: TransferItem transfer } &&
+            ConfirmationWindow.Show(this, ConfirmationDocument.CancelTransfer(transfer.Name, transfer.Outgoing)))
             await _model.CancelTransferAsync(transfer);
     }
 
-    private async void TransferPanelToggle_Click(object sender, RoutedEventArgs e)
+    private void Settings_Click(object sender, RoutedEventArgs e)
     {
-        var expanded = FullTransferContent.Visibility != Visibility.Visible;
-        ApplyTransferPanel(expanded);
-        await _model.SetTransferPanelExpandedAsync(expanded);
+        OpenSettings();
     }
 
-    private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(_model) { Owner = this }.ShowDialog();
-    private void AllTransfers_Click(object sender, RoutedEventArgs e) => new AllTransfersWindow(_model) { Owner = this }.Show();
+    private void ChangeReceiveDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        OpenSettings();
+        ActiveSettingsPage!.ShowFiles();
+    }
+
+    internal void OpenSettings(bool connections = false)
+    {
+        if (ActiveSettingsPage is null)
+        {
+            ActiveSettingsPage = new SettingsPage(_model);
+            ActiveSettingsPage.LeaveRequested += LeaveSettings;
+            SettingsHost.Content = ActiveSettingsPage;
+        }
+        _model.IsSettingsOpen = true;
+        HomeWorkspace.Visibility = Visibility.Collapsed;
+        SettingsHost.Visibility = Visibility.Visible;
+        if (connections) ActiveSettingsPage.ShowConnections();
+        ActiveSettingsPage.Focus();
+    }
+
+    private void LeaveSettings() => TryCloseSettings();
+    internal bool TryCloseSettings()
+    {
+        if (ActiveSettingsPage is null) return true;
+        if (!ActiveSettingsPage.ConfirmLeave()) return false;
+        ActiveSettingsPage.Dispose();
+        ActiveSettingsPage = null;
+        SettingsHost.Content = null;
+        SettingsHost.Visibility = Visibility.Collapsed;
+        HomeWorkspace.Visibility = Visibility.Visible;
+        _model.IsSettingsOpen = false;
+        _ = _model.SetWindowFocusAsync(IsActive);
+        RefreshFileDeviceChoices();
+        RefreshFileResults();
+        MessageList.Items.Refresh();
+        return true;
+    }
+    private void AllTransfers_Click(object sender, RoutedEventArgs e) => ShowGlobalFiles();
 
     private async void Conversation_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (sender is System.Windows.Controls.ListBox { SelectedItem: ConversationSummary item })
+        // Binding refreshes must not reopen a conversation or reset the file workspace.
+        if (e.AddedItems.Count > 0 && e.AddedItems[0] is ConversationSummary item &&
+            !string.Equals(item.PeerId, _model.ActivePeerId, StringComparison.OrdinalIgnoreCase))
+            await OpenConversationAsync(item);
+    }
+
+    private async void ConversationCard_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ConversationSummary item } && _model.ShowFiles &&
+            string.Equals(item.PeerId, _model.ActivePeerId, StringComparison.OrdinalIgnoreCase))
         {
-            _messagePinnedToBottom = true;
-            NewMessagesButton.Visibility = Visibility.Collapsed;
-            await _model.SelectConversationAsync(item.PeerId);
-            ScrollMessagesToBottom();
+            // Clicking an already-selected item does not raise SelectionChanged.
+            e.Handled = true;
+            await OpenConversationAsync(item);
         }
+    }
+
+    private async void ConversationList_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space) || sender is not ListBox { SelectedItem: ConversationSummary item }) return;
+        e.Handled = true;
+        await OpenConversationAsync(item);
+    }
+
+    internal async Task OpenConversationAsync(ConversationSummary item)
+    {
+        _model.ShowFiles = false;
+        MessagesViewButton.IsChecked = true;
+        _messagePinnedToBottom = true;
+        NewMessagesButton.Visibility = Visibility.Collapsed;
+        await _model.SelectConversationAsync(item.PeerId);
+        ScrollMessagesToBottom();
     }
 
     private async void ConversationOpenMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ConversationSummary item })
-            await _model.SelectConversationAsync(item.PeerId);
+            await OpenConversationAsync(item);
     }
 
     private async void ConversationConnectMenu_Click(object sender, RoutedEventArgs e)
@@ -416,35 +500,33 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ConversationInfoMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ConversationSummary item }) return;
-        BlueLinkDialog.Show(this, "设备信息",
-            $"设备：{item.PeerName}{Environment.NewLine}" +
-            $"平台：{item.PlatformText}{Environment.NewLine}" +
-            $"状态：{item.AvailabilityText}{Environment.NewLine}" +
-            $"设备标识：{item.PeerId}{Environment.NewLine}" +
-            $"蓝牙地址：{item.TransportAddress}");
+        InformationWindow.Show(this, _model.DescribeDevice(item));
     }
 
     private async void ConversationClearMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ConversationSummary item }) return;
-        if (!BlueLinkDialog.Confirm(this, "清空会话记录",
-                $"只删除本机中与“{item.PeerName}”的聊天记录？\n已接收文件不会被删除。")) return;
-        await _model.ClearConversationAsync(item.PeerId);
+        if (!ConfirmationWindow.Show(this, ConfirmationDocument.ClearConversation(item.PeerName))) return;
+        await WithToastAsync(() => _model.ClearConversationAsync(item.PeerId), "已清空本机会话", "清空本机会话失败");
     }
 
     private async void ConversationForgetMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ConversationSummary item }) return;
-        if (!BlueLinkDialog.Confirm(this, "移除信任",
-                $"移除对“{item.PeerName}”的信任？\n下次连接时需要重新核对安全码。")) return;
-        await _model.ForgetPeerAsync(item.PeerId);
+        if (!ConfirmationWindow.Show(this, ConfirmationDocument.RemoveTrust(item.PeerName))) return;
+        await WithToastAsync(() => _model.ForgetPeerAsync(item.PeerId), "已移除设备信任", "移除设备信任失败");
     }
 
     private void MessageCopyMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ChatItem item }) return;
         var value = item.HasText ? item.Text : string.Join(Environment.NewLine, item.Attachments?.Select(x => x.FileName) ?? []);
-        if (!string.IsNullOrWhiteSpace(value)) System.Windows.Clipboard.SetText(value);
+        if (sender is MenuItem menuItem && ItemsControl.ItemsControlFromItemContainer(menuItem) is ContextMenu menu &&
+            menu.PlacementTarget is System.Windows.Controls.TextBox { SelectionLength: > 0 } text)
+            value = text.SelectedText;
+        if (string.IsNullOrWhiteSpace(value)) return;
+        try { System.Windows.Clipboard.SetText(value); ShowToast("已复制到剪贴板", ToastLevel.Success); }
+        catch (Exception) { ShowToast("复制失败，请稍后重试", ToastLevel.Error); }
     }
 
     private void MessageInfoMenu_Click(object sender, RoutedEventArgs e)
@@ -460,9 +542,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private async void MessageDeleteMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ChatItem item }) return;
-        if (!BlueLinkDialog.Confirm(this, "删除本机记录",
-                "只删除这条消息的本机记录？\n已接收文件不会被删除。")) return;
-        await _model.DeleteMessageAsync(item);
+        if (!ConfirmationWindow.Show(this, ConfirmationDocument.DeleteRecord(Localization.Strings.Get("确定删除这条本机消息记录吗？")))) return;
+        await WithToastAsync(() => _model.DeleteMessageAsync(item), "已删除本机记录", "删除本机记录失败");
     }
 
     private void AttachmentOpenMenu_Click(object sender, RoutedEventArgs e)
@@ -485,40 +566,27 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (sender is FrameworkElement { DataContext: ChatAttachment attachment }) FileInteractionService.CopyToClipboard(this, attachment);
     }
 
-    private void AttachmentInfoMenu_Click(object sender, RoutedEventArgs e)
+    private async void AttachmentInfoMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ChatAttachment attachment })
-            BlueLinkDialog.Show(this, "文件详情", FileInteractionService.Describe(attachment));
+            await ShowAttachmentInformationAsync(attachment);
     }
 
     private async void AttachmentDeleteMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ChatAttachment attachment }) return;
-        if (!BlueLinkDialog.Confirm(this, "删除本机记录",
-                $"只删除“{attachment.FileName}”所在消息的本机记录？\n已保存文件不会被删除。")) return;
-        await _model.DeleteAttachmentMessageAsync(attachment);
+        if (!ConfirmationWindow.Show(this, ConfirmationDocument.DeleteRecord(Localization.Strings.Format($"确定删除“{attachment.FileName}”所在的本机消息记录吗？")))) return;
+        await WithToastAsync(() => _model.DeleteAttachmentMessageAsync(attachment), "已删除本机记录", "删除本机记录失败");
     }
-
-    private void ApplyTransferPanel(bool expanded)
-    {
-        TransferPanel.Visibility = Visibility.Visible;
-        TransferGapColumn.Width = new GridLength(ResourceDouble(
-            expanded ? "TransferPanelExpandedGap" : "TransferPanelCollapsedGap", expanded ? 16 : 8));
-        TransferColumn.Width = new GridLength(ResourceDouble(
-            expanded ? "TransferPanelExpandedWidth" : "TransferPanelCollapsedWidth", expanded ? 326 : 52));
-        FullTransferContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        CollapsedTransferRail.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private double ResourceDouble(string key, double fallback) => TryFindResource(key) is double value ? value : fallback;
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        if (ActiveSettingsPage is { CanLeave: false }) { e.Cancel = true; return; }
         if (Application.Current is App { ExitRequested: false })
         {
             e.Cancel = true;
             if (_model.Settings.KeepBackgroundSessions) Hide();
-            else ((App)Application.Current).RequestExit();
+            else Dispatcher.BeginInvoke(new Action(((App)Application.Current).RequestExit));
             return;
         }
         base.OnClosing(e);
@@ -528,6 +596,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (_disposed) return;
         _disposed = true;
+        _usbEventSource?.RemoveHook(UsbDeviceChange);
+        _usbEventSource = null;
+        _model.TransientNoticeRequested -= OnTransientNoticeRequested;
+        Toasts.Dispose();
+        ActiveSettingsPage?.Dispose();
         _model.Messages.CollectionChanged -= Messages_CollectionChanged;
         try
         {

@@ -137,6 +137,29 @@ namespace BlueLink.Shared
                 throw new InvalidOperationException(inspection.Message ?? "所选安装目录无效。");
         }
 
+        // Called only with a folder enumerated by Windows Installer for this exact
+        // UpgradeCode. Missing files may be restored, but foreign files and links
+        // are still rejected using the manifest embedded in the incoming bundle.
+        internal static bool CanRecoverRegisteredInstall(string folder, string registeredFolder,
+            string incomingManifestPath)
+        {
+            try
+            {
+                if (String.IsNullOrWhiteSpace(registeredFolder)) return false;
+                var root = Path.GetFullPath(folder).TrimEnd('\\', '/');
+                var registered = Path.GetFullPath(registeredFolder).TrimEnd('\\', '/');
+                if (!root.Equals(registered, StringComparison.OrdinalIgnoreCase) ||
+                    !Directory.Exists(root) || root.Equals(Path.GetPathRoot(root).TrimEnd('\\', '/'),
+                        StringComparison.OrdinalIgnoreCase)) return false;
+                for (var ancestor = new DirectoryInfo(root); ancestor != null; ancestor = ancestor.Parent)
+                    if ((ancestor.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+                if (Inspect(root).Kind == InstallDirectoryKind.InvalidManifest) return false;
+                return InspectCurrentStructure(root, new DirectoryInfo(root).EnumerateFileSystemInfos(),
+                    incomingManifestPath, true).Kind == InstallDirectoryKind.CurrentStructure;
+            }
+            catch { return false; }
+        }
+
         internal static bool IsBlueLinkExecutable(string path)
         {
             if (!File.Exists(path)) return false;
@@ -242,7 +265,7 @@ namespace BlueLink.Shared
         }
 
         private static InstallDirectoryInspection InspectCurrentStructure(string root,
-            IEnumerable<FileSystemInfo> entries, string manifestPath)
+            IEnumerable<FileSystemInfo> entries, string manifestPath, bool allowMissingFiles = false)
         {
             InstallOwnershipManifest manifest;
             try
@@ -305,8 +328,8 @@ namespace BlueLink.Shared
                     : CurrentTopLevelNames.Contains(entry.Name) && !(entry is FileInfo));
             if (wrongEntryType != null) return Foreign(wrongEntryType.Name);
 
-            if (!IsBlueLinkExecutable(Path.Combine(root, "BlueLink.exe")) ||
-                !IsBlueLinkExecutable(Path.Combine(root, "app", "BlueLink.exe")))
+            if (new[] { Path.Combine(root, "BlueLink.exe"), Path.Combine(root, "app", "BlueLink.exe") }
+                .Any(path => (!allowMissingFiles || File.Exists(path)) && !IsBlueLinkExecutable(path)))
             {
                 return Invalid(InstallDirectoryKind.IncompleteProduct,
                     "所选目录中的蓝联启动程序缺失或产品身份无效，已停止覆盖安装。");
@@ -321,7 +344,7 @@ namespace BlueLink.Shared
             if (unownedFile != null) return Foreign(unownedFile);
 
             var missingFile = ownedPaths.FirstOrDefault(path => !File.Exists(Path.Combine(root, path)));
-            if (missingFile != null)
+            if (missingFile != null && !allowMissingFiles)
                 return Invalid(InstallDirectoryKind.IncompleteProduct,
                     "蓝联安装目录不完整，清单记录的程序文件不存在：" + missingFile + "。");
 

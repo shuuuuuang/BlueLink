@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="device_no_results">找不到裝置或對話</string>
+    <string name="device_search_hint">請嘗試其他名稱或裝置識別碼</string>
+    <string name="device_connected">已連線</string>
+    <string name="device_no_connected">暫無已連線裝置</string>
+    <string name="device_history_available">仍可查看歷史訊息與檔案</string>
+    <string name="device_reconnect_bluetooth">開啟藍牙後可重新連線</string>
+    <string name="device_offline">離線</string>
+    <string name="device_no_offline">暫無離線裝置</string>
+    <string name="device_history_here">歷史對話將顯示在這裡</string>
+    <string name="device_nearby">附近新裝置</string>
+    <string name="device_refresh">重新整理附近裝置</string>
+    <string name="device_scanning_nearby">正在掃描附近新裝置…</string>
+    <string name="device_no_nearby">暫無附近新裝置</string>
+    <string name="device_keep_bluetooth">請保持藍牙開啟</string>
+    <string name="device_check_peer">下拉重新整理，尋找已開啟藍聯與藍牙的裝置</string>
+    <string name="device_search">搜尋裝置或對話</string>
+    <string name="device_search_history">搜尋歷史對話</string>
+    <string name="device_expanded">已展開</string>
+    <string name="device_collapsed">已收合</string>
+    <string name="device_scanning">掃描中</string>
+    <string name="device_scan">掃描</string>
+    <string name="device_sending_progress">正在傳送檔案 · %1$d%%</string>
+    <string name="device_receiving_progress">正在接收檔案 · %1$d%%</string>
+    <string name="device_current_conversation">目前對話</string>
+    <string name="device_last_connection">上次連線 %1$s</string>
+    <string name="device_offline_history">離線 · 可查看歷史</string>
+    <string name="device_establishing">正在建立安全連線…</string>
+    <string name="device_failed">連線失敗</string>
+    <string name="device_generic">裝置</string>
+    <string name="device_connecting">連線中</string>
+    <string name="device_retry">重試</string>
+    <string name="device_connect">連線</string>
+    <string name="device_permission_denied">藍牙權限已關閉</string>
+    <string name="device_permission_needed">需要藍牙權限</string>
+    <string name="device_permission_denied_body">請在系統設定中允許「附近裝置」權限後重試。</string>
+    <string name="device_permission_body">允許藍聯尋找並連線至附近裝置，保持裝置對話。</string>
+    <string name="device_open_settings">前往系統設定</string>
+    <string name="device_allow_permission">允許藍牙權限</string>
+    <string name="device_recheck_permission">返回應用程式後會自動重新檢查權限。</string>
+    <string name="device_permission_note">權限僅用於附近裝置通訊。</string>
+    <string name="device_bluetooth_off">藍牙未開啟</string>
+    <string name="device_bluetooth_off_body">無法探索附近新裝置，請先開啟藍牙</string>
+    <string name="device_permission_short">需要藍牙權限</string>
+    <string name="device_nearby_connectable">附近可連線</string>
+</resources>

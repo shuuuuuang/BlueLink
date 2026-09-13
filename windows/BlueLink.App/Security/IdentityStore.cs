@@ -9,6 +9,7 @@ using Org.BouncyCastle.Security;
 namespace BlueLink.Security;
 
 public sealed record TrustedIdentity(string PeerIdHex, byte[] PublicKey);
+public sealed record IdentitySnapshot(DeviceIdentity Identity, long Version);
 
 public sealed class DeviceIdentity
 {
@@ -53,12 +54,53 @@ public sealed class IdentityStore
 {
     private readonly string _path;
     private readonly StoreData _data;
-    public DeviceIdentity Identity { get; }
+    private readonly object _trustGate = new();
+    public DeviceIdentity Identity { get; private set; }
+    public string UsbHostId => _data.UsbHostId;
+    public IReadOnlyDictionary<string, string> IdentityAssociations
+    { get { lock (_trustGate) return new Dictionary<string, string>(_data.IdentityAssociations, StringComparer.OrdinalIgnoreCase); } }
+    public bool IsRetired(string peerId) { lock (_trustGate) return _data.IdentityAssociations.ContainsKey(peerId); }
+
+    // Trust replacement and the durable history-migration journal share one atomic identity-file write.
+    // Called only after a fresh local decision and the authenticated remote protocol greeting.
+    public bool TryAssociate(byte[] peerId, byte[] key, long expectedVersion, IdentityCandidate candidate)
+    {
+        lock (_trustGate)
+        {
+            var nextId = Convert.ToHexString(peerId);
+            if (_revocationVersion != expectedVersion || IsRetired(nextId) || IsRetired(candidate.PeerId) ||
+                nextId.Equals(candidate.PeerId, StringComparison.OrdinalIgnoreCase) || FindTrustedKey(nextId) is not null) return false;
+            var oldKey = FindTrustedKey(candidate.PeerId);
+            if (oldKey is not null && (candidate.PublicKey is null || !CryptographicOperations.FixedTimeEquals(oldKey, candidate.PublicKey))) return false;
+            var previousTrust = _data.Trusted;
+            var previousAssociations = _data.IdentityAssociations;
+            _data.Trusted = new(previousTrust, StringComparer.OrdinalIgnoreCase);
+            _data.IdentityAssociations = new(previousAssociations, StringComparer.OrdinalIgnoreCase);
+            _data.Trusted.Remove(candidate.PeerId);
+            _data.Trusted[nextId] = Convert.ToBase64String(key);
+            _data.IdentityAssociations[candidate.PeerId] = nextId;
+            try { Save(); _revocationVersion++; return true; }
+            catch { _data.Trusted = previousTrust; _data.IdentityAssociations = previousAssociations; throw; }
+        }
+    }
+
+    private long _revocationVersion;
+    public long RevocationVersion { get { lock (_trustGate) return _revocationVersion; } }
+    public IdentitySnapshot CaptureIdentity() { lock (_trustGate) return new(Identity, _revocationVersion); }
+    public byte[]? FindTrustedKey(string peerId)
+    {
+        lock (_trustGate) return _data.Trusted.TryGetValue(peerId, out var key) ? Convert.FromBase64String(key) : null;
+    }
     public bool RecoveredCorruptIdentity { get; private set; }
     public string? RecoveryBackupPath { get; private set; }
-    public IReadOnlyList<TrustedIdentity> TrustedIdentities => _data.Trusted
-        .Select(pair => new TrustedIdentity(pair.Key, Convert.FromBase64String(pair.Value)))
-        .ToArray();
+    public IReadOnlyList<TrustedIdentity> TrustedIdentities
+    {
+        get
+        {
+            lock (_trustGate) return _data.Trusted
+                .Select(pair => new TrustedIdentity(pair.Key, Convert.FromBase64String(pair.Value))).ToArray();
+        }
+    }
 
     public IdentityStore(string? dataRoot = null)
     {
@@ -67,6 +109,13 @@ public sealed class IdentityStore
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "identity.json");
         _data = LoadStoreData(directory);
+        _data.IdentityAssociations = new(_data.IdentityAssociations, StringComparer.OrdinalIgnoreCase);
+        _data.Trusted = new(_data.Trusted, StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(_data.UsbHostId))
+        {
+            _data.UsbHostId = Guid.NewGuid().ToString("N");
+            Save();
+        }
         byte[]? protectedKey = null;
         byte[]? legacyKey = null;
         try
@@ -143,25 +192,79 @@ public sealed class IdentityStore
 
     public bool? MatchesTrustedKey(byte[] peerId, byte[] publicKey)
     {
-        if (!_data.Trusted.TryGetValue(Convert.ToHexString(peerId), out var saved)) return null;
-        return CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(saved), publicKey);
+        lock (_trustGate)
+        {
+            if (!_data.Trusted.TryGetValue(Convert.ToHexString(peerId), out var saved)) return null;
+            return CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(saved), publicKey);
+        }
     }
 
     public void ClearTrustedIdentities()
     {
-        _data.Trusted.Clear();
-        Save();
+        ChangeTrust(values => values.Clear(), revokesTrust: true);
     }
 
     public void Trust(byte[] peerId, byte[] publicKey)
     {
-        _data.Trusted[Convert.ToHexString(peerId)] = Convert.ToBase64String(publicKey);
-        Save();
+        ChangeTrust(values => values[Convert.ToHexString(peerId)] = Convert.ToBase64String(publicKey));
     }
 
     public void RemoveTrust(string peerIdHex)
     {
-        if (_data.Trusted.Remove(peerIdHex)) Save();
+        ChangeTrust(values => values.Remove(peerIdHex), revokesTrust: true);
+    }
+
+    public bool TryTrust(byte[] peerId, byte[] publicKey, long expectedVersion)
+    {
+        lock (_trustGate)
+        {
+            if (expectedVersion != _revocationVersion || IsRetired(Convert.ToHexString(peerId))) return false;
+            var matches = MatchesTrustedKey(peerId, publicKey);
+            if (matches == false) return false;
+            if (matches is null) Trust(peerId, publicKey);
+            return true;
+        }
+    }
+
+    public void ResetIdentity()
+    {
+        lock (_trustGate)
+        {
+            var next = DeviceIdentity.Generate();
+            var previousProtected = _data.PrivateKeyProtected;
+            var previousLegacy = _data.PrivateKey;
+            var previousTrust = _data.Trusted;
+            var privateKey = next.ExportPrivateKey();
+            try
+            {
+                _data.PrivateKeyProtected = Convert.ToBase64String(WindowsDataProtection.Protect(privateKey));
+                _data.PrivateKey = "";
+                _data.Trusted = new(StringComparer.OrdinalIgnoreCase);
+                Save();
+            }
+            catch
+            {
+                _data.PrivateKeyProtected = previousProtected;
+                _data.PrivateKey = previousLegacy;
+                _data.Trusted = previousTrust;
+                throw;
+            }
+            finally { CryptographicOperations.ZeroMemory(privateKey); }
+            Identity = next;
+            _revocationVersion++;
+        }
+    }
+
+    private void ChangeTrust(Action<Dictionary<string, string>> change, bool revokesTrust = false)
+    {
+        lock (_trustGate)
+        {
+            var previous = _data.Trusted;
+            _data.Trusted = new Dictionary<string, string>(previous, StringComparer.OrdinalIgnoreCase);
+            change(_data.Trusted);
+            try { Save(); if (revokesTrust) _revocationVersion++; }
+            catch { _data.Trusted = previous; throw; }
+        }
     }
 
     private void Save()
@@ -173,6 +276,8 @@ public sealed class IdentityStore
 
     private sealed class StoreData
     {
+        public string UsbHostId { get; set; } = "";
+        public Dictionary<string, string> IdentityAssociations { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public string PrivateKey { get; set; } = "";
         public string PrivateKeyProtected { get; set; } = "";
         public Dictionary<string, string> Trusted { get; set; } = new(StringComparer.OrdinalIgnoreCase);

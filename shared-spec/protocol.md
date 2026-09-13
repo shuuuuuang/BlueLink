@@ -53,3 +53,19 @@ Reliable transfer message additions used by application version 0.2.4 and later 
 | `TRANSFER_EXTENT_ACK` | 27 | transfer UUID (16 bytes), extent index (big-endian int32) |
 | `TRANSFER_COMPLETE` | 28 | transfer UUID (16 bytes) |
 | `TRANSFER_FAILED` | 29 | transfer UUID, UTF-8 reason length (uint16), reason |
+
+### Optional device display name in the authenticated greeting
+
+PROTOCOL_HELLO retains its original 8-byte version/capability prefix. An optional `BLDN` ASCII marker at offset 8, followed by a 2-byte big-endian UTF-8 byte length and the name, communicates the app-configured display name. Maximum 384 UTF-8 bytes / 128 UTF-16 code units; control characters are not accepted. The metadata is inside the existing encrypted greeting and is applied only after trust confirmation succeeds. It never identifies, merges, or trusts a peer.
+
+Existing 4/8-byte peers remain supported; the old decoders ignore trailing bytes. Missing, unknown, malformed, or invalid name extensions use the existing display-name fallback. A new configured name is advertised to the remote session on its next handshake.
+
+## Optional WPD file transport
+
+The production Windows–Android USB file path now uses WPD/MTP instead of AOA.
+Authenticated Bluetooth remains the control and message connection. Capability
+`0x20` gates `MTP_CONTROL(33)`; peers without it retain ordinary Bluetooth files.
+Per-device bidirectional FIFO scheduling, SAF proof binding, BLM1 encrypted spool
+records, failure boundaries and full-file retry are specified in
+[`docs/BTX_1_1_PROTOCOL.md`](../docs/BTX_1_1_PROTOCOL.md#6-wpdmtp-文件通道2026-09-13).
+No network or driver-switch fallback is added.

@@ -1,0 +1,44 @@
+<UserControl x:Class="BlueLink.ToastHost"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:BlueLink"
+    IsHitTestVisible="False" Focusable="False" FontFamily="{DynamicResource HomeFont}">
+    <ItemsControl x:Name="Notices" Focusable="False" HorizontalAlignment="Center">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type local:ToastNotice}">
+                <Border x:Name="ToastCard" MaxWidth="420" HorizontalAlignment="Center" Margin="0,0,0,10"
+                        Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource ToastInfoBorderBrush}"
+                        BorderThickness="1" CornerRadius="10" Padding="9,9,13,9"
+                        AutomationProperties.Name="{Binding Message}" AutomationProperties.LiveSetting="Polite">
+                    <Border.Effect><DropShadowEffect Color="#101828" BlurRadius="18" ShadowDepth="6" Direction="270" Opacity="0.12"/></Border.Effect>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Border x:Name="IconTile" Width="28" Height="28" CornerRadius="8" Background="{DynamicResource ToastInfoTileBrush}" VerticalAlignment="Center">
+                            <Image x:Name="StatusIcon" Source="/BlueLink;component/Assets/Figma/toast-info.png" Width="18" Height="18"/>
+                        </Border>
+                        <TextBlock Grid.Column="2" Text="{Binding Message}" MaxWidth="356" FontSize="13" FontWeight="Normal"
+                                   Foreground="{DynamicResource TextToastBrush}" LineHeight="20" LineStackingStrategy="BlockLineHeight"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+                <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding Level}" Value="{x:Static local:ToastLevel.Success}">
+                        <Setter TargetName="ToastCard" Property="BorderBrush" Value="{DynamicResource ToastSuccessBorderBrush}"/>
+                        <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource ToastSuccessTileBrush}"/>
+                        <Setter TargetName="StatusIcon" Property="Source" Value="/BlueLink;component/Assets/Figma/toast-success.png"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Level}" Value="{x:Static local:ToastLevel.Warning}">
+                        <Setter TargetName="ToastCard" Property="BorderBrush" Value="{DynamicResource ToastWarningBorderBrush}"/>
+                        <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource ToastWarningTileBrush}"/>
+                        <Setter TargetName="StatusIcon" Property="Source" Value="/BlueLink;component/Assets/Figma/toast-warning.png"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Level}" Value="{x:Static local:ToastLevel.Error}">
+                        <Setter TargetName="ToastCard" Property="BorderBrush" Value="{DynamicResource ToastErrorBorderBrush}"/>
+                        <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource ToastErrorTileBrush}"/>
+                        <Setter TargetName="StatusIcon" Property="Source" Value="/BlueLink;component/Assets/Figma/toast-error.png"/>
+                    </DataTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="security_confirm">確認安全連線</string>
+    <string name="security_waiting">等待對方確認</string>
+    <string name="security_rejected">連線要求遭拒絕</string>
+    <string name="security_timeout">安全確認已逾時</string>
+    <string name="security_changed">裝置身分已變更</string>
+    <string name="security_closed">連線已關閉</string>
+    <string name="security_revoked">信任關係已變更</string>
+    <string name="security_code">安全碼</string>
+    <string name="security_status">連線狀態</string>
+    <string name="security_declined">對方已拒絕</string>
+    <string name="security_expired">本次安全碼已失效</string>
+    <string name="security_blocked">已阻止連線</string>
+    <string name="security_not_connected">未建立安全連線</string>
+    <string name="security_confirm_note">請確認兩台裝置顯示相同安全碼</string>
+    <string name="security_wait_note">本機已確認，請等待對方核對並確認。</string>
+    <string name="security_reject_note">未建立安全連線，也未新增信任。</string>
+    <string name="security_timeout_note">未建立信任，請重新連線並核對新安全碼。</string>
+    <string name="security_changed_note">本次指紋與已信任的裝置指紋不一致。</string>
+    <string name="security_changed_help">若對方已重設身分，請先核實，再移除舊信任。</string>
+    <string name="security_closed_note">對方關閉了連線，請重新連線後核對。未新增信任。</string>
+    <string name="security_failed_note">安全連線未完成。請重新連線並再次核對。</string>
+    <string name="security_revoked_note">裝置身分或信任關係已更新，請重新連線並核對。</string>
+    <string name="security_local_fingerprint">本機指紋</string>
+    <string name="security_remote_fingerprint">對端指紋</string>
+    <string name="security_current_fingerprint">本次指紋</string>
+    <string name="security_trusted_fingerprint">已信任指紋</string>
+    <string name="security_cancel_connection">取消連線</string>
+    <string name="security_trust">確認並信任</string>
+    <string name="security_confirmed">已確認</string>
+    <string name="security_retry">重新連線</string>
+    <string name="security_manage_trust">管理信任</string>
+    <string name="security_identity_candidate">可能是原裝置，身分已變更</string>
+    <string name="security_candidate_detail">連線線索與「%1$s」一致。僅在確認是同一台裝置且安全碼一致時關聯；確認後保留原對話及檔案紀錄，並替換舊身分的信任。</string>
+    <string name="security_link_identity">核對一致並關聯</string>
+</resources>

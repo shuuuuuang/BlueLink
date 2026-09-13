@@ -19,11 +19,18 @@ namespace BlueLink.Uninstall
         private const string DefaultProductRegistryKey = @"Software\BlueLink";
         private readonly string installRoot;
         private bool busy;
+        private bool programRemoved;
+        private string logPath;
 
         public UninstallWindow(string installRoot)
         {
             this.installRoot = Path.GetFullPath(installRoot);
             InitializeComponent();
+            UninstallSurface.RemoveRequested += () => Remove_Click(this, null);
+            UninstallSurface.CloseRequested += () => { if (!busy) Close(); };
+            UninstallSurface.OpenFolderRequested += () => OpenFolder(UninstallSurface.DataDeleted ? Path.Combine(this.installRoot, "Download") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink"));
+            UninstallSurface.OpenLogRequested += () => OpenFolder(Path.GetDirectoryName(logPath));
+            Closing += (sender, args) => { if (busy) args.Cancel = true; };
             var prefix = "--ui-smoke-test=";
             var snapshot = Array.Find(Environment.GetCommandLineArgs(), value => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             if (snapshot != null)
@@ -58,65 +65,64 @@ namespace BlueLink.Uninstall
             using (var stream = File.Create(path)) encoder.Save(stream);
         }
 
+        internal BlueLink.Installation.InstallerDialogWindow CreateRemovalConfirmation() =>
+            BlueLink.Installation.InstallerConfirmationDialog.Create(this, "确认卸载蓝联",
+                UninstallSurface.DeleteUserData
+                    ? "将卸载蓝联，并删除聊天记录、已信任设备和蓝联设置。Download 中已接收的文件仍会保留。"
+                    : "将卸载蓝联程序。聊天记录、已信任设备、蓝联设置以及 Download 中已接收的文件都会保留。");
+
         private async void Remove_Click(object sender, RoutedEventArgs e)
         {
+            if (busy) return;
             DialogOverlay.Visibility = Visibility.Visible;
             bool confirmed;
             try
             {
-                var dialog = new Wpf.Ui.Controls.MessageBox
-                {
-                    Owner = this,
-                    Title = "确认卸载蓝联",
-                    Content = "将删除蓝联程序、快捷方式和自启动项，但会保留聊天记录、设置和接收文件。",
-                    PrimaryButtonText = "卸载",
-                    CloseButtonText = "取消",
-                    PrimaryButtonAppearance = ControlAppearance.Danger,
-                    Width = 560,
-                    Height = 270,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                };
-                dialog.Style = Application.Current.TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style
-                    ?? throw new InvalidOperationException("WPF UI 官方 MessageBox 样式未加载。");
-                confirmed = await dialog.ShowDialogAsync() == Wpf.Ui.Controls.MessageBoxResult.Primary;
+                var dialog = CreateRemovalConfirmation();
+                dialog.ShowDialog();
+                confirmed = dialog.Confirmed;
             }
             finally { DialogOverlay.Visibility = Visibility.Collapsed; }
             if (!confirmed) return;
 
-            busy = true; RemoveButton.IsEnabled = false; CancelButton.IsEnabled = false;
-            SetStatus(InfoBarSeverity.Informational, "正在调用蓝联安装缓存并删除程序文件…");
+            busy = true;
+            UninstallSurface.ShowProgress(this.installRoot, "正在关闭蓝联并准备卸载…");
             try
             {
-                var registration = ReadRegistration(this.installRoot);
-                string stopError;
-                if (!InstalledApplicationController.Stop(this.installRoot,
-                        TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), out stopError))
-                    throw new InvalidOperationException("无法关闭正在运行的蓝联：" + stopError);
-
-                var command = FindBurnUninstallCommand(registration.BundleProviderKey);
-                var exitCode = command == null
-                    ? await RunMsiFallbackAsync(registration.ProductCode)
-                    : await RunAsync(command.Item1, command.Item2);
-                if (exitCode != 0 && exitCode != 3010) throw new InvalidOperationException("卸载失败，错误代码：" + exitCode + "。");
-                if (exitCode == 3010)
+                if (!programRemoved)
                 {
-                    SetStatus(InfoBarSeverity.Warning, "卸载操作需要重启 Windows 才能完成文件清理。聊天记录、设置和接收文件均会保留。");
-                }
-                else
-                {
+                    var registration = ReadRegistration(this.installRoot);
+                    var stopped = await Task.Run(() => { string error; return InstalledApplicationController.Stop(this.installRoot, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), out error) ? null : error; });
+                    if (stopped != null) throw new InvalidOperationException("无法关闭正在运行的蓝联：" + stopped);
+                    var command = FindBurnUninstallCommand(registration.BundleProviderKey);
+                    UninstallSurface.ShowProgress(this.installRoot, "正在删除程序文件…");
+                    var exitCode = command == null ? await RunMsiFallbackAsync(registration.ProductCode) : await RunAsync(command.Item1, command.Item2);
+                    if (exitCode != 0 && exitCode != 3010) throw new InvalidOperationException("卸载失败，错误代码：" + exitCode + "。");
+                    if (exitCode == 3010) { UninstallSurface.ShowFailure("需要重启 Windows 才能完成卸载。用户数据清理尚未执行。", null, true); return; }
                     await VerifyUninstalledAsync(registration);
-                    SetStatus(InfoBarSeverity.Success, "蓝联已卸载，聊天记录、设置和接收文件均已保留。");
+                    programRemoved = true;
                 }
-                RemoveButton.Visibility = Visibility.Collapsed;
-                CancelButton.Content = "关闭"; CancelButton.IsEnabled = true;
+                if (UninstallSurface.DeleteUserData)
+                {
+                    UninstallSurface.ShowProgress(this.installRoot, "正在清理选定的用户数据，保留接收文件…");
+                    await Task.Run(() => UserDataCleanup.DeleteSelectedData(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), this.installRoot));
+                }
+                UninstallSurface.ShowComplete(UninstallSurface.DeleteUserData);
             }
             catch (Exception failure)
             {
-                SetStatus(InfoBarSeverity.Error, failure.Message);
-                RemoveButton.IsEnabled = true; CancelButton.IsEnabled = true;
+                logPath = WriteFailureLog(failure);
+                UninstallSurface.ShowFailure((programRemoved ? "程序已移除，但所选用户数据清理未完成：" : "") + failure.Message, logPath);
             }
             finally { busy = false; }
         }
+
+        private static string WriteFailureLog(Exception error)
+        {
+            try { var folder = Path.Combine(Path.GetTempPath(), "BlueLink", "Setup"); Directory.CreateDirectory(folder); var path = Path.Combine(folder, "Uninstall-" + Guid.NewGuid().ToString("N") + ".log"); File.WriteAllText(path, DateTimeOffset.Now.ToString("O") + Environment.NewLine + error); return path; }
+            catch { return null; }
+        }
+        private static void OpenFolder(string path) { if (!String.IsNullOrEmpty(path) && Directory.Exists(path)) try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { } }
 
         private static Tuple<string, string> FindBurnUninstallCommand(string providerKey)
         {
@@ -192,7 +198,6 @@ namespace BlueLink.Uninstall
             var space = value.IndexOf(' '); return space < 0 ? value : value.Substring(0, space);
         }
 
-        private void SetStatus(InfoBarSeverity severity, string message) { StatusBar.Severity = severity; StatusBar.Message = message; StatusBar.IsOpen = true; }
         private void Cancel_Click(object sender, RoutedEventArgs e) { if (!busy) Close(); }
 
         private static async Task VerifyUninstalledAsync(InstallRegistration registration)

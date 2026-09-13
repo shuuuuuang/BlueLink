@@ -91,6 +91,17 @@ public final class TransferReceiver implements AutoCloseable {
         return result;
     }
 
+    /** One durable checkpoint per authenticated USB record; final whole-file hash is still mandatory. */
+    public synchronized void importChunk(long offset, byte[] data, int length) throws IOException {
+        if (offset < 0 || offset % extentSize != 0 || length < 0 || length > data.length || offset + length > fileSize ||
+                (length % extentSize != 0 && offset + length != fileSize)) throw new IOException("Invalid USB import range");
+        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+        while (buffer.hasRemaining()) channel.write(buffer, offset + buffer.position());
+        channel.force(false);
+        for (long i = offset / extentSize; i < (offset + length + extentSize - 1) / extentSize; i++) extents.complete(Math.toIntExact(i));
+        persistResume();
+    }
+
     public ExtentMap extentMap() { return extents; }
     public long contiguousCommittedOffset() { return Math.min(fileSize, (long) extents.contiguousCount() * extentSize); }
     @Override public synchronized void close() throws IOException { if (channel.isOpen()) channel.close(); }

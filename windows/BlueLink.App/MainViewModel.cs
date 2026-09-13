@@ -1,6 +1,6 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Text.RegularExpressions;
+using BlueLink.Feedback;
 using System.Windows;
 using System.Windows.Data;
 using BlueLink.Bluetooth;
@@ -9,15 +9,46 @@ using BlueLink.Protocol;
 using BlueLink.Security;
 using BlueLink.Session;
 using BlueLink.Storage;
+using BlueLink.Transport;
+using BlueLink.Usb;
 
 namespace BlueLink;
 
-public sealed class MainViewModel : ObservableObject, IAsyncDisposable
+public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
-    private readonly RfcommBluetoothService _bluetooth;
+    private RfcommBluetoothService _bluetooth;
+    private bool _runtimeStarted;
+    public Notifications.NotificationCenter Notifications { get; } = new();
+    private bool _windowHasFocus;
+    public bool IsSettingsOpen { get; internal set; }
+    public bool IsConversationVisible(string? peerId) => _windowHasFocus && !IsSettingsOpen && !ShowFiles && _activePeerId == peerId;
+    public async Task SetWindowFocusAsync(bool focused)
+    {
+        _windowHasFocus = focused;
+        if (focused && !IsSettingsOpen && !ShowFiles && _activePeerId is { } id) await MarkConversationReadAsync(id);
+    }
+
+    private volatile bool _resettingIdentity;
+    private readonly SemaphoreSlim _trustMutationGate = new(1, 1);
+    private readonly SemaphoreSlim _conversationPersistenceGate = new(1, 1);
     private readonly IdentityStore _identity;
     private readonly BlueLinkDatabase _database;
     private readonly SessionSupervisor _sessions;
+    private readonly HashSet<Guid> _queueFlushes = [];
+    private readonly HashSet<Guid> _historyLoaded = [];
+    private readonly SemaphoreSlim _historyGate = new(1, 1);
+    private long _conversationSelectionVersion;
+    public bool ActiveUsbReady => ShowPeerIdentity && UsbSessionPolicy.IsReady(Settings.UsbEnabled, _activePeerId, Sessions);
+    public string? ActiveUsbNotice => ShowPeerIdentity ? UsbSessionPolicy.Notice(Settings.UsbEnabled, _activePeerId, Sessions, Array.Empty<UsbSnapshot>()) is { } text
+        ? Localization.Strings.Get(text) : null : null;
+    public bool HasActiveUsbNotice => ActiveUsbNotice is not null;
+    private void UsbChanged(UsbSnapshot _)
+    {
+        if (Application.Current?.Dispatcher is not { HasShutdownStarted: false } dispatcher) return;
+        dispatcher.BeginInvoke(new Action(() => { if (Volatile.Read(ref _disposeStarted) != 0) return; RaiseUsbNotice(); }));
+    }
+    private void RaiseUsbNotice() { Raise(nameof(ActiveUsbNotice)); Raise(nameof(HasActiveUsbNotice)); }
+
     private readonly Dictionary<Guid, List<ChatItem>> _sessionMessages = [];
     private readonly Dictionary<Guid, Dictionary<Guid, TransferItem>> _sessionTransfers = [];
     private readonly Dictionary<string, StoredPeer> _storedPeers = new(StringComparer.OrdinalIgnoreCase);
@@ -32,16 +63,19 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private CancellationTokenSource? _dialCancellation;
     private NearbyDevice? _selectedDevice;
     private ConnectionPhase _phase;
-    private string _status = "蓝牙就绪";
-    private string _detail = "仅通过 Bluetooth 通信";
+    private string _status = Localization.Strings.Get("蓝牙就绪");
+    private string _detail = Localization.Strings.Get("通过 Bluetooth 或 USB 安全通信");
     private bool _isScanning;
-    private string _scanFeedback = "点击重新扫描查找附近设备";
+    private string _scanFeedback = "";
     private BlueLinkSettings _settings = BlueLinkSettings.Defaults("");
 
     public ObservableCollection<NearbyDevice> Devices { get; } = [];
     public ObservableCollection<NearbyDevice> NearbyNewDevices { get; } = [];
     public ObservableCollection<SessionSnapshot> Sessions { get; } = [];
     public ObservableCollection<ConversationSummary> Conversations { get; } = [];
+    public ObservableCollection<ConversationSummary> TrustedDevices { get; } = [];
+    public bool HasTrustedDevices => TrustedDevices.Count > 0;
+    public string TrustedDeviceCountText => Localization.Strings.Format($"已信任 {TrustedDevices.Count} 台设备");
     public ObservableCollection<ConversationSummary> ConnectedConversations { get; } = [];
     public ObservableCollection<ConversationSummary> OfflineConversations { get; } = [];
     public ObservableCollection<ChatItem> Messages { get; } = [];
@@ -51,16 +85,30 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string IdentityFingerprint => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
         _identity.Identity.PublicKey)).Chunk(4).Take(6).Select(value => new string(value)).Aggregate((left, right) => $"{left}:{right}");
     public string DefaultDownloadDirectory => _database.DefaultDownloadDirectory;
+    public string DataDirectory => Path.GetDirectoryName(_database.DatabasePath)!;
+    public string CacheDirectory { get; }
+    public string DiagnosticsPath => SessionLog.FilePath;
+    public Updates.UpdateWorkflow Updates { get; private set; }
+    public bool CanInstallUpdate => !_acceptanceUpdates && !AllTransfers.Any(value => value.IsActive);
+    public string LocalDeviceDisplayName => LocalDeviceName.Resolve(Settings.LocalDeviceName);
     public MainViewModel(string? dataRoot = null)
     {
+        CacheDirectory = Path.Combine(dataRoot ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink"), "Cache");
+        Files.FileInteractionService.ThumbnailDirectory = Path.Combine(CacheDirectory, "Thumbnails");
         _identity = new IdentityStore(dataRoot);
+        Updates = new(new Updates.UpdateService(Path.Combine(CacheDirectory, "Updates")));
         _bluetooth = new RfcommBluetoothService(_identity.Identity.PublicKey);
         _database = dataRoot is null
             ? new BlueLinkDatabase(installRoot: ResolveInstallRoot())
             : new BlueLinkDatabase(dataRoot, dataRoot);
         MessagesView = CollectionViewSource.GetDefaultView(Messages);
         MessagesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ChatItem.DateGroup)));
-        _sessions = new SessionSupervisor(_identity, ConfirmTrustAsync);
+        InitializeHomeViews();
+        _sessions = new SessionSupervisor(_identity, PresentTrustRequest);
+        _sessions.IdentityAssociations = CreateIdentityAssociationHandler;
+        _sessions.OutgoingDirectory = Path.Combine(CacheDirectory, "Outgoing");
+        _sessions.ReceiveDecision = IncomingFilePrompt.DecideAsync;
         _sessions.SessionChanged += OnSessionChanged;
         _sessions.MessageReceived += OnSessionMessage;
         _sessions.EnvelopeReceived += OnSessionEnvelope;
@@ -97,6 +145,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Raise(nameof(IsConnecting));
             Raise(nameof(ActivePeerSubtitle));
             Raise(nameof(ComposerPlaceholder));
+            Raise(nameof(ComposerHint));
+            Raise(nameof(ShowOfflineHistoryNotice));
+            Raise(nameof(ActiveUsbReady)); RaiseUsbNotice();
             Raise(nameof(CanStartConnection));
             Raise(nameof(CanConnectSelected));
             Raise(nameof(ConnectActionText));
@@ -118,100 +169,138 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         private set
         {
             if (!Set(ref _isScanning, value)) return;
-            Raise(nameof(ScanActionText));
+            Raise(nameof(NearbyHeading));
             Raise(nameof(CanScan));
         }
     }
     public string ScanFeedback { get => _scanFeedback; private set => Set(ref _scanFeedback, value); }
-    public string ScanActionText => IsScanning ? "扫描中…" : "重新扫描";
-    public bool CanScan => !IsScanning;
+    public string RefreshNearbyText => Localization.Strings.Get("扫描附近设备");
+    // Used only by isolated desktop acceptance/verification; normal startup always uses Bluetooth.
+    internal Func<Task<IReadOnlyList<NearbyDevice>>>? ScanForAcceptance { get; set; }
+    public bool CanScan => !_resettingIdentity && !IsScanning && !IsBluetoothUnavailable;
     public BlueLinkSettings Settings { get => _settings; private set => Set(ref _settings, value); }
     public bool IsConnected => Phase == ConnectionPhase.Connected;
     public bool HasActiveConversation => !string.IsNullOrWhiteSpace(_activePeerId);
     public bool IsOfflineConversation => HasActiveConversation && !IsConnected;
     public bool IsConnecting => Phase is ConnectionPhase.Connecting or ConnectionPhase.SecureHandshake or ConnectionPhase.TrustRequired;
     public int ActiveSessionCount => Sessions.Count(value => value.Phase == ConnectionPhase.Connected);
-    public string ActiveSessionCountText => $"{ActiveSessionCount} 台已连接";
-    public string ActivePeerTitle => HasActiveConversation ? Status : "选择设备开始聊天";
+    public string ActiveSessionCountText => Localization.Strings.Format($"{ActiveSessionCount} 台设备已连接");
+    public string ActivePeerTitle => HasActiveConversation ? Status : Localization.Strings.Get("选择设备开始聊天");
     public string ActivePeerSubtitle => HasActiveConversation
-        ? (IsConnected ? "端到端加密 · BTX/1.1" : IsConnecting ? Detail : "设备离线 · 可查看本地历史记录")
-        : "消息和文件只通过 Bluetooth 传输";
-    public string ComposerPlaceholder => IsConnected ? "输入消息" : "设备离线，暂时无法发送消息";
-    public bool CanStartConnection => !_isDialing && _sessions.CanAccept;
+        ? (IsConnected ? Localization.Strings.Get(Sessions.FirstOrDefault(value => value.SessionId == _activeSessionId)?.Transport == TransportKind.Usb ? "USB · 端到端加密 · BTX/1.1" : "Bluetooth · 端到端加密 · BTX/1.1") : IsConnecting ? Detail : OfflinePeerSubtitle)
+        : Localization.Strings.Get("消息和文件通过 Bluetooth 或 USB 安全传输");
+    private string OfflinePeerSubtitle => string.Join(" · ",
+        IsBluetoothUnavailable ? Localization.Strings.Get("蓝牙未开启") : Localization.Strings.Get("设备离线"),
+        Conversations.FirstOrDefault(peer => peer.PeerId == _activePeerId)?.LastSeenText ?? Localization.Strings.Get("可查看本地历史记录"));
+    public string ComposerPlaceholder => IsConnected ? Localization.Strings.Get("输入消息") : IsBluetoothUnavailable
+        ? Localization.Strings.Get("蓝牙未开启，无法发送消息") : Localization.Strings.Get("设备离线，暂不可发送");
+    public bool CanStartConnection => !_resettingIdentity && !_isDialing && _sessions.CanAccept;
     public bool CanCancelConnection => _isDialing;
-    public bool CanConnectSelected => SelectedDevice?.CanInitiate == true && CanStartConnection;
-    public string ConnectActionText => SelectedDevice is null ? "选择附近设备" :
-        CanConnectSelected && SelectedDevice.Platform == PeerPlatform.Android ? "连接 Android 设备" :
-        CanConnectSelected ? "连接所选设备" : "等待对端开放连接";
+    public bool CanConnectSelected => SelectedDevice?.CanInitiate == true && CanStartConnection && !IsBluetoothUnavailable;
+    public string ConnectActionText => SelectedDevice is null ? Localization.Strings.Get("选择附近设备") :
+        CanConnectSelected && SelectedDevice.Platform == PeerPlatform.Android ? Localization.Strings.Get("连接 Android 设备") :
+        CanConnectSelected ? Localization.Strings.Get("连接所选设备") : Localization.Strings.Get("等待对端开放连接");
 
     internal void UseVisualFixture(ConversationSummary conversation)
     {
         _activePeerId = conversation.PeerId;
         _activeSessionId = conversation.SessionId;
         Status = conversation.PeerName;
-        Detail = "端到端加密 · BTX/1.1";
+        Detail = Localization.Strings.Get("端到端加密 · BTX/1.1");
         Phase = ConnectionPhase.Connected;
         Raise(nameof(HasActiveConversation));
         Raise(nameof(ActiveSessionCount));
         Raise(nameof(ActiveSessionCountText));
     }
 
+    public async Task InitializeLocalStateAsync()
+    {
+        await _database.InitializeAsync(_identity);
+        Settings = await _database.LoadSettingsAsync();
+        _sessions.UsbEnabled = Settings.UsbEnabled;
+        Appearance.AppearanceService.Apply(Settings);
+        Updates.RefreshText();
+        // Existing bindings may have evaluated before the persisted language was applied.
+        Raise(string.Empty);
+        _bluetooth.LocalDeviceName = LocalDeviceDisplayName;
+        _sessions.LocalDeviceName = LocalDeviceDisplayName;
+        SessionLog.Enabled = Settings.DiagnosticsEnabled;
+        await ApplyRetentionAsync(Settings.RetentionPeriod);
+        foreach (var peer in await _database.LoadPeersAsync()) _storedPeers[peer.PeerId] = peer;
+        foreach (var conversation in await _database.LoadConversationsAsync())
+            _storedConversations[conversation.PeerId] = conversation;
+        AllTransfers.Clear();
+        foreach (var transfer in await LoadStoredTransfersAsync(null)) AllTransfers.Add(transfer);
+        RefreshConversations();
+        foreach (var conversation in Conversations)
+            Notifications.Restore(conversation.PeerId, conversation.PeerName, conversation.UnreadCount, conversation.LastActivityAt);
+    }
+
     public async Task InitializeAsync()
     {
         try
         {
-            await _database.InitializeAsync(_identity);
-            Settings = await _database.LoadSettingsAsync();
-            SessionLog.Enabled = Settings.DiagnosticsEnabled;
-            await ApplyRetentionAsync(Settings.RetentionPeriod);
-            foreach (var peer in await _database.LoadPeersAsync()) _storedPeers[peer.PeerId] = peer;
-            foreach (var conversation in await _database.LoadConversationsAsync())
-                _storedConversations[conversation.PeerId] = conversation;
-            foreach (var transfer in await LoadStoredTransfersAsync(null)) AllTransfers.Add(transfer);
-            RefreshConversations();
-            _sessions.MaxConcurrentSessions = Settings.MaxConcurrentConnections;
+            await InitializeLocalStateAsync();
             _sessions.ReceiveDirectory = Settings.DownloadDirectory;
             _sessions.MaxReceiveBytes = Settings.ReceiveSizeLimitEnabled ? Settings.ReceiveSizeLimitBytes : long.MaxValue;
             _sessions.AutoAcceptFiles = Settings.AutoDownloadFiles;
-            _bluetooth.ConnectionAccepted += connection => StartSessionAsync(connection, connection.ListenerRole);
+        _sessions.DuplicateFilePolicy = Settings.DuplicateFilePolicy;
+        _bluetooth.AllowDiscovery = Settings.AllowDiscovery;
+            _runtimeStarted = true;
+            await ObserveBluetoothAsync();
+            _bluetooth.ConnectionAccepted += AcceptConnectionAsync;
             _bluetooth.DevicesChanged += OnDevicesChanged;
             await _bluetooth.StartAsync();
             _reconnectLoop ??= RunReconnectLoopAsync(_lifetime.Token);
-            Status = string.IsNullOrWhiteSpace(_bluetooth.StartupWarning) ? "蓝牙就绪" : "蓝牙部分可用";
+            Status = string.IsNullOrWhiteSpace(_bluetooth.StartupWarning) ? Localization.Strings.Get("蓝牙就绪") : Localization.Strings.Get("蓝牙部分可用");
             if (Settings.ScanOnStartup) await ScanAsync();
-            else Detail = "启动扫描已关闭；点击“重新扫描”查找附近设备";
+            else Detail = Localization.Strings.Get("启动扫描已关闭");
         }
-        catch (Exception failure) { SetState(ConnectionPhase.Offline, "蓝牙不可用", failure.Message); }
+        catch (Exception failure) { SetState(ConnectionPhase.Offline, Localization.Strings.Get("蓝牙不可用"), failure.Message); }
+        finally { if (_runtimeStarted) _sessions.UsbEnabled = Settings.UsbEnabled; }
     }
 
     public async Task ScanAsync()
     {
-        if (IsScanning) return;
+        if (!CanScan) return;
         IsScanning = true;
-        ScanFeedback = "正在扫描附近运行蓝联的设备…";
-        SetState(Phase, Status, "正在扫描附近运行蓝联的设备…");
+        _scanCompleted = false;
+        _scanFailed = false;
+        ScanFeedback = Localization.Strings.Get("正在扫描附近运行蓝联的设备…");
+        SetState(Phase, Status, Localization.Strings.Get("正在扫描附近运行蓝联的设备…"));
         try
         {
-            var devices = await _bluetooth.ScanAsync();
+            var devices = await (ScanForAcceptance?.Invoke() ?? _bluetooth.ScanAsync());
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 ApplyDevices(devices);
                 RefreshConversations();
                 var summary = devices.Count == 0
-                    ? "附近没有发现运行蓝联的设备"
-                    : $"发现 {devices.Count} 台附近 BlueLink 设备";
+                    ? Localization.Strings.Get("附近没有发现运行蓝联的设备")
+                    : Localization.Strings.Format($"发现 {devices.Count} 台附近 BlueLink 设备");
                 Detail = string.IsNullOrWhiteSpace(_bluetooth.StartupWarning)
                     ? summary
                     : $"{summary}；{_bluetooth.StartupWarning}";
-                ScanFeedback = summary;
+                _scanCompleted = true;
+                RefreshCompletedScanFeedback();
             });
         }
         catch (Exception failure)
         {
             Detail = failure.Message;
-            ScanFeedback = $"扫描失败：{failure.Message}";
+            _scanFailed = true;
+            ReportScanFailure(failure);
         }
-        finally { IsScanning = false; }
+        finally { IsScanning = false; RefreshCompletedScanFeedback(); }
+    }
+
+    private void RefreshCompletedScanFeedback()
+    {
+        if (!_scanCompleted || _scanFailed || IsScanning) return;
+        // Known peers remain in history, but still count as real discovery results.
+        ScanFeedback = Devices.Count == 0
+            ? Localization.Strings.Get("扫描完成，未发现附近设备")
+            : Localization.Strings.Format($"扫描完成，发现 {Devices.Count} 台设备（新设备 {NearbyNewDevices.Count} 台）");
     }
 
     private void OnDevicesChanged(IReadOnlyList<NearbyDevice> devices)
@@ -226,13 +315,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             if (Phase is ConnectionPhase.Connecting or ConnectionPhase.SecureHandshake or
                 ConnectionPhase.TrustRequired or ConnectionPhase.Connected or ConnectionPhase.Disconnected) return;
             Detail = devices.Count == 0
-                ? "正在扫描附近运行蓝联的设备…"
-                : $"正在扫描 · 已发现 {devices.Count} 台附近 BlueLink 设备";
+                ? Localization.Strings.Get("正在扫描附近运行蓝联的设备…")
+                : Localization.Strings.Format($"正在扫描 · 已发现 {devices.Count} 台附近 BlueLink 设备");
         });
     }
 
     private void ApplyDevices(IReadOnlyList<NearbyDevice> devices)
     {
+        if (IsBluetoothUnavailable) devices = [];
         var selectedId = SelectedDevice?.Id;
         Devices.Clear();
         foreach (var device in devices
@@ -259,29 +349,41 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task ConnectDeviceAsync(NearbyDevice device, bool automatic)
     {
-        if (!device.CanInitiate || _isDialing || !_sessions.CanAccept) return;
+        if (!automatic)
+            foreach (var peer in _storedPeers.Values.Where(peer => MatchesPeer(device, peer.PeerId) ||
+                string.Equals(peer.TransportAddress, device.Address, StringComparison.OrdinalIgnoreCase)))
+                _manuallyDisconnected.TryRemove(peer.PeerId, out _);
+        if (!device.CanInitiate || IsBluetoothUnavailable || _isDialing || !_sessions.CanAccept ||
+            Sessions.Any(session => NormalizeAddress(session.TransportAddress) == NormalizeAddress(device.Address))) return;
         _isDialing = true;
+        _dialCanceledByUser = false;
+        SessionLog.Write("Connection", $"Starting {(automatic ? "automatic" : "manual")} Bluetooth connection");
         _dialCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(35));
         Raise(nameof(CanStartConnection)); Raise(nameof(CanConnectSelected)); Raise(nameof(CanCancelConnection));
-        SetState(ConnectionPhase.Connecting, device.Name,
+        UpdateConnectionAttempt(device.Address, ConnectionPhase.Connecting, Localization.Strings.Get("正在建立安全连接"));
+        if (!HasActiveConversation) SetState(ConnectionPhase.Connecting, device.Name,
             device.Platform == PeerPlatform.Android
-                ? "正在通过 GATT 请求 Android 建立 RFCOMM 回连"
-                : "正在建立 RFCOMM 通道");
+                ? Localization.Strings.Get("正在通过 GATT 请求 Android 建立 RFCOMM 回连")
+                : Localization.Strings.Get("正在建立 RFCOMM 通道"));
         try
         {
             var connection = await _bluetooth.ConnectAsync(device, _dialCancellation.Token);
             await StartSessionAsync(connection, connection.ListenerRole, select: !automatic,
                 transportAddress: device.Address);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException failure)
         {
             if (automatic) RegisterReconnectFailure(device.Address);
-            SetState(ConnectionPhase.Disconnected, device.Name, "已取消本次连接，可稍后重试");
+            UpdateConnectionAttempt(device.Address, ConnectionPhase.Disconnected, Localization.Strings.Get("本次连接已取消或超时"));
+            ReportConnectionFailure(device, failure, automatic);
+            if (!HasActiveConversation) SetState(ConnectionPhase.Disconnected, device.Name, Localization.Strings.Get("本次连接已取消或超时"));
         }
         catch (Exception failure)
         {
             if (automatic) RegisterReconnectFailure(device.Address);
-            SetState(ConnectionPhase.Disconnected, "连接失败", failure.Message);
+            UpdateConnectionAttempt(device.Address, ConnectionPhase.Disconnected, failure.Message);
+            ReportConnectionFailure(device, failure, automatic);
+            if (!HasActiveConversation) SetState(ConnectionPhase.Disconnected, Localization.Strings.Get("连接失败"), failure.Message);
         }
         finally
         {
@@ -292,7 +394,11 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    public void CancelConnection() => _dialCancellation?.Cancel();
+    public void CancelConnection()
+    {
+        _dialCanceledByUser = true;
+        _dialCancellation?.Cancel();
+    }
 
     public async Task SendAsync(string text)
     {
@@ -336,38 +442,52 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public Task RetryTransferAsync(TransferItem transfer)
     {
-        if (!transfer.CanRetry || string.IsNullOrWhiteSpace(transfer.LocalPath)) return Task.CompletedTask;
+        if (!transfer.CanRetry || string.IsNullOrWhiteSpace(transfer.LocalPath))
+            return Task.FromException(new InvalidOperationException("原文件不可读取或任务不可重试"));
         var sessionId = ResolveSessionId(transfer);
-        return sessionId is { } id ? _sessions.RetryFileAsync(id, transfer.LocalPath, transfer) : Task.CompletedTask;
+        return sessionId is { } id ? _sessions.RetryFileAsync(id, transfer.LocalPath, transfer)
+            : Task.FromException(new InvalidOperationException("设备当前未连接"));
     }
 
     private Guid? ResolveSessionId(TransferItem transfer)
     {
         if (!string.IsNullOrWhiteSpace(transfer.PeerId))
-            return Sessions.FirstOrDefault(value => string.Equals(value.PeerId, transfer.PeerId,
+            return Sessions.FirstOrDefault(value => value.Phase == ConnectionPhase.Connected && string.Equals(value.PeerId, transfer.PeerId,
                 StringComparison.OrdinalIgnoreCase))?.SessionId;
-        return _activeSessionId;
+        return null;
     }
 
-    private async Task StartSessionAsync(RfcommConnection connection, bool listenerRole, bool select = false,
+    private async Task StartSessionAsync(IPeerConnection connection, bool listenerRole, bool select = false,
         string? transportAddress = null)
     {
-        var sessionId = await _sessions.AddAsync(connection, listenerRole, transportAddress);
+        if (_resettingIdentity || Volatile.Read(ref _disposeStarted) != 0)
+        {
+            await connection.DisposeAsync();
+            return;
+        }
+        var address = transportAddress ?? connection.TransportAddress;
+        var expectedPeer = _storedPeers.Values.FirstOrDefault(peer =>
+            !string.IsNullOrEmpty(address) && NormalizeAddress(connection.Transport == TransportKind.Usb ? peer.UsbTransportAddress : peer.TransportAddress) == NormalizeAddress(address) &&
+            _identity.FindTrustedKey(peer.PeerId) is not null);
+        var sessionId = await _sessions.AddAsync(connection, listenerRole, transportAddress, expectedPeer?.PeerId);
         if (sessionId is null)
         {
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-                Detail = $"已达到最大连接数（{_sessions.MaxConcurrentSessions}）");
+            await Application.Current.Dispatcher.InvokeAsync(() => UpdateConnectionAttempt(
+                transportAddress ?? connection.TransportAddress, ConnectionPhase.Disconnected,
+                Localization.Strings.Get("连接已停止，请重试")));
             return;
         }
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             if (select || _activeSessionId is null) SelectSession(sessionId.Value);
-            SetState(ConnectionPhase.SecureHandshake, connection.PeerName, "正在验证设备身份");
+            if (_activeSessionId == sessionId.Value)
+                SetState(ConnectionPhase.SecureHandshake, connection.PeerName, Localization.Strings.Get("正在验证设备身份"));
         });
     }
 
     public void SelectSession(Guid sessionId)
     {
+        _conversationSelectionVersion++;
         _activeSessionId = sessionId;
         var selected = Sessions.FirstOrDefault(value => value.SessionId == sessionId);
         _activePeerId = selected?.PeerId;
@@ -381,7 +501,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             SetState(selected.Phase, selected.PeerName, selected.Detail);
             if (selected.PeerId is not null)
             {
-                _ = MarkConversationReadAsync(selected.PeerId);
+                if (_windowHasFocus && !IsSettingsOpen && !ShowFiles) _ = MarkConversationReadAsync(selected.PeerId);
                 _ = LoadHistoryAsync(selected.PeerId, sessionId);
             }
         }
@@ -389,18 +509,25 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task SelectConversationAsync(string peerId)
     {
+        var selectionVersion = ++_conversationSelectionVersion;
         _activePeerId = peerId;
-        RaiseActiveConversationState();
-        await MarkConversationReadAsync(peerId);
         var session = Sessions.FirstOrDefault(value => string.Equals(value.PeerId, peerId, StringComparison.OrdinalIgnoreCase));
         if (session is not null) { SelectSession(session.SessionId); return; }
         _activeSessionId = null;
         Messages.Clear();
-        foreach (var item in await LoadStoredMessagesAsync(peerId)) Messages.Add(item);
         Transfers.Clear();
-        foreach (var item in await LoadStoredTransfersAsync(peerId)) Transfers.Add(item);
         var peer = _storedPeers.GetValueOrDefault(peerId);
-        SetState(ConnectionPhase.Offline, peer?.DisplayName ?? "离线设备", "设备离线 · 可查看历史记录");
+        SetState(ConnectionPhase.Offline, peer?.DisplayName ?? Localization.Strings.Get("离线设备"), Localization.Strings.Get("设备离线 · 可查看历史记录"));
+        RaiseActiveConversationState();
+        if (_windowHasFocus && !IsSettingsOpen && !ShowFiles) await MarkConversationReadAsync(peerId);
+        if (selectionVersion != _conversationSelectionVersion) return;
+        var messages = await LoadStoredMessagesAsync(peerId);
+        if (selectionVersion != _conversationSelectionVersion) return;
+        var transfers = await LoadStoredTransfersAsync(peerId);
+        // An earlier selection may finish loading after a newer click, including A -> B -> A.
+        if (selectionVersion != _conversationSelectionVersion) return;
+        foreach (var item in messages) Messages.Add(item);
+        foreach (var item in transfers) Transfers.Add(item);
     }
 
     public async Task ConnectConversationAsync(ConversationSummary conversation)
@@ -426,6 +553,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             ? Sessions.FirstOrDefault(value => value.SessionId == sessionId)
             : Sessions.FirstOrDefault(value => string.Equals(value.PeerId, conversation.PeerId, StringComparison.OrdinalIgnoreCase));
         if (session is null) return;
+        _manuallyDisconnected[conversation.PeerId] = 0;
         await _sessions.DisconnectAsync(session.SessionId);
     }
 
@@ -445,34 +573,28 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task ClearConversationAsync(string peerId)
     {
+        await _conversationPersistenceGate.WaitAsync();
+        try
+        {
         await _database.ClearConversationMessagesAsync(ConversationId(peerId));
         foreach (var session in Sessions.Where(value => string.Equals(value.PeerId, peerId, StringComparison.OrdinalIgnoreCase)))
             if (_sessionMessages.TryGetValue(session.SessionId, out var values)) values.Clear();
         if (string.Equals(_activePeerId, peerId, StringComparison.OrdinalIgnoreCase)) Messages.Clear();
-    }
-
-    public async Task SetTransferPanelExpandedAsync(bool expanded)
-    {
-        Settings = Settings with { TransferPanelExpanded = expanded };
-        await _database.SaveSettingsAsync(Settings);
-        await ApplyRetentionAsync(Settings.RetentionPeriod);
+        if (_storedConversations.TryGetValue(peerId, out var conversation)) _storedConversations[peerId] = conversation with { UnreadCount = 0 };
+        Notifications.Read(peerId); RefreshConversations();
+        }
+        finally { _conversationPersistenceGate.Release(); }
     }
 
     public async Task ExportDiagnosticsAsync(string targetPath)
     {
-        var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "BlueLink", "Logs", "windows-session.log");
-        var value = File.Exists(source) ? await File.ReadAllTextAsync(source) : "BlueLink 尚未生成诊断日志。";
-        value = Regex.Replace(value, @"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b", "**:**:**:**:**:**");
-        value = Regex.Replace(value, @"(?i)\b[0-9a-f]{32,}\b", match => match.Value[..8] + "…");
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(profile)) value = value.Replace(profile, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
+        var value = await Task.Run(() => DiagnosticsSnapshot.ReadAsync(DiagnosticsPath));
         await File.WriteAllTextAsync(targetPath, value);
     }
 
     private Task ApplyRetentionAsync(string retention)
     {
-        var age = retention switch { "30d" => TimeSpan.FromDays(30), "90d" => TimeSpan.FromDays(90),
+        var age = retention switch { "7d" => TimeSpan.FromDays(7), "30d" => TimeSpan.FromDays(30), "90d" => TimeSpan.FromDays(90),
             "1y" => TimeSpan.FromDays(365), _ => (TimeSpan?)null };
         return age is null ? Task.CompletedTask : _database.DeleteHistoryBeforeAsync(
             DateTimeOffset.UtcNow.Subtract(age.Value).ToUnixTimeMilliseconds());
@@ -480,31 +602,136 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task SaveSettingsAsync(BlueLinkSettings value)
     {
-        Settings = value with { MaxConcurrentConnections = Math.Clamp(value.MaxConcurrentConnections, 1, 8) };
-        _sessions.MaxConcurrentSessions = Settings.MaxConcurrentConnections;
+        var saved = value with
+        {
+            Theme = Appearance.AppearancePreferences.NormalizeTheme(value.Theme),
+            Language = Appearance.AppearancePreferences.NormalizeLanguage(value.Language),
+        };
+        await _database.SaveSettingsAsync(saved);
+        Settings = saved;
+        _sessions.UsbEnabled = saved.UsbEnabled;
+        Appearance.AppearanceService.Apply(Settings);
+        Updates.RefreshText();
+        RefreshConversations();
+        Raise(string.Empty);
+        ConnectedDevicesView.Refresh();
+        OfflineDevicesView.Refresh();
+        NearbyDevicesView.Refresh();
+        MessagesView.Refresh();
+        foreach (var transfer in AllTransfers) transfer.RefreshLocalizedText();
+        _bluetooth.LocalDeviceName = LocalDeviceDisplayName;
+        _sessions.LocalDeviceName = LocalDeviceDisplayName;
+        Raise(nameof(LocalDeviceDisplayName));
         _sessions.ReceiveDirectory = Settings.DownloadDirectory;
         _sessions.MaxReceiveBytes = Settings.ReceiveSizeLimitEnabled ? Settings.ReceiveSizeLimitBytes : long.MaxValue;
         _sessions.AutoAcceptFiles = Settings.AutoDownloadFiles;
+        _sessions.DuplicateFilePolicy = Settings.DuplicateFilePolicy;
+        await _bluetooth.SetDiscoveryAsync(Settings.AllowDiscovery);
         SessionLog.Enabled = Settings.DiagnosticsEnabled;
-        await _database.SaveSettingsAsync(Settings);
+        await ApplyRetentionAsync(Settings.RetentionPeriod);
+        if (_runtimeStarted)
+        {
+            if (!Settings.UsbEnabled) await _sessions.DisconnectTransportAsync(TransportKind.Usb);
+            _sessions.UsbEnabled = Settings.UsbEnabled;
+        }
+        Raise(nameof(ActiveUsbReady)); RaiseUsbNotice();
     }
+
+    private Task AcceptConnectionAsync(RfcommConnection connection) => AcceptTransportAsync(connection);
+    private async Task AcceptTransportAsync(IPeerConnection connection)
+    {
+        if (Application.Current?.Dispatcher is not { HasShutdownStarted: false } dispatcher || Volatile.Read(ref _disposeStarted) != 0)
+        { await connection.DisposeAsync(); return; }
+        await dispatcher.InvokeAsync(() => StartSessionAsync(connection, connection.ListenerRole)).Task.Unwrap();
+    }
+    public async Task<string?> ResetIdentityAsync()
+    {
+        if (_resettingIdentity || Volatile.Read(ref _disposeStarted) != 0) throw new InvalidOperationException(Localization.Strings.Get("设备身份正在更新，请稍后重试。"));
+        _resettingIdentity = true;
+        _dialCancellation?.Cancel();
+        Raise(nameof(CanStartConnection)); Raise(nameof(CanConnectSelected));
+        string? warning = null;
+        try
+        {
+            await _sessions.SuspendAsync();
+            _sessions.UsbEnabled = false;
+            _bluetooth.ConnectionAccepted -= AcceptConnectionAsync;
+            _bluetooth.DevicesChanged -= OnDevicesChanged;
+            _bluetooth.Dispose();
+            await _trustMutationGate.WaitAsync();
+            try
+            {
+                _identity.ResetIdentity();
+                foreach (var peer in _storedPeers.Values.Where(peer => peer.TrustState != StoredTrustState.Removed).ToArray())
+                    _storedPeers[peer.PeerId] = peer with { TrustState = StoredTrustState.Unknown, IdentityPublicKey = null };
+                try { await _database.ClearPeerTrustAsync(); }
+                catch (Exception failure) { warning = Localization.Strings.Format($"身份已重置，但本地信任记录同步失败：{failure.Message}"); }
+            }
+            finally { _trustMutationGate.Release(); }
+        }
+        finally
+        {
+            _bluetooth = new RfcommBluetoothService(_identity.Identity.PublicKey) { LocalDeviceName = LocalDeviceDisplayName, AllowDiscovery = Settings.AllowDiscovery };
+            if (_runtimeStarted && Volatile.Read(ref _disposeStarted) == 0)
+            {
+                _bluetooth.ConnectionAccepted += AcceptConnectionAsync;
+                _bluetooth.DevicesChanged += OnDevicesChanged;
+                try { await _bluetooth.StartAsync(); }
+                catch (Exception failure) { warning = Localization.Strings.Format($"身份已更新，蓝牙服务暂不可用：{failure.Message}"); }
+            }
+            _sessions.Resume();
+            _resettingIdentity = false;
+            if (_runtimeStarted && Volatile.Read(ref _disposeStarted) == 0) _sessions.UsbEnabled = Settings.UsbEnabled;
+            _connectionAttempts.Clear();
+            Devices.Clear();
+            RefreshConversations();
+            Raise(nameof(IdentityFingerprint)); Raise(nameof(CanStartConnection)); Raise(nameof(CanConnectSelected));
+        }
+        return warning;
+    }
+
+    public void RefreshUsbDiscovery() => _sessions.RequestMtpProbe();
 
     public async Task ForgetPeerAsync(string peerId)
     {
-        _identity.RemoveTrust(peerId);
-        if (_storedPeers.TryGetValue(peerId, out var peer))
+        var revoked = false;
+        await _trustMutationGate.WaitAsync();
+        try
         {
-            peer = peer with { TrustState = StoredTrustState.Unknown };
-            await _database.UpsertPeerAsync(peer); _storedPeers[peerId] = peer;
+            _identity.RemoveTrust(peerId);
+            revoked = true;
+            if (_storedPeers.TryGetValue(peerId, out var peer))
+                _storedPeers[peerId] = peer with { TrustState = StoredTrustState.Removed, IdentityPublicKey = null };
+            try { await _database.RevokePeerTrustAsync(peerId); }
+            catch (Exception failure) { throw new IOException(Localization.Strings.Get("信任已移除，但本地记录同步失败；重新启动后会再次同步。"), failure); }
         }
-        RefreshConversations();
+        finally
+        {
+            _trustMutationGate.Release();
+            if (revoked)
+                foreach (var session in _sessions.Snapshot().Where(value => string.Equals(value.PeerId, peerId, StringComparison.OrdinalIgnoreCase)))
+                    await _sessions.DisconnectAsync(session.SessionId);
+            RefreshConversations();
+        }
+    }
+
+    public async Task ForgetAllPeersAsync()
+    {
+        foreach (var peer in _identity.TrustedIdentities) await ForgetPeerAsync(peer.PeerIdHex);
     }
 
     public async Task ClearChatHistoryAsync()
     {
+        await _conversationPersistenceGate.WaitAsync();
+        try
+        {
         await _database.ClearMessagesAsync();
         foreach (var values in _sessionMessages.Values) values.Clear();
         Messages.Clear();
+        foreach (var peer in _storedConversations.Keys.ToArray()) _storedConversations[peer] = _storedConversations[peer] with { UnreadCount = 0 };
+        Notifications.Clear(); RefreshConversations();
+        }
+        finally { _conversationPersistenceGate.Release(); }
     }
 
     public async Task ClearTransferHistoryAsync()
@@ -537,6 +764,16 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnSessionChanged(SessionSnapshot snapshot) => Application.Current.Dispatcher.Invoke(() =>
     {
+        if (snapshot.Phase == ConnectionPhase.Connected && snapshot.PeerId is { } connectedPeer)
+        {
+            _connectedThisRun[connectedPeer] = 0;
+            if (_notifiedConnections.Add(snapshot.SessionId) && Settings.ConnectionNotifications)
+                SystemNotificationRequested?.Invoke(Localization.Strings.Get("设备已连接"), snapshot.PeerName);
+        }
+        else if (snapshot.Phase == ConnectionPhase.Disconnected && _notifiedConnections.Remove(snapshot.SessionId) && Settings.ConnectionNotifications)
+            SystemNotificationRequested?.Invoke(Localization.Strings.Get("设备已断开"), snapshot.PeerName);
+        if (_connectionAttempts.ContainsKey(NormalizeAddress(snapshot.TransportAddress)))
+            UpdateConnectionAttempt(snapshot.TransportAddress, snapshot.Phase, snapshot.Detail);
         var existing = Sessions.ToList().FindIndex(value => value.SessionId == snapshot.SessionId);
         if (snapshot.Phase == ConnectionPhase.Disconnected)
         {
@@ -565,18 +802,21 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnSessionMessage(SessionSnapshot snapshot, ChatItem message) => Application.Current.Dispatcher.Invoke(() =>
     {
+        if (!message.Outgoing && snapshot.PeerId is { } peerId) Notifications.Receive(peerId, snapshot.PeerName, message.Id, message.Text, IsConversationVisible(peerId));
         if (!_sessionMessages.TryGetValue(snapshot.SessionId, out var values)) _sessionMessages[snapshot.SessionId] = values = [];
         values.Add(message);
         if (_activeSessionId == snapshot.SessionId) Messages.Add(message);
-        _ = PersistMessageAsync(snapshot, message, unread: !message.Outgoing && _activePeerId != snapshot.PeerId);
+        _ = PersistMessageAsync(snapshot, message, unread: !message.Outgoing && !IsConversationVisible(snapshot.PeerId));
     });
 
     private void OnSessionEnvelope(SessionSnapshot snapshot, ChatEnvelope envelope, bool outgoing) =>
         Application.Current.Dispatcher.Invoke(() =>
         {
             if (envelope.Attachments.Count == 0) return;
+            if (!outgoing && snapshot.PeerId is { } peerId) Notifications.Receive(peerId, snapshot.PeerName, envelope.MessageId,
+                envelope.Kind == ChatPayloadKind.Image ? Localization.Strings.Get("收到图片") : Localization.Strings.Get("收到文件"), IsConversationVisible(peerId));
             _ = PersistEnvelopeAsync(snapshot, envelope, outgoing,
-                unread: !outgoing && _activePeerId != snapshot.PeerId);
+                unread: !outgoing && !IsConversationVisible(snapshot.PeerId));
             var kind = envelope.Kind == ChatPayloadKind.Image ? ChatItemKind.Image : ChatItemKind.File;
             var visibleDescriptors = envelope.Kind == ChatPayloadKind.Image
                 ? envelope.Attachments.Where(value => value.Role == AttachmentRole.ImageOriginal)
@@ -599,7 +839,12 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnSessionTransfer(SessionSnapshot snapshot, TransferItem transfer) => Application.Current.Dispatcher.Invoke(() =>
     {
+        if (transfer.Status == TransferStatus.Completed && transfer.Role != AttachmentRole.ImagePreview && _notifiedTransfers.Add(transfer.Id) && Settings.TransferNotifications)
+            SystemNotificationRequested?.Invoke(Localization.Strings.Get(transfer.Outgoing ? "文件发送完成" : "文件接收完成"), transfer.Name);
         transfer.PeerId = snapshot.PeerId;
+        transfer.PeerName = snapshot.PeerName;
+        if (!transfer.Outgoing && transfer.Status == TransferStatus.Completed && transfer.Role != AttachmentRole.ImagePreview && snapshot.PeerId is { } peerId)
+            Notifications.UpdatePreview(peerId, Localization.Strings.Get("文件接收完成") + " · " + transfer.Name);
         if (transfer.Role == AttachmentRole.ImagePreview)
         {
             UpdateAttachmentInChat(snapshot.SessionId, transfer);
@@ -610,6 +855,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         values[transfer.Id] = transfer;
         UpdateAttachmentInChat(snapshot.SessionId, transfer);
         if (_activeSessionId == snapshot.SessionId) UpdateTransfer(transfer);
+        var globalIndex = AllTransfers.ToList().FindIndex(item => item.Id == transfer.Id);
+        if (globalIndex < 0) AllTransfers.Insert(0, transfer);
+        else if (!ReferenceEquals(AllTransfers[globalIndex], transfer)) AllTransfers[globalIndex] = transfer;
         _ = PersistTransferAsync(snapshot, transfer);
     });
 
@@ -650,16 +898,32 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _ = PersistMessageAsync(snapshot, values[index], unread: false);
     });
 
-    private async Task<bool> ConfirmTrustAsync(string peerName, string safetyCode, string remoteFingerprint)
+    private void PresentTrustRequest(TrustRequest request)
     {
-        return await Application.Current.Dispatcher.InvokeAsync(() =>
+        Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
         {
-            SetState(ConnectionPhase.TrustRequired, peerName, "请核对两端安全代码");
-            return new TrustConfirmationWindow(peerName, safetyCode, IdentityFingerprint, remoteFingerprint)
+            if (request.Stage is TrustStage.Completed or TrustStage.Canceled || Volatile.Read(ref _disposeStarted) != 0) return;
+            request.RetryAvailable = Devices.Any(value => value.CanInitiate && !string.IsNullOrEmpty(request.TransportAddress) &&
+                NormalizeAddress(value.Address) == NormalizeAddress(request.TransportAddress));
+            request.PeerPlatform = Devices.FirstOrDefault(value => !string.IsNullOrEmpty(request.TransportAddress) &&
+                NormalizeAddress(value.Address) == NormalizeAddress(request.TransportAddress))?.Platform ?? PeerPlatform.Unknown;
+            var window = new TrustConfirmationWindow(request)
             {
                 Owner = Application.Current.MainWindow
-            }.ShowDialog() == true;
-        });
+            };
+            using (window.Owner is { } owner ? BlueLinkDialog.DimOwner(owner, "#48101828", 52) : null)
+                window.ShowDialog();
+            if (window.ManageTrustRequested)
+            {
+                if (Application.Current.MainWindow is MainWindow main) main.OpenSettings(connections: true);
+            }
+            if (window.RetryRequested)
+            {
+                var device = Devices.FirstOrDefault(value => value.CanInitiate && !string.IsNullOrEmpty(request.TransportAddress) &&
+                    NormalizeAddress(value.Address) == NormalizeAddress(request.TransportAddress));
+                if (device is not null) await ConnectDeviceAsync(device, automatic: false);
+            }
+        }));
     }
 
     private void UpdateTransfer(TransferItem value)
@@ -701,16 +965,23 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task PersistSessionStateAsync(SessionSnapshot snapshot)
     {
-        if (snapshot.PeerId is not { } peerId) return;
+        if (snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (snapshot.Phase == ConnectionPhase.Connected)
         {
+            await _trustMutationGate.WaitAsync();
+            try
+            {
+            if (_resettingIdentity || !IsCurrentTrustedSession(snapshot)) return;
             var previous = _storedPeers.GetValueOrDefault(peerId);
-            var key = _identity.TrustedIdentities.FirstOrDefault(value =>
-                value.PeerIdHex.Equals(peerId, StringComparison.OrdinalIgnoreCase))?.PublicKey;
-            var peer = new StoredPeer(peerId, snapshot.PeerName, "Android", StoredTrustState.Trusted,
-                key ?? previous?.IdentityPublicKey, previous?.CreatedAt ?? now, now, now, snapshot.TransportAddress);
+            var key = _identity.FindTrustedKey(peerId);
+            var peer = new StoredPeer(peerId, !snapshot.HasPeerProvidedName && (snapshot.Transport == TransportKind.Usb || _identity.IdentityAssociations.Values.Contains(peerId, StringComparer.OrdinalIgnoreCase)) && !string.IsNullOrEmpty(previous?.DisplayName) ? previous.DisplayName : snapshot.PeerName,
+                snapshot.Platform == PeerPlatform.Unknown ? previous?.Platform ?? "Unknown" : snapshot.Platform.ToString(), StoredTrustState.Trusted,
+                key, previous?.CreatedAt ?? now, now, now,
+                snapshot.Transport == TransportKind.Bluetooth ? snapshot.TransportAddress : previous?.TransportAddress ?? "",
+                snapshot.Transport == TransportKind.Usb ? snapshot.TransportAddress : previous?.UsbTransportAddress ?? "");
             await _database.UpsertPeerAsync(peer);
+            foreach (var hint in _sessions.IdentityHints(peerId)) await _database.RecordIdentityHintAsync(peerId, hint);
             _storedPeers[peerId] = peer;
             var conversation = _storedConversations.GetValueOrDefault(peerId) ??
                 new StoredConversation(ConversationId(peerId), peerId, now, 0);
@@ -719,6 +990,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             _reconnectAfter.Remove(snapshot.TransportAddress);
             await _database.UpsertSessionRecordAsync(new(snapshot.SessionId.ToString("N"), peerId,
                 snapshot.StartedAt.ToUnixTimeMilliseconds(), "Connected", now, null, null));
+            }
+            finally { _trustMutationGate.Release(); }
             await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
             await LoadHistoryAsync(peerId, snapshot.SessionId);
             await FlushQueuedMessagesAsync(snapshot);
@@ -733,13 +1006,19 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task EnsureConversationAsync(SessionSnapshot snapshot, long activityAt)
     {
-        if (snapshot.PeerId is not { } peerId) return;
+        if (snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
+        await _trustMutationGate.WaitAsync();
+        try
+        {
         if (!_storedPeers.TryGetValue(peerId, out var peer))
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            peer = new StoredPeer(peerId, snapshot.PeerName, "Android", StoredTrustState.Trusted, null,
-                now, now, now, snapshot.TransportAddress);
+            var key = _identity.FindTrustedKey(peerId);
+            peer = new StoredPeer(peerId, snapshot.PeerName, snapshot.Platform.ToString(), key is null ? StoredTrustState.Unknown : StoredTrustState.Trusted, key,
+                now, now, now, snapshot.Transport == TransportKind.Bluetooth ? snapshot.TransportAddress : "",
+                snapshot.Transport == TransportKind.Usb ? snapshot.TransportAddress : "");
             await _database.UpsertPeerAsync(peer);
+            foreach (var hint in _sessions.IdentityHints(peerId)) await _database.RecordIdentityHintAsync(peerId, hint);
             _storedPeers[peerId] = peer;
         }
         if (!_storedConversations.ContainsKey(peerId))
@@ -748,11 +1027,21 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             await _database.UpsertConversationAsync(conversation);
             _storedConversations[peerId] = conversation;
         }
+        }
+        finally { _trustMutationGate.Release(); }
     }
+
+    private bool IsCurrentTrustedSession(SessionSnapshot snapshot) => snapshot.PeerId is { } peerId &&
+        _identity.FindTrustedKey(peerId) is not null && _sessions.Snapshot().Any(value =>
+            value.SessionId == snapshot.SessionId && value.Phase == ConnectionPhase.Connected);
 
     private async Task PersistMessageAsync(SessionSnapshot snapshot, ChatItem item, bool unread)
     {
-        if (!Settings.SaveChatHistory || snapshot.PeerId is not { } peerId) return;
+        if (!Settings.SaveChatHistory || snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
+        await _conversationPersistenceGate.WaitAsync();
+        try
+        {
+        if (_identity.IsRetired(peerId)) return;
         var createdAt = item.CreatedAt.ToUnixTimeMilliseconds();
         await EnsureConversationAsync(snapshot, createdAt);
         var stored = new StoredMessage(item.Id.ToString("N"), ConversationId(peerId), peerId,
@@ -763,15 +1052,17 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         await _database.UpsertMessageAsync(stored);
         var current = _storedConversations[peerId];
         current = current with { LastActivityAt = Math.Max(current.LastActivityAt, createdAt),
-            UnreadCount = current.UnreadCount + (unread ? 1 : 0) };
+            UnreadCount = current.UnreadCount + (unread && !IsConversationVisible(peerId) ? 1 : 0) };
         await _database.UpsertConversationAsync(current);
         _storedConversations[peerId] = current;
         await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
+        }
+        finally { _conversationPersistenceGate.Release(); }
     }
 
     private async Task PersistEnvelopeAsync(SessionSnapshot snapshot, ChatEnvelope envelope, bool outgoing, bool unread)
     {
-        if (!Settings.SaveChatHistory || snapshot.PeerId is not { } peerId) return;
+        if (!Settings.SaveChatHistory || snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
         var kind = envelope.Kind switch { ChatPayloadKind.Image => ChatItemKind.Image,
             ChatPayloadKind.File => ChatItemKind.File, ChatPayloadKind.System => ChatItemKind.System, _ => ChatItemKind.Text };
         var item = new ChatItem(envelope.MessageId, envelope.Body, outgoing,
@@ -789,7 +1080,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task PersistTransferAsync(SessionSnapshot snapshot, TransferItem transfer)
     {
-        if (!Settings.SaveTransferHistory || snapshot.PeerId is not { } peerId) return;
+        transfer.PeerName = snapshot.PeerName;
+        transfer.PeerId = snapshot.PeerId;
+        if (!Settings.SaveTransferHistory || snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
         transfer.PeerId = peerId;
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await EnsureConversationAsync(snapshot, now);
@@ -848,12 +1141,18 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task LoadHistoryAsync(string peerId, Guid sessionId)
     {
+        await _historyGate.WaitAsync();
+        try
+        {
+        if (_historyLoaded.Contains(sessionId)) return;
         var persisted = await LoadStoredMessagesAsync(peerId);
         var transient = _sessionMessages.GetValueOrDefault(sessionId) ?? [];
         var merged = persisted.Concat(transient).GroupBy(value => value.Id).Select(group => group.Last())
             .OrderBy(value => value.CreatedAt).ToList();
         _sessionMessages[sessionId] = merged;
         var transfers = await LoadStoredTransfersAsync(peerId);
+        transfers = transfers.Concat(_sessionTransfers.GetValueOrDefault(sessionId)?.Values ?? Enumerable.Empty<TransferItem>())
+            .GroupBy(value => value.Id).Select(group => group.Last()).ToList();
         _sessionTransfers[sessionId] = transfers.ToDictionary(value => value.Id);
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
@@ -861,14 +1160,21 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Messages.Clear(); foreach (var item in merged) Messages.Add(item);
             Transfers.Clear(); foreach (var item in transfers) Transfers.Add(item);
         });
+        _historyLoaded.Add(sessionId);
+        }
+        finally { _historyGate.Release(); }
     }
 
     private async Task FlushQueuedMessagesAsync(SessionSnapshot snapshot)
     {
         if (snapshot.PeerId is null || snapshot.Phase != ConnectionPhase.Connected) return;
         if (!_sessionMessages.TryGetValue(snapshot.SessionId, out var messages)) return;
+        if (!_queueFlushes.Add(snapshot.SessionId)) return;
+        try
+        {
         foreach (var queued in messages.Where(value => value.Outgoing && value.Status == MessageStatus.LocalQueued).ToArray())
         {
+            if (_resettingIdentity || !IsCurrentTrustedSession(snapshot)) break;
             try
             {
                 await _sessions.SendChatAsync(snapshot.SessionId, queued.Text, queued.Id);
@@ -886,6 +1192,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             }
         }
+        }
+        finally { _queueFlushes.Remove(snapshot.SessionId); }
     }
 
     private async Task<List<ChatItem>> LoadStoredMessagesAsync(string peerId)
@@ -896,7 +1204,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             var attachments = (await _database.LoadAttachmentsAsync(value.MessageId)).Select(item =>
                 new ChatAttachment(Guid.ParseExact(item.AttachmentId, "N"),
                     item.TransferId is null ? Guid.Empty : Guid.ParseExact(item.TransferId, "N"),
-                    item.FileName, item.MimeType, item.Size, item.LocalPath, item.State, item.PreviewPath)).ToArray();
+                    item.FileName, item.MimeType, item.Size, item.LocalPath, RestoredAttachmentState(item.TransferId, item.State), item.PreviewPath,
+                    item.State == "Completed" ? item.Size : AllTransfers.FirstOrDefault(t => t.Id.ToString("N") == item.TransferId)?.CompletedBytes ?? 0)).ToArray();
             _ = Enum.TryParse<MessageStatus>(value.Status, true, out var status);
             result.Add(new(Guid.ParseExact(value.MessageId, "N"), value.Content,
                 value.Direction == StoredMessageDirection.Outgoing, DateTimeOffset.FromUnixTimeMilliseconds(value.CreatedAt),
@@ -905,6 +1214,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                     _ => ChatItemKind.Text }, attachments));
         }
         return result;
+    }
+
+    private string RestoredAttachmentState(string? transferId, string state)
+    {
+        var current = AllTransfers.FirstOrDefault(value => value.Id.ToString("N") == transferId);
+        if (current is not null) return current.Status.ToString();
+        return state is "Offered" or "Queued" or "Transferring" or "Paused" or "RemotePaused" or "Resuming" or "Verifying" or "Committing"
+            ? "Failed" : state;
     }
 
     private async Task<List<TransferItem>> LoadStoredTransfersAsync(string? peerId) =>
@@ -916,14 +1233,27 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Status = Enum.TryParse<TransferStatus>(value.Status, true, out var status) ? status : TransferStatus.Failed,
             MessageId = value.MessageId is null ? null : Guid.ParseExact(value.MessageId, "N"),
             MimeType = value.MimeType, LocalPath = value.LocalPath, FailureDetail = value.FailureDetail,
-            PeerId = value.PeerId
+            PeerId = value.PeerId, CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(value.CreatedAt),
+            PeerName = _storedPeers.GetValueOrDefault(value.PeerId)?.DisplayName ?? Localization.Strings.Get("对端")
+        }).Select(value =>
+        {
+            // A retry retains its transfer ID across sessions. The global projection holds
+            // the latest attempt; an older session cache may still contain its failure.
+            var live = AllTransfers.FirstOrDefault(item => item.Id == value.Id);
+            if (live is not null) return live;
+            if (value.IsActive)
+            {
+                value.Status = TransferStatus.Failed;
+                value.FailureDetail = "设备通道已断开，请由发送方重试传输";
+            }
+            return value;
         }).ToList();
 
     private void RefreshConversations()
     {
-        var active = Sessions.Where(value => value.PeerId is not null)
+        var active = Sessions.Where(value => value.PeerId is not null && value.Phase == ConnectionPhase.Connected)
             .ToDictionary(value => value.PeerId!, StringComparer.OrdinalIgnoreCase);
-        var canonicalPeers = _storedPeers.Values
+        var canonicalPeers = _storedPeers.Values.Where(peer => peer.TrustState != StoredTrustState.Removed)
             .GroupBy(PeerProjectionKey, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(peer => active.ContainsKey(peer.PeerId))
                 .ThenByDescending(peer => peer.LastConnectedAt ?? peer.LastSeenAt).First());
@@ -934,15 +1264,27 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 Devices.Any(device => device.Address.Equals(peer.TransportAddress, StringComparison.OrdinalIgnoreCase) ||
                     MatchesPeer(device, peer.PeerId)) ? DeviceAvailability.Connectable : DeviceAvailability.Offline;
             var conversation = _storedConversations.GetValueOrDefault(peer.PeerId);
-            return new ConversationSummary(peer.PeerId, string.IsNullOrWhiteSpace(peer.DisplayName) ? "已信任设备" : peer.DisplayName,
+            return new ConversationSummary(peer.PeerId, string.IsNullOrWhiteSpace(peer.DisplayName) ? Localization.Strings.Get("已信任设备") : peer.DisplayName,
                 Enum.TryParse<PeerPlatform>(peer.Platform, true, out var platform) ? platform : PeerPlatform.Unknown,
                 availability, session?.SessionId, peer.TransportAddress, conversation?.UnreadCount ?? 0,
-                DateTimeOffset.FromUnixTimeMilliseconds(conversation?.LastActivityAt ?? peer.LastSeenAt));
+                DateTimeOffset.FromUnixTimeMilliseconds(conversation?.LastActivityAt ?? peer.LastSeenAt),
+                peer.LastConnectedAt is { } connectedAt ? DateTimeOffset.FromUnixTimeMilliseconds(connectedAt) : null)
+                { UsbReady = UsbSessionPolicy.IsReady(Settings.UsbEnabled, peer.PeerId, Sessions) };
         }).OrderBy(value => value.Availability switch
         {
             DeviceAvailability.Connected => 0, DeviceAvailability.Offline => 1, _ => 2
         }).ThenByDescending(value => value.LastActivityAt).ToList();
         Conversations.Clear(); foreach (var value in values) Conversations.Add(value);
+        TrustedDevices.Clear();
+        foreach (var trusted in _identity.TrustedIdentities)
+        {
+            var conversation = values.FirstOrDefault(value =>
+                value.PeerId.Equals(trusted.PeerIdHex, StringComparison.OrdinalIgnoreCase));
+            TrustedDevices.Add(conversation ?? new ConversationSummary(trusted.PeerIdHex,
+                Localization.Strings.Get("已信任设备"), PeerPlatform.Unknown, DeviceAvailability.Offline, null, "",
+                0, DateTimeOffset.MinValue, null));
+        }
+        Raise(nameof(HasTrustedDevices)); Raise(nameof(TrustedDeviceCountText));
         ConnectedConversations.Clear();
         OfflineConversations.Clear();
         foreach (var value in values)
@@ -958,17 +1300,20 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         }
         RefreshNearbyNewDevices();
         Raise(nameof(ActiveSessionCount)); Raise(nameof(ActiveSessionCountText));
+        Raise(nameof(HasWorkspaceUnread)); Raise(nameof(WorkspaceUnreadText));
+        Raise(nameof(ActiveUsbReady)); RaiseUsbNotice();
     }
 
     private void RefreshNearbyNewDevices()
     {
-        var knownAddresses = _storedPeers.Values
+        var knownAddresses = Conversations
             .Select(peer => NormalizeAddress(peer.TransportAddress))
             .Where(address => address.Length > 0)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var address in Sessions.Select(session => NormalizeAddress(session.TransportAddress)))
+        foreach (var address in Sessions.Where(session => session.Phase == ConnectionPhase.Connected)
+                     .Select(session => NormalizeAddress(session.TransportAddress)))
             knownAddresses.Add(address);
-        var knownPeerIds = _storedPeers.Keys.Concat(Sessions.Where(session => session.PeerId is not null)
+        var knownPeerIds = Conversations.Select(peer => peer.PeerId).Concat(Sessions.Where(session => session.PeerId is not null && session.Phase == ConnectionPhase.Connected)
             .Select(session => session.PeerId!)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var selectedAddress = SelectedDevice is null ? null : NormalizeAddress(SelectedDevice.Address);
@@ -976,10 +1321,11 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var device in Devices.Where(device =>
                      !knownAddresses.Contains(NormalizeAddress(device.Address)) &&
                      !knownPeerIds.Any(peerId => MatchesPeer(device, peerId))))
-            NearbyNewDevices.Add(device);
+            NearbyNewDevices.Add(ProjectNearbyDevice(device));
         SelectedDevice = selectedAddress is null
             ? null
             : NearbyNewDevices.FirstOrDefault(device => NormalizeAddress(device.Address) == selectedAddress);
+        RefreshCompletedScanFeedback();
     }
 
     private static string PeerProjectionKey(StoredPeer peer)
@@ -994,15 +1340,25 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private static string NormalizeAddress(string? address) =>
         string.IsNullOrWhiteSpace(address) ? string.Empty : address.Trim().ToUpperInvariant();
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _connectedThisRun = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _manuallyDisconnected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<Guid> _notifiedConnections = [];
+    private readonly HashSet<Guid> _notifiedTransfers = [];
+    public event Action<string, string>? SystemNotificationRequested;
+
     private async Task TryAutoConnectAsync(IReadOnlyList<NearbyDevice> devices)
     {
-        if (!Settings.AutoConnectTrustedDevices || _isDialing || !_sessions.CanAccept) return;
+        if ((!Settings.AutoConnectTrustedDevices && !Settings.ReconnectAfterDisconnect) || _isDialing || !_sessions.CanAccept) return;
         var now = DateTimeOffset.UtcNow;
         var connectedPeers = Sessions.Where(value => value.PeerId is not null)
             .Select(value => value.PeerId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var activeAddresses = Sessions.Select(value => value.TransportAddress)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var trustedPeerIds = _identity.TrustedIdentities.Select(value => value.PeerIdHex)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var candidates = _storedPeers.Values.Where(peer => peer.TrustState == StoredTrustState.Trusted &&
+                AutoConnectionPolicy.ShouldConnect(trustedPeerIds.Contains(peer.PeerId), _connectedThisRun.ContainsKey(peer.PeerId),
+                    _manuallyDisconnected.ContainsKey(peer.PeerId), Settings.AutoConnectTrustedDevices, Settings.ReconnectAfterDisconnect) &&
                 !connectedPeers.Contains(peer.PeerId) && !string.IsNullOrWhiteSpace(peer.TransportAddress))
             .Select(peer => devices.FirstOrDefault(device => device.CanInitiate &&
                 (device.Address.Equals(peer.TransportAddress, StringComparison.OrdinalIgnoreCase) ||
@@ -1031,7 +1387,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             while (await timer.WaitForNextTickAsync(token))
             {
                 if (Volatile.Read(ref _disposeStarted) != 0) break;
-                if (!Settings.AutoConnectTrustedDevices || Devices.Count == 0) continue;
+                if ((!Settings.AutoConnectTrustedDevices && !Settings.ReconnectAfterDisconnect) || Devices.Count == 0) continue;
                 var dispatcher = Application.Current?.Dispatcher;
                 if (dispatcher is null) continue;
                 await dispatcher.InvokeAsync(() => TryAutoConnectAsync(Devices.ToArray())).Task.Unwrap();
@@ -1042,11 +1398,17 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task MarkConversationReadAsync(string peerId)
     {
+        Notifications.Read(peerId);
+        await _conversationPersistenceGate.WaitAsync();
+        try
+        {
         if (!_storedConversations.TryGetValue(peerId, out var conversation) || conversation.UnreadCount == 0) return;
         conversation = conversation with { UnreadCount = 0 };
         await _database.UpsertConversationAsync(conversation);
         _storedConversations[peerId] = conversation;
         await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
+        }
+        finally { _conversationPersistenceGate.Release(); }
     }
 
     private void RegisterReconnectFailure(string address)
@@ -1062,10 +1424,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private void RaiseActiveConversationState()
     {
         Raise(nameof(HasActiveConversation));
+        Raise(nameof(ShowConversationPlaceholder));
         Raise(nameof(IsOfflineConversation));
         Raise(nameof(ActivePeerTitle));
         Raise(nameof(ActivePeerSubtitle));
         Raise(nameof(ComposerPlaceholder));
+        Raise(nameof(ComposerHint));
+        Raise(nameof(ShowOfflineHistoryNotice));
+        Raise(nameof(ActiveUsbReady)); RaiseUsbNotice();
     }
 
     private void SetState(ConnectionPhase phase, string status, string detail)
@@ -1077,10 +1443,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposeStarted, 1) != 0) return;
         _lifetime.Cancel();
+        StopObservingHomeTransfers();
+        Updates.Dispose();
+        await _sessions.DisposeAsync();
+        _sessions.UsbEnabled = false;
+        StopObservingBluetooth();
         if (_reconnectLoop is not null)
             try { await _reconnectLoop; } catch (OperationCanceledException) { }
         _bluetooth.DevicesChanged -= OnDevicesChanged;
-        await _sessions.DisposeAsync();
         _bluetooth.Dispose();
         _lifetime.Dispose();
     }

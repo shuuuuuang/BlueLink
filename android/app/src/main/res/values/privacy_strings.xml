@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_records">本机记录</string>
+    <string name="privacy_save_messages">保存消息记录</string>
+    <string name="privacy_retention">记录保留时间</string>
+    <plurals name="privacy_days">
+        <item quantity="other">%1$d 天</item>
+    </plurals>
+    <string name="privacy_year">1 年</string>
+    <string name="privacy_forever">永久</string>
+    <string name="privacy_clear_messages">清除聊天记录</string>
+    <string name="privacy_clear_transfers">清除传输记录</string>
+    <string name="privacy_identity">设备身份</string>
+    <string name="privacy_reset_identity">重置本机设备标识</string>
+    <string name="privacy_diagnostics">诊断</string>
+    <string name="privacy_export">导出诊断日志</string>
+    <string name="privacy_note">消息和文件记录默认仅保存在本机。\n删除记录不会删除 Download 中已接收的文件。</string>
+    <string name="privacy_clear_messages_title">清除全部聊天记录</string>
+    <string name="privacy_clear_messages_question">确定清除全部聊天记录吗？</string>
+    <string name="privacy_clear_messages_note">传输记录与已接收文件会保留。</string>
+    <string name="privacy_clear_transfers_title">清除全部传输记录</string>
+    <string name="privacy_clear_transfers_question">确定清除全部文件传输记录吗？</string>
+    <string name="privacy_clear_transfers_note">聊天记录与已接收文件会保留。</string>
+    <string name="privacy_clear">清除</string>
+    <string name="privacy_remove_title">移除全部信任</string>
+    <string name="privacy_remove_question">确定移除全部可信设备吗？</string>
+    <string name="privacy_remove_note">下次连接这些设备时需要重新配对与授权。</string>
+    <string name="privacy_remove_confirm">全部移除</string>
+    <string name="privacy_reset_title">重置设备标识</string>
+    <string name="privacy_reset_question">确定重置本机设备标识吗？</string>
+    <string name="privacy_reset_note">已配对设备需要重新验证与授权。</string>
+    <string name="privacy_reset_confirm">重置</string>
+    <string name="privacy_done">操作已完成</string>
+    <string name="privacy_working">正在处理…</string>
+    <string name="privacy_failed">操作未完成</string>
+    <string name="privacy_failed_note">无法完成操作，请检查可用存储空间后重试。已接收的文件不会被删除。</string>
+</resources>

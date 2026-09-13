@@ -1,0 +1,8 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "nodeId": "372:85",
+  "source": "design\\figma\\android-device-connect.svg",
+  "sourceSha256": "a5a3e655039248f2089a4f78f724926babee0ebc0aa3a191f29ce940b0a3ef82",
+  "androidResource": "android\\app\\src\\main\\res\\drawable\\figma_device_connect.xml",
+  "conversion": "Exact SVG path and stroke attributes mapped to VectorDrawable; no redrawing."
+}

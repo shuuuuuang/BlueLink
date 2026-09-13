@@ -20,54 +20,41 @@ import java.nio.file.Path
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.inputStream
 
-object ReceivedFileStore {
-    fun publish(context: Context, source: Path, name: String, mimeType: String,
-                destination: String = "downloads://BlueLink"): Uri {
-        val resolver = context.contentResolver
-        if (destination.startsWith("content://")) {
-            val tree = Uri.parse(destination)
-            val document = DocumentsContract.buildDocumentUriUsingTree(tree,
-                DocumentsContract.getTreeDocumentId(tree))
-            val uri = DocumentsContract.createDocument(resolver, document, mimeType, name)
-                ?: throw IOException("无法在自定义目录中创建文件")
-            try {
-                resolver.openOutputStream(uri, "w").use { output ->
-                    requireNotNull(output) { "无法写入自定义目录" }
-                    source.inputStream().buffered(128 * 1024).use { it.copyTo(output, 128 * 1024) }
-                }
-                source.deleteIfExists()
-                return uri
-            } catch (failure: Throwable) {
-                runCatching { DocumentsContract.deleteDocument(resolver, uri) }
-                throw failure
-            }
-        }
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/BlueLink")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: throw IOException("无法在 Download/BlueLink 中创建文件")
-        try {
-            resolver.openOutputStream(uri, "w").use { output ->
-                requireNotNull(output) { "无法打开系统下载目录" }
-                source.inputStream().buffered(128 * 1024).use { it.copyTo(output, 128 * 1024) }
-            }
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            source.deleteIfExists()
-            return uri
-        } catch (failure: Throwable) {
-            resolver.delete(uri, null, null)
-            throw failure
-        }
-    }
-}
 
 object FileInteraction {
+    data class ImageMetadata(val width: Int, val height: Int, val mimeType: String)
+
+    suspend fun imageMetadata(context: Context, attachment: ChatAttachment): ImageMetadata? = withContext(Dispatchers.IO) {
+        if (!attachment.canOpen) return@withContext null
+        runCatching {
+            val uri = Uri.parse(attachment.localUri)
+            val input = if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream() else context.contentResolver.openInputStream(uri)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            input.use { if (it != null) BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) ImageMetadata(bounds.outWidth, bounds.outHeight, bounds.outMimeType ?: attachment.mimeType) else null
+        }.getOrNull()
+    }
+
+    suspend fun locationLabel(context: Context, attachment: ChatAttachment): String? = withContext(Dispatchers.IO) {
+        val raw = attachment.localUri ?: return@withContext null
+        val uri = Uri.parse(raw)
+        if (uri.scheme == "file") return@withContext File(uri.path ?: return@withContext raw).parent
+        runCatching {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: if (DocumentsContract.isDocumentUri(context, uri)) runCatching { DocumentsContract.getDocumentId(uri) }.getOrDefault(raw) else raw
+    }
+
+    fun copyReference(context: Context, attachment: ChatAttachment) {
+        val uri = shareableUri(context, attachment)
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { }
+            ?: throw IOException("文件已移动或无法读取")
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setPrimaryClip(android.content.ClipData.newUri(context.contentResolver, attachment.fileName, uri))
+    }
+
     fun open(context: Context, attachment: ChatAttachment) {
         val uri = shareableUri(context, attachment)
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -87,7 +74,50 @@ object FileInteraction {
         context.startActivity(Intent.createChooser(intent, "分享文件"))
     }
 
+    /** Directory navigation depends on the installed document provider/file manager. */
+    suspend fun reveal(context: Context, attachment: ChatAttachment) {
+        val folder = withContext(Dispatchers.IO) {
+            if (!attachment.canOpen) throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+            val uri = Uri.parse(attachment.localUri)
+            when {
+                DocumentsContract.isTreeUri(uri) && DocumentsContract.isDocumentUri(context, uri) -> {
+                    // https://developer.android.com/reference/android/provider/DocumentsContract#findDocumentPath(android.content.ContentResolver,android.net.Uri)
+                    val path = DocumentsContract.findDocumentPath(context.contentResolver, uri)?.path.orEmpty()
+                    val parent = path.getOrNull(path.lastIndex - 1)
+                        ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+                    DocumentsContract.buildDocumentUriUsingTree(uri, parent)
+                }
+                uri.authority == MediaStore.AUTHORITY -> {
+                    val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.VOLUME_NAME)
+                    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                        if (!cursor.moveToFirst()) throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+                        val relative = cursor.getString(0)?.trim('/')?.takeIf { it.isNotBlank() && it.split('/').none { part -> part == ".." } }
+                            ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+                        val volume = cursor.getString(1)?.takeIf { it.isNotBlank() }
+                            ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+                        val storage = if (volume == MediaStore.VOLUME_EXTERNAL_PRIMARY) "primary" else volume
+                        DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "$storage:$relative")
+                    } ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+                }
+                uri.scheme == "file" || uri.authority == "${context.packageName}.files" ->
+                    throw IOException(context.getString(com.bluelink.android.R.string.content_folder_private))
+                else -> throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
+            }
+        }
+        withContext(Dispatchers.Main) {
+            try { context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(folder, DocumentsContract.Document.MIME_TYPE_DIR)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }) } catch (failure: android.content.ActivityNotFoundException) {
+                throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable), failure)
+            } catch (failure: SecurityException) {
+                throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable), failure)
+            }
+        }
+    }
+
     fun copyTo(context: Context, attachment: ChatAttachment, destination: Uri) {
+        require(attachment.canOpen) { "文件尚未传输完成或已不可用" }
         val source = Uri.parse(attachment.localUri ?: throw IOException("文件尚未下载完成"))
         val input = if (source.scheme == "file") File(requireNotNull(source.path)).inputStream()
             else context.contentResolver.openInputStream(source)
@@ -100,29 +130,59 @@ object FileInteraction {
         }
     }
 
-    suspend fun loadBitmap(context: Context, attachment: ChatAttachment, maxDimension: Int): Bitmap? =
+    /** Full-screen previews read the completed original, never the transfer/display thumbnail cache. */
+    suspend fun loadPreviewBitmap(context: Context, attachment: ChatAttachment): Bitmap? =
         withContext(Dispatchers.IO) {
+            val raw = ImagePreviewDecode.source(attachment) ?: return@withContext null
             runCatching {
-                val raw = attachment.previewUri ?: attachment.localUri ?: return@runCatching null
                 val uri = Uri.parse(raw)
                 fun open() = if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream()
                     else context.contentResolver.openInputStream(uri)
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 open().use { input -> if (input != null) BitmapFactory.decodeStream(input, null, bounds) }
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-                val target = maxDimension.coerceIn(96, 4096)
-                var sample = 1
-                while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2)
-                    sample *= 2
                 open().use { input -> if (input == null) null else BitmapFactory.decodeStream(input, null,
                     BitmapFactory.Options().apply {
-                        inSampleSize = sample
+                        inSampleSize = ImagePreviewDecode.sampleSize(bounds.outWidth, bounds.outHeight)
                         inPreferredConfig = Bitmap.Config.ARGB_8888
                     }) }
+            }.onFailure { CrashReporter.recordNonFatal(context, "ImagePreviewDecode", it) }.getOrNull()
+        }
+
+    suspend fun loadBitmap(context: Context, attachment: ChatAttachment, maxDimension: Int): Bitmap? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val sources = listOfNotNull(attachment.previewUri?.takeIf { it.isNotBlank() },
+                    attachment.localUri?.takeIf { attachment.canOpen && it.isNotBlank() }).distinct()
+                for (raw in sources) {
+                    val decoded = runCatching {
+                        val uri = Uri.parse(raw)
+                        val version = if (uri.scheme == "file") File(requireNotNull(uri.path)).lastModified() else 0L
+                        ThumbnailCache.load(context, "$raw:$version:$maxDimension") {
+                            fun open() = if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream()
+                                else context.contentResolver.openInputStream(uri)
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            open().use { input -> if (input != null) BitmapFactory.decodeStream(input, null, bounds) }
+                            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@load null
+                            val target = maxDimension.coerceIn(96, 4096)
+                            var sample = 1
+                            while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2)
+                                sample *= 2
+                            open().use { input -> if (input == null) null else BitmapFactory.decodeStream(input, null,
+                                BitmapFactory.Options().apply {
+                                    inSampleSize = sample
+                                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                                }) }
+                        }
+                    }.getOrNull()
+                    if (decoded != null) return@runCatching decoded
+                }
+                null
             }.onFailure { CrashReporter.recordNonFatal(context, "ImageDecode", it) }.getOrNull()
         }
 
     private fun shareableUri(context: Context, attachment: ChatAttachment): Uri {
+        require(attachment.canOpen) { "文件尚未传输完成或已不可用" }
         val raw = attachment.localUri ?: throw IOException("文件尚未下载完成")
         val parsed = Uri.parse(raw)
         return if (parsed.scheme == "file") FileProvider.getUriForFile(context,

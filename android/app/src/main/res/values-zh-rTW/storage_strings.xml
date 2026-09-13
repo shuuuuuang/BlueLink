@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="storage_receive">接收</string>
+    <string name="storage_directory">接收目錄</string>
+    <string name="storage_custom">自訂目錄</string>
+    <string name="storage_ask">接收前詢問</string>
+    <string name="storage_duplicate">同名檔案</string>
+    <string name="storage_duplicate_title">同名檔案處理</string>
+    <string name="storage_rename">自動重新命名</string>
+    <string name="storage_ask_me">詢問我</string>
+    <string name="storage_overwrite">覆寫原檔案</string>
+    <string name="storage_used">BlueLink 已用空間</string>
+    <string name="storage_breakdown">圖片 %1$s · 檔案 %2$s</string>
+    <string name="storage_calculating">正在統計…</string>
+    <string name="storage_unavailable">暫時無法統計</string>
+    <string name="storage_manage">管理已接收檔案</string>
+    <string name="storage_charging">僅在充電時開始接收大文件</string>
+    <string name="storage_charging_note">大型檔案指 100 MiB 及以上的檔案。</string>
+    <string name="storage_background">離開應用后保持連接</string>
+    <string name="storage_receive_confirmation">接收檔案</string>
+    <string name="storage_receive_from">%1$s 想向你傳送檔案</string>
+    <string name="storage_accept">接收</string>
+    <string name="storage_reject">拒絕</string>
+    <string name="storage_conflict_title">發現同名檔案</string>
+    <string name="storage_receive_limit">單一檔案接收上限</string>
+    <string name="storage_limit_maximum">最大檔案大小</string>
+    <string name="storage_limit_invalid">請輸入有效且大於 0 的整數</string>
+    <string name="storage_limit_help">預設 500 MiB。超限檔案最多等待 30 秒，可提高上限後繼續依接收設定處理。僅影響新的接收請求。</string>
+    <string name="storage_limit_not_enabled">未啟用</string>
+    <string name="storage_limit_enable_note">上限目前未啟用。儲存僅更新數值，可返回設定頁開啟。</string>
+</resources>

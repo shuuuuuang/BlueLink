@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
@@ -22,8 +22,11 @@ namespace BlueLink;
 
 public partial class App : System.Windows.Application
 {
+    static App() => Appearance.ControlInteractionPolicy.Initialize();
+
     private Forms.NotifyIcon? _tray;
     private Icon? _trayIcon;
+    private Notifications.TrayNotificationService? _notifications;
     private Mutex? _instanceMutex;
     private EventWaitHandle? _exitSignal;
     private EventWaitHandle? _showSignal;
@@ -32,12 +35,35 @@ public partial class App : System.Windows.Application
     private string? _startupSmokeDataRoot;
     private int _exitStarted;
     private string _installRoot = string.Empty;
+    private bool _resourceOnly;
+    private bool _keepDesktopAcceptanceData;
     internal bool ExitRequested { get; private set; }
+
+    public static App CreateResourceOnlyHost()
+    {
+        var app = new App { _resourceOnly = true, ExitRequested = true };
+        app.InitializeComponent();
+        return app;
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (_resourceOnly) return;
         base.OnStartup(e);
         const string uiSmokePrefix = "--ui-smoke-test=";
+        const string homeUiPrefix = "--home-ui-test=";
+        const string desktopUiPrefix = "--desktop-ui-test=";
+        var desktopUiName = e.Args.FirstOrDefault(value => value.StartsWith(desktopUiPrefix, StringComparison.OrdinalIgnoreCase))?[desktopUiPrefix.Length..];
+        if (desktopUiName is not null && !System.Text.RegularExpressions.Regex.IsMatch(desktopUiName, "^[a-zA-Z0-9_-]{1,48}$"))
+            throw new ArgumentException("Desktop UI test name must contain only letters, digits, underscores or hyphens.");
+        _keepDesktopAcceptanceData = desktopUiName is not null;
+        const string desktopScenePrefix = "--desktop-ui-scene=";
+        var desktopScene = e.Args.FirstOrDefault(value => value.StartsWith(desktopScenePrefix, StringComparison.OrdinalIgnoreCase))?[desktopScenePrefix.Length..];
+        if (desktopScene is not null && (desktopUiName is null || !DesktopAcceptance.Scenes.Contains(desktopScene)))
+            throw new ArgumentException("A supported desktop scene requires an isolated desktop UI test name.");
+        var homeUiName = e.Args.FirstOrDefault(value => value.StartsWith(homeUiPrefix, StringComparison.OrdinalIgnoreCase))?[homeUiPrefix.Length..];
+        if (homeUiName is not null && !System.Text.RegularExpressions.Regex.IsMatch(homeUiName, "^[a-zA-Z0-9_-]{1,48}$"))
+            throw new ArgumentException("Home UI test name must contain only letters, digits, underscores or hyphens.");
         const string previewSmokePrefix = "--preview-ui-smoke-test=";
         const string previewSourcePrefix = "--preview-source=";
         const string previewInteractionArgument = "--preview-interaction-smoke-test";
@@ -73,7 +99,7 @@ public partial class App : System.Windows.Application
             string.Equals(value, "--control-channel-smoke-test", StringComparison.OrdinalIgnoreCase));
         var backgroundLaunch = e.Args.Any(value =>
             string.Equals(value, "--background", StringComparison.OrdinalIgnoreCase)) || acceptanceBackground || controlChannelSmoke;
-        var startupSmokeTest = controlChannelSmoke || acceptanceBackground || uiSmokePath is not null ||
+        var startupSmokeTest = desktopUiName is not null || homeUiName is not null || controlChannelSmoke || acceptanceBackground || uiSmokePath is not null ||
             previewSmokePath is not null || previewInteraction ||
             controlTemplateProbePath is not null || dialogSmokePath is not null ||
             trustDialogSmokePath is not null ||
@@ -97,7 +123,9 @@ public partial class App : System.Windows.Application
         // Visual/startup smoke tests deliberately run beside an installed
         // background instance and use an isolated data root.  They must not
         // be rejected by the production single-instance gate.
-        var mutexName = startupSmokeTest
+        var mutexName = desktopUiName is not null ? $@"Local\BlueLink.Desktop.Acceptance.{desktopUiName}" : homeUiName is not null
+            ? $@"Local\BlueLink.Desktop.HomeUI.{homeUiName}"
+            : startupSmokeTest
             ? $@"Local\BlueLink.Desktop.Smoke.{Environment.ProcessId}"
             : WindowsAppControlChannel.InstanceMutexName(_installRoot);
         _instanceMutex = new Mutex(true, mutexName, out var ownsMutex);
@@ -120,19 +148,44 @@ public partial class App : System.Windows.Application
         if (startupSmokeTest)
         {
             _startupSmokeDataRoot = Path.Combine(Path.GetTempPath(),
-                $"BlueLinkStartupSmoke-{Environment.ProcessId}");
+                desktopUiName is not null ? $"BlueLinkDesktopUI-{desktopUiName}" : homeUiName is null ? $"BlueLinkStartupSmoke-{Environment.ProcessId}" : $"BlueLinkHomeUI-{homeUiName}");
             Directory.CreateDirectory(_startupSmokeDataRoot);
         }
-        var window = new MainWindow(initializeRuntime: !startupSmokeTest,
+        if (_startupSmokeDataRoot is not null)
+            BlueLink.Session.SessionLog.DirectoryPath = Path.Combine(_startupSmokeDataRoot, "Logs");
+        var window = new MainWindow(initializeRuntime: !startupSmokeTest || homeUiName is not null,
             dataRoot: _startupSmokeDataRoot);
         if (uiSmokeCompact) { window.Width = 1180; window.Height = 720; }
         MainWindow = window;
+        if (desktopUiName is not null)
+        {
+            window.Title = $"蓝联 / BlueLink · QA {desktopUiName}";
+            window.Loaded += async (_, _) => await DesktopAcceptance.InitializeAsync(window, _startupSmokeDataRoot!, desktopScene);
+            DesktopAcceptance.ObserveGeometry(window, _startupSmokeDataRoot!);
+        }
+        if (homeUiName is not null)
+        {
+            ExitRequested = true;
+            window.ContentRendered += (_, _) =>
+            {
+                var dpi = VisualTreeHelper.GetDpi(window);
+                var controls = new[] { "HomeTitleBar", "DevicesSidebar", "DeviceSearchInput", "HomeWorkspace" }
+                    .Select(name => window.FindName(name) as FrameworkElement)
+                    .Where(element => element is not null)
+                    .Select(element => new { element!.Name, element.ActualWidth, element.ActualHeight });
+                File.WriteAllText(Path.Combine(_startupSmokeDataRoot!, "home-geometry.json"),
+                    JsonSerializer.Serialize(new { dpi.DpiScaleX, dpi.DpiScaleY, window.ActualWidth, window.ActualHeight, controls },
+                        new JsonSerializerOptions { WriteIndented = true }));
+            };
+            window.Closed += (_, _) => RequestExit();
+        }
         if (!startupSmokeTest || controlChannelSmoke)
         {
             InitializeControlChannel();
         }
-        if (!startupSmokeTest)
+        if (!startupSmokeTest || desktopUiName is not null)
         {
+            Appearance.AppearanceService.StartWatching();
             _trayIcon = LoadProductIcon();
             _tray = new Forms.NotifyIcon
             {
@@ -144,8 +197,9 @@ public partial class App : System.Windows.Application
             _tray.ContextMenuStrip.Items.Add("打开蓝联", null, (_, _) => ShowMainWindow());
             _tray.ContextMenuStrip.Items.Add("退出", null, (_, _) => RequestExit());
             _tray.DoubleClick += (_, _) => ShowMainWindow();
+            _notifications = new Notifications.TrayNotificationService(_tray, window);
         }
-        else
+        else if (homeUiName is null && desktopUiName is null)
         {
             window.ShowInTaskbar = false;
             window.Left = -32000;
@@ -274,7 +328,7 @@ public partial class App : System.Windows.Application
             File.WriteAllText(outputPath, JsonSerializer.Serialize(new
             {
                 Confirmed = confirmed,
-                OfficialMessageBox = true,
+                OfficialFluentWindow = true,
             }, new JsonSerializerOptions { WriteIndented = true }));
             if (!confirmed) Environment.ExitCode = 5;
         }
@@ -290,20 +344,24 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            var confirmed = new TrustConfirmationWindow(
+            var request = new BlueLink.Security.TrustRequest(
                 "附近设备",
                 "482 719",
                 "8A2C156482A69173D6071833E6AF21B6",
-                "CC7D4E2F18A94355A0F6B1D2678C3E91")
+                "CC7D4E2F18A94355A0F6B1D2678C3E91");
+            // This explicit UI smoke fixture has no transport; only the fixture simulates peer confirmation.
+            request.PropertyChanged += (_, _) =>
             {
-                Owner = null,
-            }.ShowDialog() == true;
+                if (request.Stage == BlueLink.Security.TrustStage.Waiting) request.Finish(BlueLink.Security.TrustStage.Completed);
+            };
+            new TrustConfirmationWindow(request).ShowDialog();
+            var confirmed = request.Stage == BlueLink.Security.TrustStage.Completed;
             var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
             File.WriteAllText(outputPath, JsonSerializer.Serialize(new
             {
                 Confirmed = confirmed,
-                OfficialMessageBox = true,
+                OfficialFluentWindow = true,
                 TrustConfirmation = true,
             }, new JsonSerializerOptions { WriteIndented = true }));
             if (!confirmed) Environment.ExitCode = 5;
@@ -373,16 +431,9 @@ public partial class App : System.Windows.Application
                 panel.Children.Add(entry.Control);
         }
 
-        var messageBox = new Wpf.Ui.Controls.MessageBox
-        {
-            Title = "模板探针",
-            Content = "官方 MessageBox",
-            PrimaryButtonText = "确定",
-            CloseButtonText = "取消",
-            FocusVisualStyle = null,
-        };
-        messageBox.Style = TryFindResource(typeof(Wpf.Ui.Controls.MessageBox)) as Style;
-        controls.Add(("MessageBox", messageBox, typeof(Wpf.Ui.Controls.MessageBox)));
+        var confirmation = BlueLinkDialog.CreateWindow("确认", "共用弹窗探针", BlueLinkDialogTone.Warning, true);
+        confirmation.FocusVisualStyle = null;
+        controls.Add(("ConfirmationWindow", confirmation, typeof(Wpf.Ui.Controls.FluentWindow)));
 
         try
         {
@@ -399,7 +450,7 @@ public partial class App : System.Windows.Application
                 if (entry.Control.Style is null && entry.StyleKey is not null &&
                     ResolveStyle(entry.StyleKey) is Style style)
                     entry.Control.Style = style;
-                if (entry.Control is not Wpf.Ui.Controls.MessageBox)
+                if (entry.Control is not Window)
                 {
                     entry.Control.Measure(new System.Windows.Size(360, 90));
                     entry.Control.Arrange(new Rect(0, 0,
@@ -530,6 +581,7 @@ public partial class App : System.Windows.Application
         {
             if (_tray is not null)
             {
+                _notifications?.Dispose(); _notifications = null;
                 _tray.Visible = false;
                 _tray.Dispose();
                 _tray = null;
@@ -562,6 +614,8 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Appearance.AppearanceService.StopWatching();
+        _notifications?.Dispose(); _notifications = null;
         _exitRegistration?.Unregister(null);
         _showRegistration?.Unregister(null);
         _exitRegistration = null;
@@ -579,7 +633,7 @@ public partial class App : System.Windows.Application
             _instanceMutex.Dispose();
             _instanceMutex = null;
         }
-        if (_startupSmokeDataRoot is not null)
+        if (_startupSmokeDataRoot is not null && !_keepDesktopAcceptanceData)
         {
             try { Directory.Delete(_startupSmokeDataRoot, recursive: true); }
             catch { }
@@ -617,7 +671,9 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            var directory = Path.Combine(
+            var directory = Application.Current is App { _startupSmokeDataRoot: { } testRoot }
+                ? Path.Combine(testRoot, "Logs")
+                : Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "BlueLink", "Logs");
             Directory.CreateDirectory(directory);

@@ -8,9 +8,9 @@ namespace BlueLink.Storage;
 /// SQLite runtime shipped with Windows 10/11 so the installed application has
 /// no native NuGet dependency to restore or deploy.
 /// </summary>
-public sealed class BlueLinkDatabase
+public sealed partial class BlueLinkDatabase
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 4;
 
     public string DatabasePath { get; }
     public string DefaultDownloadDirectory { get; }
@@ -30,6 +30,9 @@ public sealed class BlueLinkDatabase
         using var connection = Open();
         connection.Execute(SchemaSql);
         EnsurePeerTransportColumn(connection);
+        EnsurePeerUsbColumn(connection);
+        InitializeIdentityHints(connection);
+        ApplyIdentityAssociations(connection, identityStore);
         connection.Execute($"PRAGMA user_version={SchemaVersion};");
         EnsureDefaultSettings(connection);
         ImportLegacyTrust(connection, identityStore.TrustedIdentities);
@@ -47,7 +50,6 @@ public sealed class BlueLinkDatabase
             Bool(values, "auto_connect_trusted", defaults.AutoConnectTrustedDevices),
             Bool(values, "scan_on_startup", defaults.ScanOnStartup),
             Bool(values, "keep_background_sessions", defaults.KeepBackgroundSessions),
-            Math.Clamp(Int(values, "max_connections", defaults.MaxConcurrentConnections), 1, 8),
             Bool(values, "auto_download_files", defaults.AutoDownloadFiles),
             Bool(values, "receive_limit_enabled", defaults.ReceiveSizeLimitEnabled),
             Math.Max(0, Long(values, "receive_limit_bytes", defaults.ReceiveSizeLimitBytes)),
@@ -57,7 +59,16 @@ public sealed class BlueLinkDatabase
             Bool(values, "diagnostics_enabled", defaults.DiagnosticsEnabled),
             Get(values, "retention_period", defaults.RetentionPeriod),
             Get(values, "download_directory", defaults.DownloadDirectory),
-            Bool(values, "transfer_panel_expanded", defaults.TransferPanelExpanded));
+            Get(values, "local_device_name", defaults.LocalDeviceName),
+            Appearance.AppearancePreferences.NormalizeTheme(Get(values, "theme", defaults.Theme)),
+            Appearance.AppearancePreferences.NormalizeLanguage(Get(values, "language", defaults.Language)),
+            Bool(values, "usb_enabled", defaults.UsbEnabled),
+            Bool(values, "allow_discovery", defaults.AllowDiscovery),
+            Bool(values, "reconnect_after_disconnect", defaults.ReconnectAfterDisconnect),
+            Get(values, "duplicate_file_policy", defaults.DuplicateFilePolicy) is "ask" or "overwrite" ? Get(values, "duplicate_file_policy", defaults.DuplicateFilePolicy) : "rename",
+            Bool(values, "message_notifications", defaults.MessageNotifications),
+            Bool(values, "connection_notifications", defaults.ConnectionNotifications),
+            Bool(values, "transfer_notifications", defaults.TransferNotifications));
     }, token);
 
     public Task SaveSettingsAsync(BlueLinkSettings settings, CancellationToken token = default) => Run(() =>
@@ -73,8 +84,8 @@ public sealed class BlueLinkDatabase
     {
         using var connection = Open();
         using var statement = connection.Prepare("""
-            INSERT INTO peer(peer_id, identity_public_key, display_name, platform, trust_state, created_at, last_seen_at, last_connected_at, transport_address)
-            VALUES(?,?,?,?,?,?,?,?,?)
+            INSERT INTO peer(peer_id, identity_public_key, display_name, platform, trust_state, created_at, last_seen_at, last_connected_at, transport_address, usb_transport_address)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(peer_id) DO UPDATE SET
               identity_public_key=COALESCE(excluded.identity_public_key, peer.identity_public_key),
               display_name=CASE WHEN excluded.display_name='' THEN peer.display_name ELSE excluded.display_name END,
@@ -82,25 +93,27 @@ public sealed class BlueLinkDatabase
               trust_state=excluded.trust_state,
               last_seen_at=MAX(peer.last_seen_at, excluded.last_seen_at),
               last_connected_at=COALESCE(excluded.last_connected_at, peer.last_connected_at),
-              transport_address=CASE WHEN excluded.transport_address='' THEN peer.transport_address ELSE excluded.transport_address END
+              transport_address=CASE WHEN excluded.transport_address='' THEN peer.transport_address ELSE excluded.transport_address END,
+              usb_transport_address=CASE WHEN excluded.usb_transport_address='' THEN peer.usb_transport_address ELSE excluded.usb_transport_address END
+            WHERE peer.trust_state != 'Retired'
             """);
         statement.Bind(1, peer.PeerId).Bind(2, peer.IdentityPublicKey).Bind(3, peer.DisplayName)
             .Bind(4, peer.Platform).Bind(5, peer.TrustState.ToString()).Bind(6, peer.CreatedAt)
-            .Bind(7, peer.LastSeenAt).Bind(8, peer.LastConnectedAt).Bind(9, peer.TransportAddress).ExecuteNonQuery();
+            .Bind(7, peer.LastSeenAt).Bind(8, peer.LastConnectedAt).Bind(9, peer.TransportAddress).Bind(10, peer.UsbTransportAddress).ExecuteNonQuery();
     }, token);
 
     public Task<IReadOnlyList<StoredPeer>> LoadPeersAsync(CancellationToken token = default) => Run<IReadOnlyList<StoredPeer>>(() =>
     {
         var result = new List<StoredPeer>();
         using var connection = Open();
-        using var statement = connection.Prepare("SELECT peer_id, display_name, platform, trust_state, identity_public_key, created_at, last_seen_at, last_connected_at, transport_address FROM peer ORDER BY last_seen_at DESC");
+        using var statement = connection.Prepare("SELECT peer_id, display_name, platform, trust_state, identity_public_key, created_at, last_seen_at, last_connected_at, transport_address, usb_transport_address FROM peer WHERE trust_state != 'Retired' ORDER BY last_seen_at DESC");
         while (statement.Read())
         {
             result.Add(new StoredPeer(
                 statement.GetString(0), statement.GetString(1), statement.GetString(2),
                 Enum.TryParse<StoredTrustState>(statement.GetString(3), true, out var trust) ? trust : StoredTrustState.Unknown,
                 statement.IsNull(4) ? null : statement.GetBlob(4), statement.GetInt64(5), statement.GetInt64(6),
-                statement.IsNull(7) ? null : statement.GetInt64(7), statement.GetString(8)));
+                statement.IsNull(7) ? null : statement.GetInt64(7), statement.GetString(8), statement.GetString(9)));
         }
         return result;
     }, token);
@@ -134,6 +147,7 @@ public sealed class BlueLinkDatabase
             INSERT INTO message(message_id, conversation_id, peer_id, direction, type, content, status, created_at, monotonic_order)
             VALUES(?,?,?,?,?,?,?,?,?)
             ON CONFLICT(message_id) DO UPDATE SET status=excluded.status, content=excluded.content
+            WHERE message.peer_id = excluded.peer_id
             """);
         statement.Bind(1, value.MessageId).Bind(2, value.ConversationId).Bind(3, value.PeerId)
             .Bind(4, value.Direction.ToString()).Bind(5, value.Type.ToString()).Bind(6, value.Content)
@@ -191,6 +205,7 @@ public sealed class BlueLinkDatabase
             ON CONFLICT(transfer_id) DO UPDATE SET status=excluded.status, completed_bytes=excluded.completed_bytes,
               local_path=excluded.local_path, snapshot_path=excluded.snapshot_path, failure_code=excluded.failure_code,
               failure_detail=excluded.failure_detail, updated_at=excluded.updated_at
+            WHERE transfer.peer_id = excluded.peer_id
             """);
         statement.Bind(1, value.TransferId).Bind(2, value.PeerId).Bind(3, value.MessageId)
             .Bind(4, value.Direction).Bind(5, value.Status).Bind(6, value.FileName).Bind(7, value.MimeType)
@@ -243,7 +258,8 @@ public sealed class BlueLinkDatabase
 
     public Task ClearMessagesAsync(CancellationToken token = default) => Run(() =>
     {
-        using var connection = Open(); connection.Execute("DELETE FROM message;");
+        using var connection = Open();
+        InTransaction(connection, () => { connection.Execute("DELETE FROM message;"); connection.Execute("UPDATE conversation SET unread_count=0;"); });
     }, token);
 
     public Task DeleteMessageAsync(string messageId, CancellationToken token = default) => Run(() =>
@@ -256,8 +272,13 @@ public sealed class BlueLinkDatabase
     public Task ClearConversationMessagesAsync(string conversationId, CancellationToken token = default) => Run(() =>
     {
         using var connection = Open();
-        using var statement = connection.Prepare("DELETE FROM message WHERE conversation_id = ?");
-        statement.Bind(1, conversationId).ExecuteNonQuery();
+        InTransaction(connection, () =>
+        {
+            using var statement = connection.Prepare("DELETE FROM message WHERE conversation_id = ?");
+            statement.Bind(1, conversationId).ExecuteNonQuery();
+            using var unread = connection.Prepare("UPDATE conversation SET unread_count=0 WHERE conversation_id=?");
+            unread.Bind(1, conversationId).ExecuteNonQuery();
+        });
     }, token);
 
     public Task ClearTransfersAsync(CancellationToken token = default) => Run(() =>
@@ -279,13 +300,35 @@ public sealed class BlueLinkDatabase
         statement.Bind(1, "Completed").ExecuteNonQuery();
     }, token);
 
+    public Task ClearPeerTrustAsync(CancellationToken token = default) => Run(() =>
+    {
+        using var connection = Open();
+        InTransaction(connection, () =>
+        {
+            connection.Execute("DELETE FROM trust;");
+            connection.Execute("UPDATE peer SET trust_state='Unknown', identity_public_key=NULL WHERE trust_state NOT IN ('Retired','Removed');");
+        });
+    }, token);
+
+    public Task RevokePeerTrustAsync(string peerId, CancellationToken token = default) => Run(() =>
+    {
+        using var connection = Open();
+        InTransaction(connection, () =>
+        {
+            using var trust = connection.Prepare("DELETE FROM trust WHERE peer_id=? COLLATE NOCASE");
+            trust.Bind(1, peerId).ExecuteNonQuery();
+            using var peer = connection.Prepare("UPDATE peer SET trust_state='Removed', identity_public_key=NULL WHERE peer_id=? COLLATE NOCASE AND trust_state != 'Retired'");
+            peer.Bind(1, peerId).ExecuteNonQuery();
+        });
+    }, token);
+
     public Task ResetTrustAndSettingsAsync(CancellationToken token = default) => Run(() =>
     {
         using var connection = Open();
         InTransaction(connection, () =>
         {
             connection.Execute("DELETE FROM trust;");
-            connection.Execute("UPDATE peer SET trust_state='Unknown', identity_public_key=NULL;");
+            connection.Execute("UPDATE peer SET trust_state='Unknown', identity_public_key=NULL WHERE trust_state NOT IN ('Retired','Removed');");
             connection.Execute("DELETE FROM app_setting;");
             EnsureDefaultSettings(connection);
         });
@@ -326,11 +369,21 @@ public sealed class BlueLinkDatabase
         connection.Execute("ALTER TABLE peer ADD COLUMN transport_address TEXT NOT NULL DEFAULT '';");
     }
 
+    private static void EnsurePeerUsbColumn(NativeSqliteConnection connection)
+    {
+        using var statement = connection.Prepare("PRAGMA table_info(peer)");
+        while (statement.Read()) if (statement.GetString(1).Equals("usb_transport_address", StringComparison.OrdinalIgnoreCase)) return;
+        connection.Execute("ALTER TABLE peer ADD COLUMN usb_transport_address TEXT NOT NULL DEFAULT '';");
+    }
+
     private static void ImportLegacyTrust(NativeSqliteConnection connection, IReadOnlyList<TrustedIdentity> trusted)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         InTransaction(connection, () =>
         {
+            // IdentityStore is authoritative. Recover a crash between pin revocation and SQLite projection.
+            connection.Execute("DELETE FROM trust;");
+            connection.Execute("UPDATE peer SET trust_state='Unknown' WHERE trust_state='Trusted';");
             foreach (var value in trusted)
             {
                 using (var peer = connection.Prepare("""
@@ -366,9 +419,15 @@ public sealed class BlueLinkDatabase
     private Dictionary<string, string> SettingsValues(BlueLinkSettings value) => new()
     {
         ["auto_connect_trusted"] = Value(value.AutoConnectTrustedDevices),
+        ["usb_enabled"] = Value(value.UsbEnabled),
+        ["allow_discovery"] = Value(value.AllowDiscovery),
+        ["reconnect_after_disconnect"] = Value(value.ReconnectAfterDisconnect),
+        ["duplicate_file_policy"] = value.DuplicateFilePolicy,
+        ["message_notifications"] = Value(value.MessageNotifications),
+        ["connection_notifications"] = Value(value.ConnectionNotifications),
+        ["transfer_notifications"] = Value(value.TransferNotifications),
         ["scan_on_startup"] = Value(value.ScanOnStartup),
         ["keep_background_sessions"] = Value(value.KeepBackgroundSessions),
-        ["max_connections"] = value.MaxConcurrentConnections.ToString(CultureInfo.InvariantCulture),
         ["auto_download_files"] = Value(value.AutoDownloadFiles),
         ["receive_limit_enabled"] = Value(value.ReceiveSizeLimitEnabled),
         ["receive_limit_bytes"] = value.ReceiveSizeLimitBytes.ToString(CultureInfo.InvariantCulture),
@@ -378,7 +437,9 @@ public sealed class BlueLinkDatabase
         ["diagnostics_enabled"] = Value(value.DiagnosticsEnabled),
         ["retention_period"] = value.RetentionPeriod,
         ["download_directory"] = value.DownloadDirectory,
-        ["transfer_panel_expanded"] = Value(value.TransferPanelExpanded),
+        ["local_device_name"] = value.LocalDeviceName,
+        ["theme"] = Appearance.AppearancePreferences.NormalizeTheme(value.Theme),
+        ["language"] = Appearance.AppearancePreferences.NormalizeLanguage(value.Language),
     };
 
     private static Task Run(Action action, CancellationToken token) => Task.Run(() => { token.ThrowIfCancellationRequested(); action(); }, token);
@@ -387,7 +448,6 @@ public sealed class BlueLinkDatabase
     private static string Value(bool value) => value ? "1" : "0";
     private static string Get(IReadOnlyDictionary<string, string> values, string key, string fallback) => values.TryGetValue(key, out var value) ? value : fallback;
     private static bool Bool(IReadOnlyDictionary<string, string> values, string key, bool fallback) => values.TryGetValue(key, out var value) ? value is "1" or "true" or "True" : fallback;
-    private static int Int(IReadOnlyDictionary<string, string> values, string key, int fallback) => values.TryGetValue(key, out var value) && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
     private static long Long(IReadOnlyDictionary<string, string> values, string key, long fallback) => values.TryGetValue(key, out var value) && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
 
     private const string SchemaSql = """

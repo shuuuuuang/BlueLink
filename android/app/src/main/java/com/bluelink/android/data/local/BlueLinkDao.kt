@@ -7,13 +7,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PeerDao {
-    @Query("SELECT * FROM peer ORDER BY lastSeenAt DESC")
+    @Query("SELECT * FROM peer WHERE trustState != 'RETIRED' ORDER BY lastSeenAt DESC")
     fun observeAll(): Flow<List<PeerEntity>>
 
     @Query("SELECT * FROM peer WHERE peerId=:peerId")
     suspend fun find(peerId: String): PeerEntity?
 
-    @Query("SELECT * FROM peer ORDER BY lastSeenAt DESC")
+    @Query("SELECT * FROM peer WHERE trustState != 'RETIRED' ORDER BY lastSeenAt DESC")
     suspend fun loadAll(): List<PeerEntity>
 
     @Query("SELECT * FROM peer WHERE transportAddress=:address LIMIT 1")
@@ -21,6 +21,14 @@ interface PeerDao {
 
     @Upsert
     suspend fun upsert(value: PeerEntity)
+}
+
+@Dao
+interface PeerHintDao {
+    @Query("SELECT peerId FROM peer_hint WHERE hint=:hint")
+    suspend fun find(hint: String): List<String>
+    @Upsert
+    suspend fun upsert(value: PeerHintEntity)
 }
 
 @Dao
@@ -36,6 +44,9 @@ interface ConversationDao {
 
     @Upsert
     suspend fun upsert(value: ConversationEntity)
+
+    @Query("UPDATE conversation SET unreadCount=0")
+    suspend fun markAllRead()
 
     @Query("UPDATE conversation SET unreadCount=0 WHERE peerId=:peerId")
     suspend fun markRead(peerId: String)
@@ -135,6 +146,9 @@ interface TrustDao {
 
     @Query("SELECT * FROM trust WHERE peerId=:peerId")
     suspend fun find(peerId: String): TrustEntity?
+
+    @Query("SELECT * FROM trust")
+    suspend fun loadAll(): List<TrustEntity>
 
     @Upsert
     suspend fun upsert(value: TrustEntity)

@@ -1,0 +1,294 @@
+{
+  "figma": {
+    "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+    "board": "1375:291"
+  },
+  "format": "PNG alpha mask, exact Figma light master at 6.4x",
+  "icons": [
+    {
+      "id": "file-pdf-symbol",
+      "node": "1381:305",
+      "sha256": "999f972438689f7711e8aea94d22b27a0ada1a7a716d46b53c49b6ac2b8c599e",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        40,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-word-symbol",
+      "node": "1394:295",
+      "sha256": "ad5700f4ccef56384555b8e2d75b2e8f552c4de82529ff3b4ac7e5728ddb97f4",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        12,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-sql-symbol",
+      "node": "1385:318",
+      "sha256": "36a7a4210bb9d149cb7c0622ae4b79b72ca685b68d4aa3f73a49f258f70eea45",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        19,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-text",
+      "node": "1375:307",
+      "sha256": "e4751ebef67c48b321838d8619d53e6c41932d36ffbcee2798acf3d7cb1f6b6b",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        40,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-image",
+      "node": "1375:330",
+      "sha256": "3ac2eefec6be54fba45b43a306ef455422e2c5f68416413c82aa02d5fcc62ea4",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        16,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-archive",
+      "node": "1375:353",
+      "sha256": "83e65a062634cf3fe6be09a552d12b2b431114b49910a4232ff8b1da5ebbef92",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        40,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-code",
+      "node": "1375:376",
+      "sha256": "c4813e2ca04484b02f8c41b1a986e560e80431970bf1f8dff61cb7fba384a6d7",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        40,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-config",
+      "node": "1404:297",
+      "sha256": "8108a7967cf2f1a8da45b5eba1d959d828b9d16d450e74cfbfc8577e98f68670",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        13,
+        24,
+        216,
+        236
+      ]
+    },
+    {
+      "id": "file-table",
+      "node": "1396:295",
+      "sha256": "5e3b271ce570d857c0085851d59d00ab5de28d9b6221c17c1747daca614a953b",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        24,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-presentation",
+      "node": "1397:295",
+      "sha256": "b01e5eb0923d3c1691369064c930e4f40b879db30ac8a361ba964ba00db7764b",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        20,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-audio",
+      "node": "1413:299",
+      "sha256": "83fe9f9bd9b34c8c01ffb24916cb0d0d1fe4590df87c7d8d63d72d19c9a0dd2f",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        11,
+        24,
+        216,
+        233
+      ]
+    },
+    {
+      "id": "file-video",
+      "node": "1410:302",
+      "sha256": "d814fcfc94f6f5ff4cda32dfc91a1ec4cf7ff143cb0905a32388bd961cc7b45b",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        11,
+        24,
+        216,
+        235
+      ]
+    },
+    {
+      "id": "package",
+      "node": "1376:380",
+      "sha256": "ca36f2882e4cb74dc8798ad2d473067f5d8d3813290ed5d300c9502a5136fb86",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        24,
+        16,
+        232,
+        240
+      ]
+    },
+    {
+      "id": "file",
+      "node": "1376:403",
+      "sha256": "bc8482fe92ae337d80b9166f690852cbafbea5bc95b44bd327f7aea8d8fb075f",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        40,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-font",
+      "node": "1419:340",
+      "sha256": "97c6cf6aa3b79c10667366f224454bd0fe27fe6b172097052cf87ce8ef14dbbb",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        6,
+        24,
+        216,
+        232
+      ]
+    },
+    {
+      "id": "file-disk-image",
+      "node": "1419:417",
+      "sha256": "476faf25594b81948cd05d7184dd37b4b2cb9f3dcadebd792c95fd6484f549d4",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        11,
+        24,
+        216,
+        235
+      ]
+    },
+    {
+      "id": "file-design-source",
+      "node": "1423:297",
+      "sha256": "dc2e8db6fda930dd303ab7bb353d9180bc8b4a2709dad4342d5f25ddbc2b7647",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        10,
+        24,
+        216,
+        242
+      ]
+    },
+    {
+      "id": "file-3d",
+      "node": "1424:297",
+      "sha256": "6d30eea2b899332a7fe6bda3f4f4dcd4629b9f1327630afad59608e6366f1e63",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        8,
+        24,
+        216,
+        252
+      ]
+    },
+    {
+      "id": "file-certificate",
+      "node": "1419:673",
+      "sha256": "c155b03750c1a66343d2ae84eaa1749a5c4784a6b1e0aa87522e7f87d65c6bda",
+      "size": [
+        256,
+        256
+      ],
+      "visibleBounds": [
+        6,
+        24,
+        216,
+        240
+      ]
+    }
+  ]
+}

@@ -24,8 +24,8 @@ function Assert-NotContains([string]$Path, [string]$Pattern, [string]$Descriptio
 }
 
 if ($Scope -eq 'SettingsOnly') {
-    $settingsXaml = 'windows\BlueLink.App\SettingsWindow.xaml'
-    $settingsCode = 'windows\BlueLink.App\SettingsWindow.xaml.cs'
+    $settingsXaml = 'windows\BlueLink.App\SettingsPage.xaml'
+    $settingsCode = 'windows\BlueLink.App\SettingsPage.xaml.cs'
     $settingsTheme = 'windows\BlueLink.App\Themes\SettingsWindow.xaml'
     $settingsFiles = @($settingsXaml, $settingsTheme)
     foreach ($path in @($settingsXaml, $settingsCode, $settingsTheme, 'windows\BlueLink.App\BlueLink.App.csproj')) {
@@ -48,7 +48,8 @@ if ($Scope -eq 'SettingsOnly') {
     Assert-Contains $settingsXaml '<ui:NavigationView\b' 'Settings uses WPF UI NavigationView'
     Assert-Contains $settingsXaml '<ui:NavigationViewItem\b' 'Settings uses official WPF UI navigation items'
     Assert-NotContains $settingsXaml '<Tab(Control|Item)\b|<ui:TabView\b' 'Settings does not regress to top tabs'
-    Assert-Contains $settingsXaml 'x:Name="SaveInfoBar"' 'Settings exposes non-blocking save feedback'
+    Assert-NotContains $settingsXaml '<ui:InfoBar\b' 'Settings has no permanent status banner'
+    Assert-Contains $settingsCode 'ShowToast\(' 'Settings uses the shared transient feedback host'
     foreach ($page in @('general', 'connection', 'files', 'privacy', 'about')) {
         Assert-Contains $settingsXaml ('TargetPageTag="' + $page + '"') "Settings exposes the $page navigation page"
     }
@@ -85,7 +86,7 @@ $productXamlRoots = @(
 )
 $productXaml = foreach ($relativeRoot in $productXamlRoots) {
     Get-ChildItem -LiteralPath (Join-Path $root $relativeRoot) -Filter '*.xaml' -File -Recurse |
-        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
+        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' -and $_.Extension -in '.cs', '.xaml' }
 }
 $templateViolations = $productXaml | Select-String -Pattern '<ControlTemplate\b|ControlTemplate\s*=' -AllMatches
 if ($templateViolations) {
@@ -114,58 +115,63 @@ foreach ($project in @(
 
 foreach ($window in @(
     'windows\BlueLink.App\MainWindow.xaml',
-    'windows\BlueLink.App\SettingsWindow.xaml',
     'windows\BlueLink.App\ImagePreviewWindow.xaml',
-    'windows\BlueLink.App\AllTransfersWindow.xaml'
+    'windows\BlueLink.App\MessageSearchWindow.xaml'
 )) {
     Assert-Contains $window '^<ui:FluentWindow\b' "$window uses WPF UI FluentWindow"
     Assert-Contains $window '<ui:TitleBar\b' "$window uses WPF UI TitleBar"
 }
 
-Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' '<ui:NavigationView\b' 'Settings uses WPF UI NavigationView'
-Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' '<ui:NavigationViewItem\b' 'Settings uses official WPF UI navigation items'
-Assert-NotContains 'windows\BlueLink.App\SettingsWindow.xaml' '<Tab(Control|Item)\b|<ui:TabView\b' 'Settings does not regress to top tabs'
-Assert-Contains 'windows\BlueLink.App\SettingsWindow.xaml' 'x:Name="SaveInfoBar"' 'Settings exposes non-blocking save feedback'
+Assert-Contains 'windows\BlueLink.App\SettingsPage.xaml' '^<UserControl\b' 'Settings is a page inside the main window'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="SettingsHost"' 'Main window hosts settings content'
+Assert-NotContains 'windows\BlueLink.App\SettingsPage.xaml' '<ui:TitleBar\b|<ui:FluentWindow\b' 'Settings shares the main title bar and geometry'
+Assert-Contains 'windows\BlueLink.App\SettingsPage.xaml' '<ui:NavigationView\b' 'Settings uses WPF UI NavigationView'
+Assert-Contains 'windows\BlueLink.App\SettingsPage.xaml' '<ui:NavigationViewItem\b' 'Settings uses official WPF UI navigation items'
+Assert-NotContains 'windows\BlueLink.App\SettingsPage.xaml' '<Tab(Control|Item)\b|<ui:TabView\b' 'Settings does not regress to top tabs'
+Assert-NotContains 'windows\BlueLink.App\SettingsPage.xaml' '<ui:InfoBar\b' 'Settings has no permanent status banner'
+Assert-Contains 'windows\BlueLink.App\SettingsPage.xaml.cs' 'ShowToast\(' 'Settings uses the shared transient feedback host'
 
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AllowDrop="True"' 'Windows chat accepts Explorer file drops'
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'PreviewMouseMove="Attachment_PreviewMouseMove"' 'Windows attachments support drag-out'
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AttachmentDeleteMenu_Click' 'Chat/file context menus include record deletion'
-Assert-Contains 'windows\BlueLink.App\MainWindow.xaml.cs' 'SetTransferPanelExpandedAsync' 'Transfer panel expanded state is persisted'
-Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="CurrentTransfersTab"[\s\S]*SegmentedRadioButtonStyle' 'Transfer panel retains current-session segmented filter'
-Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="AllTransfersTab"[\s\S]*SegmentedRadioButtonStyle' 'Transfer panel retains all-transfers segmented filter'
+Assert-NotContains 'windows\BlueLink.App\MainWindow.xaml' 'TransferColumn|TransferGapColumn|CollapsedTransferRail' 'Home removes the legacy third-column transfer rail'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'ShowConversationPlaceholder' 'Home exposes the no-conversation state'
+Assert-Contains 'windows\BlueLink.App\MainWindow.Home.cs' 'ShowGlobalFiles' 'Home exposes global files independently of a conversation'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="FileDeviceFilter"' 'File workspace exposes real device scope filtering'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="FileSearchInput"' 'File workspace exposes filename search'
 Assert-NotContains 'windows\BlueLink.App\MainWindow.xaml' 'ClearCompletedTransfers_Click' 'Transfer panel omits clear-completed action'
-Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="MessageList"[\s\S]*BasedOn="\{StaticResource TransparentListItemStyle\}"[\s\S]*Margin" Value="0,0,24,0"' 'Chat items reserve a stable scrollbar safety inset'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="MessageList"[\s\S]*BasedOn="\{StaticResource TransparentListItemStyle\}"[\s\S]*Margin" Value="0"' 'Chat items do not reserve an unconditional scrollbar gutter'
 Assert-Contains 'windows\BlueLink.App\MainViewModel.cs' 'ComposerPlaceholder\s*=>' 'Offline subtitle behavior is projected by the view model'
 
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Fit_Click' 'Image preview retains fit-to-window'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Content="1:1"' 'Image preview retains actual-size action'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'RotateLeft_Click' 'Image preview retains left rotation'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'RotateRight_Click' 'Image preview retains right rotation'
-Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Locate_Click' 'Image preview retains Explorer locate'
+Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Locate_Click|SaveAs_Click|PreviewFileActions|Esc 关闭' 'Image preview omits duplicate file actions and Escape hint'
 Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'OpenOriginal' 'Image preview omits open-original action'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="TitleBarFileName"' 'Image preview title bar hosts the actual file name'
 Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'FileDetailText|ToggleMaximize_Click|FullscreenButton' 'Image preview omits metadata row and custom fullscreen action'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="ImageSurface"' 'Image preview uses an unconstrained transform surface'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="ImageTransform"' 'Image preview uses one testable transform matrix'
 
-$allProductSource = Get-ChildItem -LiteralPath (Join-Path $root 'windows\BlueLink.App'), (Join-Path $root 'installer\BlueLink.SetupUI'), (Join-Path $root 'installer\BlueLink.Launcher'), (Join-Path $root 'installer\BlueLink.Uninstall') -File -Recurse |
-    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
-$nativeDialogViolations = $allProductSource | Select-String -Pattern 'System\.Windows\.MessageBox|MessageBox\.Show\s*\(' -AllMatches
-if ($nativeDialogViolations) { throw 'Native/system MessageBox usage remains in product source.' }
+$allProductSource = Get-ChildItem -LiteralPath (Join-Path $root 'windows\BlueLink.App'), (Join-Path $root 'installer\BlueLink.SetupUI'), (Join-Path $root 'installer\BlueLink.Launcher'), (Join-Path $root 'installer\BlueLink.Uninstall'), (Join-Path $root 'installer\SharedUI') -File -Recurse |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' -and $_.Extension -in '.cs', '.xaml' }
+$nativeDialogViolations = $allProductSource | Select-String -Pattern '\bMessageBox\b' -AllMatches
+if ($nativeDialogViolations) { throw 'Default MessageBox type reference remains in product source. Use the shared dialog shell.' }
 Write-Host '[PASS] product source contains no native/system MessageBox calls'
 
-Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Windows dialogs use official WPF UI MessageBox'
-Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'TryFindResource\(\s*typeof\(Wpf\.Ui\.Controls\.MessageBox\)\)' 'Windows dialogs explicitly bind the official MessageBox style'
-Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'ShowDialogAsync\(\)' 'Windows dialogs execute the official visible button workflow'
-Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'try[\s\S]*finally[\s\S]*overlay\?\.Dispose' 'Windows dialogs restore the owner overlay through finally'
-Assert-Contains 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Overwrite prompt directly uses official WPF UI MessageBox'
+Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'ConfirmationWindow' 'Windows prompts share the reviewed confirmation shell'
+Assert-NotContains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'new Wpf\.Ui\.Controls\.MessageBox' 'Windows prompts do not recreate the inconsistent default MessageBox'
+Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'dialog\.ShowDialog\(\)' 'Windows prompts use the visible modal workflow'
+Assert-Contains 'windows\BlueLink.App\BlueLinkDialog.xaml.cs' 'using var overlay' 'Windows prompts always dispose the owner overlay'
+Assert-Contains 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs' 'new InstallerDialogWindow' 'Overwrite prompt uses the shared installer dialog shell'
 Assert-NotContains 'installer\BlueLink.SetupUI\InstallerPromptWindow.xaml.cs' 'TestableMessageBox|InvokeCloseButton' 'Overwrite UI test has no derived fake or internal close shortcut'
-Assert-Contains 'windows\BlueLink.App\TrustConfirmationWindow.xaml.cs' 'BlueLinkDialog\.ConfirmContent' 'Trust confirmation uses the unified official WPF UI dialog path'
-Assert-Contains 'windows\BlueLink.App\TrustConfirmationWindow.xaml.cs' 'primaryButtonText:\s*"\u786E\u8BA4\u5E76\u4FE1\u4EFB"' 'Trust confirmation exposes the real trust action button'
+Assert-Contains 'windows\BlueLink.App\TrustConfirmationWindow.xaml' '<ui:FluentWindow' 'Trust confirmation composes official WPF UI controls'
+Assert-Contains 'windows\BlueLink.App\TrustConfirmationWindow.xaml.cs' '_request\.Confirm\(\)' 'Trust confirmation invokes the live handshake decision'
 
 Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'FocusVisualStyle" Value="\{x:Null\}"' 'Composition styles suppress default focus adorners'
 Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'MaxDropDownHeight" Value="320"' 'ComboBox dropdown height is bounded'
-Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'Height" Value="38"' 'Common input and action height token is 38 px'
+Assert-Contains 'windows\BlueLink.App\Themes\Components.xaml' 'Height" Value="{StaticResource ClientControlHeight}"' 'Common input and action height uses compact density token'
 
 if (-not [string]::IsNullOrWhiteSpace($RuntimeProbeReport)) {
     $resolvedProbe = [IO.Path]::GetFullPath($RuntimeProbeReport)

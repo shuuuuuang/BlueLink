@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)][string]$Installer,
     [string]$InstallDir = (Join-Path (Split-Path -Parent $PSScriptRoot) '.acceptance\root-uninstall'),
     [ValidatePattern('^[A-Za-z0-9]+$')]
@@ -103,7 +103,7 @@ if ((Get-Item -LiteralPath $uninstallerSnapshot).Length -lt 20000) {
 }
 Invoke-Button (Find-Button $mainWindow '卸载') 'the visible root uninstaller button'
 
-# WPF UI MessageBox is exposed as an owned Window inside the owner's
+# The shared confirmation is exposed as an owned Window inside the owner's
 # automation subtree; its visual Title is not the desktop window Name. Once
 # the dialog is present there are at least two semantic “卸载” buttons and the
 # owned dialog button is first in tree order.

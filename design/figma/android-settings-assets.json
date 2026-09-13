@@ -1,0 +1,59 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "captured": "2026-09-07",
+  "method": "Original Figma nodes exportAsync PNG scale 3",
+  "assets": [
+    {
+      "file": "figma_settings_general.png",
+      "nodeId": "426:77",
+      "sha256": "f5e7b525a20d894ed94f9298825c6c931c5f1c42c24444a2101d770e22cd5e2f"
+    },
+    {
+      "file": "figma_settings_connections.png",
+      "nodeId": "426:82",
+      "sha256": "96ca3b064b703177d169c493996d2a281493124d150c53e994cd17d926f321b6"
+    },
+    {
+      "file": "figma_settings_files.png",
+      "nodeId": "426:88",
+      "sha256": "bf4562d17826d80bdfbf96823f94c8d99f010bbd5d6aa51ae721ba77b41427f7"
+    },
+    {
+      "file": "figma_settings_privacy.png",
+      "nodeId": "426:92",
+      "sha256": "83f69eb79533e780c70adf043e0634bc52027ce48ed05d897bf402603bf758cc"
+    },
+    {
+      "file": "figma_settings_about.png",
+      "nodeId": "426:96",
+      "sha256": "f218038c4b9158567d0ba2e205989091de645b2cb3fffbeb7f1a86db7500bc8b"
+    },
+    {
+      "file": "figma_dialog_warning.png",
+      "nodeId": "424:216",
+      "sha256": "d6206a1ced64be1db17e75aee51d883d613b27a96d7de0b52fb1f3b83edaaaa8"
+    }
+  ],
+  "fonts": {
+    "source": "android/app/src/main/res/font/noto_sans_sc.ttf",
+    "license": "design/fonts/NotoSansSC-OFL.txt",
+    "method": "Static weight instances of the original font; fontTools.varLib.instancer, no glyph redrawing",
+    "instances": [
+      {
+        "file": "noto_sans_sc_regular.ttf",
+        "weight": 400,
+        "sha256": "86b1a82e170ac8ff3849586cea46dca64524ff0f3ef01aacfbdf6b2faebbd3c8"
+      },
+      {
+        "file": "noto_sans_sc_medium.ttf",
+        "weight": 500,
+        "sha256": "5a56792fdde2f489223617ce773e92e3681bc0edd91aa9562a5abfca33f1cd38"
+      },
+      {
+        "file": "noto_sans_sc_bold.ttf",
+        "weight": 700,
+        "sha256": "beec37c7494cdd5e712d0d37fec3a97d27541d02ccd5124310238e27937d212c"
+      }
+    ]
+  }
+}

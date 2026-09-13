@@ -54,6 +54,9 @@ namespace BlueLink.SetupUI
         private string currentExecutePhase;
         private bool applyInProgress;
         private bool stalledProgressReported;
+        private bool programRemoved;
+        private bool deleteSelectedUserData;
+        private bool runtimeJustInstalled;
 
         public BlueLinkBootstrapper(IEngine engine, IBootstrapperCommand command) : base(engine)
         {
@@ -69,6 +72,8 @@ namespace BlueLink.SetupUI
             this.PlanMsiPackage += this.OnPlanMsiPackage;
             this.PlanComplete += this.OnPlanComplete;
             this.Progress += this.OnProgress;
+            this.CacheAcquireProgress += (sender, args) => { args.Cancel = cancelRequested; if (runtimeOnlyPlan) window.ShowRuntimeProgress("downloading", args.Progress, args.Total); };
+            this.CacheVerifyBegin += (sender, args) => { args.Cancel = cancelRequested; if (runtimeOnlyPlan) window.ShowRuntimeProgress("verifying"); };
             this.ExecutePackageBegin += this.OnExecutePackageBegin;
             this.ExecutePackageComplete += this.OnExecutePackageComplete;
             this.ExecuteProgress += this.OnExecuteProgress;
@@ -104,11 +109,15 @@ namespace BlueLink.SetupUI
             };
             this.progressWatchdog.Tick += this.OnProgressWatchdog;
             this.window = new InstallerWindow();
+            this.window.InstallDirectoryValidator = this.ValidateInstallDirectory;
             this.window.SetDisplayVersion(this.displayProductVersion);
+            this.window.SetLogPath(GetString("WixBundleLog", String.Empty));
             this.window.SetInstallFolder(this.installFolder);
             this.window.InstallRequested += this.Install;
-            this.window.RemoveApplicationRequested += () =>
+            this.window.RemoveApplicationRequested += async () =>
             {
+                this.deleteSelectedUserData = window.DeleteUserData;
+                if (this.programRemoved) { await CompleteDataRemovalAsync(); return; }
                 this.uninstalling = true;
                 this.PrepareAndPlan(LaunchAction.Uninstall, "正在卸载蓝联…");
             };
@@ -116,6 +125,7 @@ namespace BlueLink.SetupUI
             this.window.ApplyCancelRequested += () => this.cancelRequested = true;
             this.window.RuntimeInstallRequested += this.InstallRuntimePrerequisite;
             this.window.RuntimeRedetectRequested += () => this.engine.Detect();
+            this.window.RuntimeContinueRequested += () => { runtimeJustInstalled = false; window.ShowFreshInstall(); };
             this.window.Closed += (s, e) =>
             {
                 if (!this.closing) this.Cancel();
@@ -165,6 +175,7 @@ namespace BlueLink.SetupUI
             this.runtimeVersion = this.GetString("DesktopRuntimePackageVersion", "8.0.x");
             this.runtimeSize = this.GetString("DesktopRuntimePackageSize", "读取实际包大小");
             this.runtimeAvailable = !String.IsNullOrWhiteSpace(this.GetString("DesktopRuntime8Version", String.Empty));
+            if (runtimeJustInstalled && runtimeAvailable && command.Display == Display.Full) { window.ShowRuntimeProgress("completed"); return; }
 
             var snapshotPath = this.GetString("SetupSnapshotPath", String.Empty);
             if (!String.IsNullOrWhiteSpace(snapshotPath))
@@ -178,7 +189,7 @@ namespace BlueLink.SetupUI
             var overwriteCancelSnapshotPath = this.GetString("SetupOverwriteCancelSnapshotPath", String.Empty);
             if (!String.IsNullOrWhiteSpace(overwriteCancelSnapshotPath))
             {
-                try { InstallerWindow.ValidateInstallDirectoryContents(this.installFolder); }
+                try { this.ValidateInstallDirectory(this.installFolder); }
                 catch (Exception failure)
                 {
                     this.result = 1603;
@@ -221,7 +232,7 @@ namespace BlueLink.SetupUI
                 var status = action == LaunchAction.Uninstall ? "正在卸载蓝联…" : action == LaunchAction.Repair ? "正在修复蓝联…" : "正在安装蓝联…";
                 if (action == LaunchAction.Install || action == LaunchAction.Repair)
                 {
-                    try { InstallerWindow.ValidateInstallDirectoryContents(this.installFolder); }
+                    try { this.ValidateInstallDirectory(this.installFolder); }
                     catch (Exception failure)
                     {
                         this.result = 1603;
@@ -334,7 +345,7 @@ namespace BlueLink.SetupUI
         private void Install(string folder, bool createDesktopShortcut, bool autoStart)
         {
             this.installFolder = Path.GetFullPath(folder);
-            try { InstallerWindow.ValidateInstallDirectoryContents(this.installFolder); }
+            try { this.ValidateInstallDirectory(this.installFolder); }
             catch (Exception failure) { this.window.ShowFailure(failure.Message); return; }
             this.engine.SetVariableString("InstallFolder", this.installFolder, false);
             this.engine.SetVariableNumeric("CreateDesktopShortcut", createDesktopShortcut ? 1 : 0);
@@ -411,7 +422,8 @@ namespace BlueLink.SetupUI
 
             foreach (var registered in MsiRelatedProductLocator.FindInstallFolders(this.packageUpgradeCode))
             {
-                if (ContainsInstalledApplication(registered)) return Path.GetFullPath(registered);
+                if (ContainsInstalledApplication(registered) || this.CanRecoverRegisteredInstall(registered))
+                    return Path.GetFullPath(registered);
             }
 
             // The process fallback exists only for legacy production installs
@@ -432,6 +444,24 @@ namespace BlueLink.SetupUI
                 finally { process.Dispose(); }
             }
             return Path.GetFullPath(fallback);
+        }
+
+        private bool CanRecoverRegisteredInstall(string folder)
+        {
+            var manifest = Path.Combine(Path.GetDirectoryName(typeof(BlueLinkBootstrapper).Assembly.Location),
+                "incoming-install-manifest.json");
+            return MsiRelatedProductLocator.FindInstallFolders(this.packageUpgradeCode).Any(registered =>
+                InstallDirectoryOwnership.CanRecoverRegisteredInstall(folder, registered, manifest));
+        }
+
+        private void ValidateInstallDirectory(string folder)
+        {
+            if (this.CanRecoverRegisteredInstall(folder))
+            {
+                this.engine.Log(LogLevel.Standard, "BlueLink BA: validated exact MSI recovery directory: " + folder);
+                return;
+            }
+            InstallerWindow.ValidateInstallDirectoryContents(folder);
         }
 
         private static bool ContainsInstalledApplication(string folder)
@@ -464,6 +494,7 @@ namespace BlueLink.SetupUI
             this.stalledProgressReported = false;
             this.engine.Log(LogLevel.Standard, "BlueLink BA: updating apply UI before plan: " + action);
             this.window.ShowInstalling(status);
+            if (runtimeOnlyPlan) window.ShowRuntimeProgress("downloading");
             this.engine.Log(LogLevel.Standard, "BlueLink BA: calling engine.Plan: " + action);
             this.engine.Plan(action);
             this.engine.Log(LogLevel.Standard, "BlueLink BA: engine.Plan returned: " + action);
@@ -520,6 +551,7 @@ namespace BlueLink.SetupUI
 
         private void OnExecutePackageBegin(object sender, ExecutePackageBeginEventArgs e)
         {
+            if (runtimeOnlyPlan) window.ShowRuntimeProgress("installing");
             var relatedBundle = this.relatedBundleVersions.ContainsKey(e.PackageId);
             this.currentExecutePhase = InstallerExecutionPolicy.GetExecutePhase(
                 e.PackageId, this.runtimeOnlyPlan, this.uninstalling, relatedBundle);
@@ -576,12 +608,21 @@ namespace BlueLink.SetupUI
                 return;
             }
 
+            if (e.Status >= 0 && this.uninstalling && e.Restart != ApplyRestart.None)
+            {
+                this.result = 3010;
+                if (command.Display == Display.None) CloseWindow();
+                else window.ShowUninstallRestartRequired();
+                return;
+            }
+
             if (this.runtimeOnlyPlan)
             {
                 this.runtimeOnlyPlan = false;
                 if (e.Status >= 0)
                 {
                     this.result = 0;
+                    this.runtimeJustInstalled = true;
                     this.engine.Detect();
                 }
                 else
@@ -670,8 +711,32 @@ namespace BlueLink.SetupUI
                 return;
             }
 
-            if (e.Status >= 0) this.window.ShowCompleted(this.uninstalling, this.installFolder);
+            if (e.Status >= 0 && this.uninstalling)
+            {
+                this.programRemoved = true;
+                await CompleteDataRemovalAsync();
+            }
+            else if (e.Status >= 0) this.window.ShowCompleted(false, this.installFolder);
             else this.window.ShowFailure((this.lastError ?? "安装操作失败。") + "\n错误代码：0x" + e.Status.ToString("X8"));
+        }
+
+        private async Task CompleteDataRemovalAsync()
+        {
+            try
+            {
+                if (this.deleteSelectedUserData)
+                {
+                    window.ShowInstalling("正在清理选定的用户数据，保留接收文件…");
+                    await Task.Run(() => UserDataCleanup.DeleteSelectedData(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), installFolder));
+                }
+                window.ShowCompleted(true, installFolder);
+            }
+            catch (Exception failure)
+            {
+                result = 1603;
+                engine.Log(LogLevel.Error, "User data cleanup failed after uninstall: " + failure);
+                window.ShowFailure("程序已移除，但所选用户数据清理未完成：" + failure.Message);
+            }
         }
 
         private LegacyCleanupResult CleanupLegacyRelatedBundles()

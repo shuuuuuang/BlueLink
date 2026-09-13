@@ -1,0 +1,23 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "assets": [
+    {
+      "id": "948:16583",
+      "name": "security-shield",
+      "width": 48,
+      "height": 48,
+      "scale": 3,
+      "file": "windows/BlueLink.App/Assets/Figma/security-shield.png",
+      "sha256": "bd45ef2a823daacd4bdf9bf267743596209a119da09000f6348100a94143e220"
+    },
+    {
+      "id": "940:16584",
+      "name": "security-fingerprint",
+      "width": 26,
+      "height": 26,
+      "scale": 3,
+      "file": "windows/BlueLink.App/Assets/Figma/security-fingerprint.png",
+      "sha256": "fd9b0f0e5f3817e9d1dd7fa096b36024aa99b854da9d87496d7a2b58b3747770"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+<UserControl x:Class="BlueLink.TrayConversationView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" xmlns:loc="clr-namespace:BlueLink.Localization"
+ Width="400" MinHeight="274" MaxHeight="440" FontFamily="{StaticResource HomeFont}">
+ <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="10">
+  <Grid>
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <StackPanel>
+   <TextBlock x:Name="Heading" FontSize="{StaticResource ClientFont15}" FontWeight="Bold" LineHeight="25" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource InkBrush}" Margin="4,1,0,3"/>
+   <TextBlock x:Name="Subtitle" FontSize="11" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource MutedBrush}" Margin="4,0,0,10"/>
+   </StackPanel>
+   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="300">
+    <ItemsControl ItemsSource="{Binding Conversations}"><ItemsControl.ItemTemplate><DataTemplate>
+     <Border CornerRadius="8" Margin="0,0,0,10"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="{DynamicResource PanelF8FAFDBrush}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource SoftBlueBrush}"/></Trigger></Style.Triggers></Style></Border.Style><ui:Button Appearance="Transparent" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Stretch" Width="372" Height="64" Click="Conversation_Click" AutomationProperties.Name="{Binding PeerName}">
+      <Grid Width="348"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
+       <Ellipse Width="8" Height="8" Fill="{DynamicResource BlueBrush}" VerticalAlignment="Top" Margin="0,8,0,0"/>
+       <StackPanel Grid.Column="1"><TextBlock Text="{Binding PeerName}" FontSize="13" FontWeight="Medium" Foreground="{DynamicResource InkBrush}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Preview}" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,8,0,0"/></StackPanel>
+       <Border Grid.Column="2" Background="#F54A52" CornerRadius="11" Width="22" Height="22" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock Text="{Binding CountText}" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+      </Grid>
+     </ui:Button></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+   </ScrollViewer>
+   <StackPanel Grid.Row="2">
+    <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,2,0,4"/>
+    <ui:Button Content="{loc:Text '暂不处理'}" Appearance="Transparent" Foreground="{DynamicResource BlueBrush}" FontSize="13" Height="26" MinHeight="26" Padding="10,2" Background="Transparent" BorderThickness="0" HorizontalAlignment="Right" Click="Dismiss_Click" Style="{StaticResource LinkButtonStyle}"/>
+   </StackPanel>
+  </Grid>
+ </Border>
+</UserControl>

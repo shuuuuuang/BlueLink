@@ -14,13 +14,51 @@ import javax.crypto.spec.GCMParameterSpec
 
 class IdentityStore(context: Context) {
     private val preferences = context.getSharedPreferences("bluelink_identity", Context.MODE_PRIVATE)
+    private val trustRegistry = com.bluelink.android.domain.PeerTrustRegistry(
+        { id -> preferences.getString("trust.$id", null)?.let(::decode) },
+        { id, key -> editIdentityPreferences { putString("trust.$id", encode(key)) } },
+        { id -> editIdentityPreferences { remove("trust.$id") } },
+    )
 
-    val identity: DeviceIdentity by lazy {
+    fun beginTrustVerification(peerId: ByteArray, key: ByteArray, epoch: Long): com.bluelink.android.domain.PeerTrustRegistry.Verification {
+        check(!isRetired(peerId.hex())) { "此身份已被替换" }
+        return trustRegistry.begin(peerId.hex(), key, epoch)
+    }
+    fun identityAssociations(): Map<String, String> = preferences.all.entries
+        .filter { it.key.startsWith("association.") }.mapNotNull { (key, value) ->
+            (value as? String)?.let { key.removePrefix("association.") to it }
+        }.toMap()
+    fun isRetired(peerId: String): Boolean = preferences.contains("association.${peerId.lowercase(java.util.Locale.ROOT)}")
+    fun associateIdentity(verification: com.bluelink.android.domain.PeerTrustRegistry.Verification,
+                          candidate: com.bluelink.android.domain.IdentityCandidate) {
+        check(!isRetired(candidate.peerId) && !isRetired(verification.peerId)) { "设备身份已被替换" }
+        trustRegistry.replace(verification, candidate.peerId, candidate.publicKey) {
+            editIdentityPreferences {
+                remove("trust.${candidate.peerId.lowercase(java.util.Locale.ROOT)}")
+                putString("trust.${verification.peerId}", encode(verification.key))
+                putString("association.${candidate.peerId.lowercase(java.util.Locale.ROOT)}", verification.peerId)
+            }
+        }
+    }
+    fun captureIdentity(): com.bluelink.android.domain.IdentitySnapshot {
+        val snapshot = trustRegistry.snapshot { identity }
+        return com.bluelink.android.domain.IdentitySnapshot(snapshot.first, snapshot.second)
+    }
+    fun completeTrustVerification(verification: com.bluelink.android.domain.PeerTrustRegistry.Verification) =
+        trustRegistry.complete(verification)
+
+    private val identityLock = Any()
+    @Volatile private var cachedIdentity: DeviceIdentity? = null
+    val identity: DeviceIdentity get() = synchronized(identityLock) {
+        cachedIdentity ?: loadIdentity().also { cachedIdentity = it }
+    }
+
+    private fun loadIdentity(): DeviceIdentity {
         val protectedPrivate = preferences.getString("identity.private.protected", null)
         val privateValue = protectedPrivate?.let(::decrypt)
             ?: preferences.getString("identity.private", null)?.let(::decode)
         val publicValue = preferences.getString("identity.public", null)
-        if (privateValue != null && publicValue != null) {
+        return if (privateValue != null && publicValue != null) {
             DeviceIdentity.restore(privateValue, decode(publicValue)).also {
                 if (protectedPrivate == null) preferences.edit()
                     .putString("identity.private.protected", encrypt(privateValue))
@@ -38,12 +76,44 @@ class IdentityStore(context: Context) {
         }
     }
 
+    /** Persists the replacement and removal of trust in one preference transaction. */
+    fun resetIdentity(): DeviceIdentity {
+        val next = DeviceIdentity.generate()
+        val encrypted = encrypt(next.privateKey())
+        return trustRegistry.invalidateAll {
+            synchronized(identityLock) {
+                editIdentityPreferences {
+                    putString("identity.private.protected", encrypted)
+                    putString("identity.public", encode(next.publicKey()))
+                    remove("identity.private")
+                    preferences.all.keys.filter { it.startsWith("trust.") }.forEach(::remove)
+                }
+                cachedIdentity = next
+                next
+            }
+        }
+    }
+
+    fun removeAllTrust() = trustRegistry.invalidateAll {
+        editIdentityPreferences { preferences.all.keys.filter { it.startsWith("trust.") }.forEach(::remove) }
+    }
+
+    private fun editIdentityPreferences(edit: android.content.SharedPreferences.Editor.() -> Unit) {
+        val previous = preferences.all
+        if (!preferences.edit().apply(edit).commit()) {
+            // SharedPreferences changes memory even when disk persistence fails.
+            // Restore the previous in-memory snapshot as well as attempting disk recovery.
+            val restored = preferences.edit().clear().apply {
+                previous.forEach { (key, value) -> if (value is String) putString(key, value) }
+            }.commit()
+            throw java.io.IOException("无法保存设备身份或信任更改").apply {
+                if (!restored) addSuppressed(java.io.IOException("旧身份的持久化恢复尚未完成"))
+            }
+        }
+    }
+
     fun trustedKey(peerId: ByteArray): ByteArray? =
         preferences.getString("trust.${peerId.hex()}", null)?.let(::decode)
-
-    fun trust(peerId: ByteArray, publicKey: ByteArray) {
-        preferences.edit().putString("trust.${peerId.hex()}", encode(publicKey)).apply()
-    }
 
     fun trustedEntries(): Map<String, ByteArray> = preferences.all
         .filterKeys { it.startsWith("trust.") }
@@ -53,7 +123,7 @@ class IdentityStore(context: Context) {
         .toMap()
 
     fun removeTrust(peerId: String) {
-        preferences.edit().remove("trust.$peerId").apply()
+        trustRegistry.revoke(peerId)
     }
 
     fun matchesTrustedKey(peerId: ByteArray, publicKey: ByteArray): Boolean? =

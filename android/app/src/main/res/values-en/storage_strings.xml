@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="storage_receive">Receiving</string>
+    <string name="storage_directory">Receive folder</string>
+    <string name="storage_custom">Custom folder</string>
+    <string name="storage_ask">Ask before receiving</string>
+    <string name="storage_duplicate">Duplicate files</string>
+    <string name="storage_duplicate_title">Duplicate file handling</string>
+    <string name="storage_rename">Rename automatically</string>
+    <string name="storage_ask_me">Ask me</string>
+    <string name="storage_overwrite">Replace existing file</string>
+    <string name="storage_used">Space used by BlueLink</string>
+    <string name="storage_breakdown">Images %1$s · Files %2$s</string>
+    <string name="storage_calculating">Calculating…</string>
+    <string name="storage_unavailable">Unable to calculate storage</string>
+    <string name="storage_manage">Manage received files</string>
+    <string name="storage_charging">Start large receives only while charging</string>
+    <string name="storage_charging_note">Large files are 100 MiB or larger.</string>
+    <string name="storage_background">Keep connections when leaving the app</string>
+    <string name="storage_receive_confirmation">Receive file</string>
+    <string name="storage_receive_from">%1$s wants to send you a file</string>
+    <string name="storage_accept">Receive</string>
+    <string name="storage_reject">Decline</string>
+    <string name="storage_conflict_title">A file with this name exists</string>
+    <string name="storage_receive_limit">Receive size limit</string>
+    <string name="storage_limit_maximum">Maximum file size</string>
+    <string name="storage_limit_invalid">Enter a valid whole number greater than 0.</string>
+    <string name="storage_limit_help">The default is 500 MiB. Oversized requests wait up to 30 seconds. Raising the limit rechecks your receive settings. Existing transfers are unaffected.</string>
+    <string name="storage_limit_not_enabled">Not enabled</string>
+    <string name="storage_limit_enable_note">The limit is currently off. Saving only updates the value; enable it on the settings page.</string>
+</resources>

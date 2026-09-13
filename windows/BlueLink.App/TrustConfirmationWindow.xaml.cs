@@ -1,108 +1,77 @@
-using System.Linq;
+using System.ComponentModel;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using System.Windows.Input;
+using BlueLink.Security;
 
 namespace BlueLink;
 
-public sealed class TrustConfirmationWindow
+public partial class TrustConfirmationWindow : Wpf.Ui.Controls.FluentWindow
 {
-    private readonly string _peerName;
-    private readonly string _safetyCode;
-    private readonly string _localFingerprint;
-    private readonly string _remoteFingerprint;
+    private readonly TrustRequest _request;
+    private bool _closed;
+    public bool RetryRequested { get; private set; }
+    public bool ManageTrustRequested { get; private set; }
 
-    public Window? Owner { get; set; }
-
-    public TrustConfirmationWindow(string peerName, string safetyCode,
-        string localFingerprint, string remoteFingerprint)
+    public TrustConfirmationWindow(TrustRequest request)
     {
-        _peerName = peerName;
-        _safetyCode = safetyCode;
-        _localFingerprint = localFingerprint;
-        _remoteFingerprint = remoteFingerprint;
+        _request = request;
+        InitializeComponent();
+        DataContext = request;
+        request.PropertyChanged += RequestChanged;
+        Closed += (_, _) => { _closed = true; request.PropertyChanged -= RequestChanged; };
+        ApplyState();
+        Loaded += (_, _) => TrustCloseButton.Focus();
     }
 
-    public bool? ShowDialog() => BlueLinkDialog.ConfirmContent(
-        Owner,
-        "确认安全连接",
-        CreateContent(),
-        primaryButtonText: "确认并信任",
-        closeButtonText: "拒绝",
-        tone: BlueLinkDialogTone.Information);
-
-    private FrameworkElement CreateContent()
+    private void RequestChanged(object? sender, PropertyChangedEventArgs e)
     {
-        var content = new StackPanel
-        {
-            Width = 540,
-            Margin = new Thickness(0, 6, 0, 2),
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = $"正在首次连接 {_peerName}",
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = Brush("#162033"),
-        });
-        content.Children.Add(new TextBlock
-        {
-            Text = "请在两台设备上核对以下安全代码",
-            Margin = new Thickness(0, 10, 0, 8),
-            Foreground = Brush("#687386"),
-        });
-        content.Children.Add(new Border
-        {
-            Background = Brush("#EAF1FF"),
-            CornerRadius = new CornerRadius(14),
-            Padding = new Thickness(18, 12, 18, 12),
-            Child = new TextBlock
-            {
-                Text = _safetyCode,
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 28,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brush("#176BFF"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-            },
-        });
-        content.Children.Add(FingerprintBlock("本机身份指纹", Group(_localFingerprint), 16));
-        content.Children.Add(FingerprintBlock("对端身份指纹", Group(_remoteFingerprint), 10));
-        content.Children.Add(new TextBlock
-        {
-            Text = "确认后会在本机固定该设备身份；密钥发生变化时连接将被拒绝。",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("#687386"),
-            Margin = new Thickness(0, 16, 0, 0),
-        });
-        return content;
+        if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(ApplyState));
     }
 
-    private static FrameworkElement FingerprintBlock(string title, string value, double topMargin)
+    private void ApplyState()
     {
-        var panel = new StackPanel { Margin = new Thickness(0, topMargin, 0, 0) };
-        panel.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = Brush("#162033"),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = value,
-            FontFamily = new FontFamily("Consolas"),
-            Foreground = Brush("#687386"),
-            Margin = new Thickness(0, 4, 0, 0),
-        });
-        return panel;
+        if (_closed) return;
+        TrustPrimaryButton.Opacity = _request.PrimaryEnabled ? 1 : .5;
+        TrustStatusText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+            _request.Stage is TrustStage.TimedOut or TrustStage.IdentityChanged or TrustStage.Revoked or TrustStage.Failed ? "DangerBrush" : _request.Stage == TrustStage.Rejected ? "MutedBrush" : "BlueBrush");
+        SecondFingerprintLabel.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+            _request.Stage == TrustStage.IdentityChanged ? "DangerBrush" : "MutedBrush");
+        if (_request.Stage is TrustStage.Completed or TrustStage.Canceled && IsLoaded) Close();
     }
 
-    private static string Group(string value)
+    private void TrustContent_ScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
     {
-        var normalized = new string(value.Where(char.IsAsciiHexDigit).ToArray()).ToUpperInvariant();
-        return string.Join(":", normalized.Chunk(4).Take(6).Select(chars => new string(chars)));
+        // Fractional pixels at 125/150% DPI must not create a scrollbar for sub-DIP overflow.
+        var scroll = (System.Windows.Controls.ScrollViewer)sender;
+        var visibility = scroll.ScrollableHeight > 1
+            ? System.Windows.Controls.ScrollBarVisibility.Auto : System.Windows.Controls.ScrollBarVisibility.Hidden;
+        if (scroll.VerticalScrollBarVisibility != visibility) scroll.VerticalScrollBarVisibility = visibility;
     }
 
-    private static SolidColorBrush Brush(string value) =>
-        new((Color)ColorConverter.ConvertFromString(value));
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        if (Owner is { } owner) MaxHeight = Math.Max(360, owner.ActualHeight - 24);
+        base.OnSourceInitialized(e);
+    }
+
+    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left) DragMove();
+    }
+
+    private void Primary_Click(object sender, RoutedEventArgs e)
+    {
+        if (_request.Stage == TrustStage.Confirm) { _request.Confirm(); return; }
+        if (!_request.PrimaryEnabled) return;
+        ManageTrustRequested = _request.Stage == TrustStage.IdentityChanged;
+        RetryRequested = !ManageTrustRequested;
+        Close();
+    }
+
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    private void Window_Closing(object? sender, CancelEventArgs e) => _request.Cancel();
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { e.Handled = true; Close(); }
+    }
 }

@@ -23,4 +23,12 @@
       <Link>Assets\bluelink-logo.png</Link>
     </Resource>
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="..\SharedUI\Assets\*.png" Link="Assets\Installer\%(Filename)%(Extension)" />
+    <Resource Include="..\..\windows\BlueLink.App\Assets\Fonts\*.ttf" Link="Assets\Fonts\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedUI\InstallerNoticeWindow.cs" Link="InstallerNoticeWindow.cs" />
+  </ItemGroup>
+  <ItemGroup><Compile Include="..\..\shared\WindowsDialogLayout.cs" Link="Shared\WindowsDialogLayout.cs" /></ItemGroup>
 </Project>

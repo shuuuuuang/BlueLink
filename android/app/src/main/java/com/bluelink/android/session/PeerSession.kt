@@ -1,6 +1,5 @@
 package com.bluelink.android.session
 
-import android.bluetooth.BluetoothSocket
 import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
@@ -42,6 +41,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -62,10 +62,18 @@ import java.util.concurrent.atomic.AtomicLong
 
 internal class PeerSession(
     private val context: Context,
-    private val socket: BluetoothSocket,
+    private val connection: com.bluelink.android.transport.PeerConnection,
     private val listenerRole: Boolean,
     private val identityStore: IdentityStore,
-    private val onTrustRequired: suspend (peerId: String, publicKey: ByteArray, safetyCode: String) -> Boolean,
+    private val sessionId: UUID,
+    private val transportAddress: String,
+    private val platform: com.bluelink.android.domain.PeerPlatform,
+    private val preferredPeerName: String,
+    private val localDeviceName: String = "",
+    private val expectedTrustedKeys: suspend () -> List<ByteArray>,
+    private val onSecurityRequest: (com.bluelink.android.domain.SecurityRequest) -> Unit,
+    private val onSecurityFinished: (com.bluelink.android.domain.SecurityRequest) -> Unit,
+    private val onPeerIdentified: (String) -> Unit,
     private val onMessage: (ChatItem) -> Unit,
     private val onTransfer: (TransferItem) -> Unit,
     private val onReady: (String) -> Unit,
@@ -73,22 +81,60 @@ internal class PeerSession(
     private val onDiagnostic: (DiagnosticLevel, String, String) -> Unit = { _, _, _ -> },
     private val onEnvelope: (ChatEnvelope, Boolean) -> Unit = { _, _ -> },
     private val onReceipt: (ChatReceipt) -> Unit = {},
+    private val onMessageStatus: (UUID, MessageStatus) -> Unit = { _, _ -> },
     initialMaxReceiveBytes: Long = Long.MAX_VALUE,
     initialDownloadDestination: String = "downloads://BlueLink",
     initialAutoAcceptFiles: Boolean = true,
+    initialAutoSaveImages: Boolean = true,
+    initialAutoSaveOtherAttachments: Boolean = false,
+    initialLargeFilesOnlyWhileCharging: Boolean = false,
+    private val onReceiveConfirmation: suspend (TransferItem) -> Boolean,
+    initialDuplicateFilePolicy: String = "rename",
+    private val onFileConflict: suspend (String) -> com.bluelink.android.files.DuplicateChoice,
+    private val findIdentityCandidate: suspend (String) -> com.bluelink.android.domain.IdentityCandidate? = { null },
+    private val canAssociateIdentity: (com.bluelink.android.domain.IdentityCandidate) -> Boolean = { false },
+    private val applyIdentityAssociation: suspend () -> Unit = {},
+
 ) {
     companion object {
         private const val FILE_EXTENT_SIZE = 64 * 1024
         private const val OFFER_TIMEOUT_MS = 30_000L
     }
 
+    private val closed = java.util.concurrent.atomic.AtomicBoolean()
+    private var usbLiveness: UsbSessionLiveness? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val outbound = PriorityBlockingQueue<Outbound>()
     private val order = AtomicLong()
-    private val incoming = mutableMapOf<UUID, IncomingTransfer>()
+    private val incoming = ConcurrentHashMap<UUID, IncomingTransfer>()
+    private val receiveDecisionLock = Any()
+    private var receiveClosed = false
+    private val finishing = ConcurrentHashMap<UUID, Job>()
+    private val pendingConfirmations = ConcurrentHashMap<UUID, Pair<Job, TransferItem>>()
     private val pendingOffers = ConcurrentHashMap<UUID, PendingOffer>()
     private val outgoing = ConcurrentHashMap<UUID, OutgoingTransfer>()
-    private val pausedIncoming = ConcurrentHashMap.newKeySet<UUID>()
+    var onMtpChanged: () -> Unit = {}
+    private val mtp = MtpFileChannel(context, scope,
+        send = { enqueue(WireMessageType.MTP_CONTROL, 0, it).await() },
+        queued = { offer -> TransferPauseController(onTransfer).also { it.report(incomingItem(offer, TransferStatus.QUEUED)) } },
+        import = { id, input, key ->
+            val transfer = incoming[id] ?: throw IOException("USB 文件尚未获得接收许可")
+            val coroutine = currentCoroutineContext()
+            var offset = 0L
+            com.bluelink.core.MtpFileCipher.decrypt(input, id, transfer.offer.size, key, { bytes, length ->
+                transfer.receiver.importChunk(offset, bytes, length); offset += length
+            }, {
+                coroutine.ensureActive()
+                kotlinx.coroutines.runBlocking(coroutine) { transfer.progress.awaitResumed() }
+            })
+        },
+        failure = { id, detail ->
+            cancelIncoming(id, detail, TransferStatus.FAILED)
+            enqueue(WireMessageType.TRANSFER_FAILED, 2, TransferWire.failure(FileTransferFailure(id, detail)))
+        }, changed = { onMtpChanged() })
+    var mtpEnabled: Boolean get() = mtp.enabled; set(value) { mtp.enabled = value }
+    fun refreshMtp() = mtp.requestProbe()
+    val mtpReady: Boolean get() = mtp.enabled && mtp.ready
     private lateinit var keys: SessionKeys
     private var negotiation = ProtocolGreeting.Negotiation(1, 0, BtxCapabilities.NONE)
     private var writer: Job? = null
@@ -98,19 +144,36 @@ internal class PeerSession(
     @Volatile var downloadDestination: String = initialDownloadDestination
     @Volatile var autoAcceptFiles: Boolean = initialAutoAcceptFiles
         set(value) { field = value; if (value) reconsiderPendingOffers() }
-    val peerName: String
-        get() = try {
-            socket.remoteDevice.name ?: socket.remoteDevice.address
-        } catch (_: SecurityException) {
-            "附近设备"
-        }
+    @Volatile var duplicateFilePolicy = initialDuplicateFilePolicy
+    @Volatile var autoSaveImages = initialAutoSaveImages
+    @Volatile var autoSaveOtherAttachments = initialAutoSaveOtherAttachments
+    @Volatile var largeFilesOnlyWhileCharging = initialLargeFilesOnlyWhileCharging
+    private fun needsCharging(bytes: Long) = com.bluelink.android.domain.ReceivePolicy.needsCharging(bytes,
+        largeFilesOnlyWhileCharging, context.getSystemService(android.os.BatteryManager::class.java).isCharging)
+    private var remoteDeviceName: String = ""
+    val hasPeerProvidedName: Boolean get() = remoteDeviceName.isNotBlank()
+    val peerName: String get() = remoteDeviceName.ifBlank { preferredPeerName.ifBlank { connection.name } }
 
     suspend fun run() = withContext(Dispatchers.IO) {
         var stage = "安全握手"
         try {
             onDiagnostic(DiagnosticLevel.INFO, "Handshake",
                 "安全握手开始（role=${if (listenerRole) "listener" else "dialer"}）")
-            keys = handshake()
+            val handshake = SecureConnectionHandshake(connection.input, connection.output, { connection.close() },
+                listenerRole, identityStore::captureIdentity, identityStore::trustedKey, expectedTrustedKeys,
+                identityStore::beginTrustVerification, identityStore::completeTrustVerification,
+                peerName, sessionId, transportAddress, platform,
+                onSecurityRequest, onSecurityFinished, onPeerIdentified,
+                localDeviceName = localDeviceName,
+                findCandidate = findIdentityCandidate,
+                commitAssociation = { verification, candidate ->
+                    check(canAssociateIdentity(candidate)) { "原设备仍有活动会话，请断开后重试" }
+                    identityStore.associateIdentity(verification, candidate)
+                }, applyAssociation = applyIdentityAssociation).run()
+            remoteDeviceName = handshake.remoteDeviceName
+            keys = handshake.keys
+            negotiation = handshake.negotiation
+            sendSequence = 1 // The handshake wrote exactly one encrypted PROTOCOL_HELLO.
             onDiagnostic(DiagnosticLevel.INFO, "Handshake", "安全握手密钥派生与信任检查完成")
             stage = "协议会话"
             writer = scope.launch {
@@ -124,20 +187,25 @@ internal class PeerSession(
                     onDiagnostic(DiagnosticLevel.ERROR, "Transport",
                         "BTX 写入循环已停止：${failure.javaClass.simpleName}: $detail")
                     failPendingWrites(failure)
-                    runCatching { socket.close() }
+                    onClosed("设备通道写入失败，连接已断开。")
+                    close()
                 }
             }
-            enqueue(WireMessageType.PROTOCOL_HELLO, 0, ProtocolGreeting.current().encode()).await()
-            onDiagnostic(DiagnosticLevel.INFO, "Protocol", "已发送加密 PROTOCOL_HELLO")
-            val replay = ReplayGuard(0)
-            val remoteHello = BtxRecordCodec.read(socket.inputStream, keys.receiveKey(), keys.receiveNoncePrefix(), replay)
-            if (remoteHello.type() != WireMessageType.PROTOCOL_HELLO)
-                throw IOException("对端未先发送 PROTOCOL_HELLO")
-            negotiation = ProtocolGreeting.current().negotiate(ProtocolGreeting.decode(remoteHello.payload()))
-            onDiagnostic(DiagnosticLevel.INFO, "Protocol",
-                "已验证对端 PROTOCOL_HELLO（BTX=${negotiation.major()}.${negotiation.minor()}，caps=0x${negotiation.capabilities().toString(16)}）")
             onReady(keys.remotePeerId().hex())
-            readLoop(replay)
+            if (negotiation.supports(BtxCapabilities.MTP_FILES) && connection.transport == com.bluelink.android.domain.SessionTransport.BLUETOOTH) mtp.start()
+            if (connection.transport == com.bluelink.android.domain.SessionTransport.USB) {
+                val liveness = UsbSessionLiveness().also { usbLiveness = it }
+                scope.launch {
+                    liveness.run({ enqueue(WireMessageType.PING, 0, byteArrayOf()) }) { reason ->
+                        onDiagnostic(DiagnosticLevel.WARNING, "USB", reason)
+                        onClosed(reason)
+                        close()
+                    }
+                }
+            }
+            readLoop(handshake.replay)
+        } catch (failure: CancellationException) {
+            throw failure
         } catch (failure: Throwable) {
             Log.e("BlueLinkSession", "$stage failed", failure)
             val detail = failure.message?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
@@ -150,7 +218,7 @@ internal class PeerSession(
     }
 
     fun sendChat(text: String, messageId: UUID = UUID.randomUUID(), onSent: (Boolean) -> Unit) {
-        if (text.isBlank() || !::keys.isInitialized) return
+        if (text.isBlank() || !::keys.isInitialized) { onSent(false); return }
         scope.launch {
             val content = text.trim()
             val payload = if (negotiation.supports(BtxCapabilities.STRUCTURED_MESSAGES)) {
@@ -162,12 +230,18 @@ internal class PeerSession(
         }
     }
 
+    private val preparationGate = Any()
+    private var preparationTail = CompletableDeferred(Unit)
+
     fun sendFile(uri: Uri, name: String, size: Long) {
+        val prepared = CompletableDeferred<Unit>()
+        val previous = synchronized(preparationGate) { preparationTail.also { preparationTail = prepared } }
         scope.launch {
             val snapshots = mutableListOf<OutgoingSnapshot>()
             var queuedOriginal: TransferItem? = null
             var originalStarted = false
             try {
+                previous.await()
                 val originalId = UUID.randomUUID()
                 onDiagnostic(DiagnosticLevel.INFO, "Transfer", "正在创建稳定文件快照（id=${originalId.toString().take(8)}）")
                 val original = createSnapshot(context.contentResolver, uri, originalId,
@@ -179,7 +253,7 @@ internal class PeerSession(
                 val structured = negotiation.supports(BtxCapabilities.STRUCTURED_MESSAGES or BtxCapabilities.ATTACHMENT_METADATA)
                 if (!structured) {
                     transmitSnapshot(original, originalId, name, mimeType, null, null,
-                        AttachmentRole.FILE, stableOriginalUri)
+                        AttachmentRole.FILE, stableOriginalUri, onQueued = { prepared.complete(Unit) })
                     return@launch
                 }
                 val messageId = UUID.randomUUID()
@@ -214,8 +288,15 @@ internal class PeerSession(
                 val envelope = ChatEnvelope(messageId,
                     if (originalRole == AttachmentRole.FILE) ChatPayloadKind.FILE else ChatPayloadKind.IMAGE,
                     System.currentTimeMillis(), "", descriptors)
-                enqueue(WireMessageType.CHAT, 1, MessagePayloadCodec.encode(envelope)).await()
+                // Publish before writing: the reader can deliver a receipt before await resumes.
                 onEnvelope(envelope, true)
+                try {
+                    enqueue(WireMessageType.CHAT, 1, MessagePayloadCodec.encode(envelope)).await()
+                    onMessageStatus(messageId, MessageStatus.SENT)
+                } catch (failure: Throwable) {
+                    onMessageStatus(messageId, MessageStatus.FAILED)
+                    throw failure
+                }
                 if (preview != null && previewId != null && previewAttachmentId != null) {
                     try {
                         transmitSnapshot(preview.snapshot, previewId,
@@ -230,7 +311,7 @@ internal class PeerSession(
                 }
                 originalStarted = true
                 transmitSnapshot(original, originalId, name, mimeType, messageId, originalAttachmentId,
-                    originalRole, stableOriginalUri)
+                    originalRole, stableOriginalUri, onQueued = { prepared.complete(Unit) })
             } catch (failure: Throwable) {
                 val detail = failure.message?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
                 if (!originalStarted) queuedOriginal?.let {
@@ -240,6 +321,9 @@ internal class PeerSession(
                 onDiagnostic(if (failure is CancellationException) DiagnosticLevel.WARNING else DiagnosticLevel.ERROR,
                     "Transfer", "文件发送${if (failure is CancellationException) "已取消" else "失败"}：$detail")
             } finally {
+                // Preserve submission order even if preparation is canceled before its predecessor finishes.
+                if (previous.isCompleted) prepared.complete(Unit)
+                else scope.launch(kotlinx.coroutines.NonCancellable) { previous.join(); prepared.complete(Unit) }
                 snapshots.forEach { snapshot -> snapshot.file.let { file ->
                     if (!snapshot.persistent && file.exists() && !file.delete())
                         onDiagnostic(DiagnosticLevel.WARNING, "Transfer", "发送缓存稍后由系统清理")
@@ -248,7 +332,10 @@ internal class PeerSession(
         }
     }
 
+    private val retrying = ConcurrentHashMap.newKeySet<UUID>()
     fun retryFile(uri: Uri, template: TransferItem) {
+        if (!retrying.add(template.id)) return
+        onTransfer(template.copy(status = TransferStatus.QUEUED, failureDetail = null))
         scope.launch {
             var snapshot: OutgoingSnapshot? = null
             try {
@@ -259,7 +346,9 @@ internal class PeerSession(
                 val detail = failure.message?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
                 onDiagnostic(if (failure is CancellationException) DiagnosticLevel.WARNING else DiagnosticLevel.ERROR,
                     "Transfer", "文件重试${if (failure is CancellationException) "已取消" else "失败"}：$detail")
+                onTransfer(template.copy(status = TransferStatus.FAILED, failureDetail = detail))
             } finally {
+                retrying.remove(template.id)
                 snapshot?.file?.let { file -> if (file.exists() && !file.delete())
                     onDiagnostic(DiagnosticLevel.WARNING, "Transfer", "重试缓存稍后由系统清理") }
             }
@@ -268,10 +357,10 @@ internal class PeerSession(
 
     private suspend fun transmitSnapshot(prepared: OutgoingSnapshot, id: UUID, name: String, mimeType: String,
                                          messageId: UUID?, attachmentId: UUID?, role: AttachmentRole,
-                                         localUri: String) {
-        val state = OutgoingTransfer()
+                                         localUri: String, onQueued: () -> Unit = {}) {
+        val state = OutgoingTransfer(onTransfer)
         var committedBytes = 0L
-        fun report(item: TransferItem) { state.item = item; onTransfer(item) }
+        fun report(item: TransferItem) = state.progress.report(item)
         outgoing[id] = state
         try {
             val offer = if (messageId != null && attachmentId != null)
@@ -281,17 +370,21 @@ internal class PeerSession(
             report(TransferItem(id, name, prepared.size, outgoing = true, status = TransferStatus.OFFERED,
                 messageId = messageId, attachmentId = attachmentId, mimeType = mimeType,
                 localUri = localUri, role = role))
+            val useMtp = mtpReady
+            suspend fun sendCore() {
+            report(requireNotNull(state.progress.item).copy(status = TransferStatus.OFFERED))
             enqueue(WireMessageType.TRANSFER_OFFER, 2, TransferWire.offer(offer)).await()
             val startIndex = state.accepted.await()
             committedBytes = minOf(prepared.size, startIndex.toLong() * FILE_EXTENT_SIZE)
             prepared.file.inputStream().buffered(FILE_EXTENT_SIZE).use { input ->
-                if (committedBytes > 0) {
+                if (!useMtp && committedBytes > 0) {
                     input.skipExactly(committedBytes)
                     report(TransferItem(id, name, prepared.size, committedBytes, true,
                         TransferStatus.RESUMING, messageId, attachmentId, mimeType, localUri, role = role))
                     onDiagnostic(DiagnosticLevel.INFO, "Transfer",
                         "从持久化断点继续（id=${id.toString().take(8)}，extent=$startIndex，bytes=$committedBytes）")
                 }
+                if (useMtp) { mtp.sendBlob(id, input); committedBytes = prepared.size } else {
                 var index = startIndex
                 while (true) {
                     state.awaitResumed()
@@ -306,6 +399,7 @@ internal class PeerSession(
                         TransferStatus.TRANSFERRING, messageId, attachmentId, mimeType, localUri, role = role))
                 }
             }
+            }
             check(committedBytes == prepared.size) { "快照读取长度发生变化：expected=${prepared.size}, actual=$committedBytes" }
             enqueue(WireMessageType.TRANSFER_FINISH, 2, TransferWire.id(id)).await()
             report(TransferItem(id, name, prepared.size, prepared.size, true, TransferStatus.VERIFYING,
@@ -313,8 +407,10 @@ internal class PeerSession(
             state.completed.await()
             report(TransferItem(id, name, prepared.size, prepared.size, true, TransferStatus.COMPLETED,
                 messageId, attachmentId, mimeType, localUri, role = role))
+            }
+            if (useMtp) mtp.runOutgoing(offer, state.progress, ::sendCore, onQueued) else sendCore()
         } catch (failure: Throwable) {
-            val canceled = failure is CancellationException
+            val canceled = failure is CancellationException && state.progress.item?.status != TransferStatus.FAILED
             val detail = failure.message?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
             report(TransferItem(id, name, prepared.size, committedBytes, true,
                 if (canceled) TransferStatus.CANCELED else TransferStatus.FAILED,
@@ -330,19 +426,18 @@ internal class PeerSession(
     }
 
     fun cancelTransfer(id: UUID, reason: String = "用户取消") {
+        mtp.cancel(id)
+        synchronized(receiveDecisionLock) {
+            pendingConfirmations.remove(id)?.let { (job, item) ->
+                job.cancel(); onTransfer(item.copy(status = TransferStatus.CANCELED, failureDetail = reason))
+            }
+        }
         scope.launch {
             outgoing[id]?.fail(CancellationException(reason))
             pendingOffers.remove(id)?.let { pending ->
                 onTransfer(pending.item.copy(status = TransferStatus.CANCELED, failureDetail = reason))
             }
-            incoming.remove(id)?.let { transfer ->
-                pausedIncoming.remove(id)
-                val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
-                runCatching { transfer.receiver.close() }
-                onTransfer(TransferItem(id, transfer.name, transfer.offer.size,
-                    committed, false, TransferStatus.CANCELED, transfer.offer.messageId,
-                    transfer.offer.attachmentId, transfer.offer.mimeType, role = transfer.offer.role))
-            }
+            cancelIncoming(id, reason, TransferStatus.CANCELED)
             if (negotiation.supports(BtxCapabilities.TRANSFER_CONTROL)) {
                 enqueue(WireMessageType.TRANSFER_CONTROL, 0,
                     TransferControlCodec.encode(TransferControl(id, TransferControlAction.CANCEL,
@@ -352,106 +447,46 @@ internal class PeerSession(
         }
     }
 
-    fun pauseTransfer(id: UUID) {
-        scope.launch {
-            outgoing[id]?.let { state ->
-                state.pause()
-                state.item?.copy(status = TransferStatus.PAUSED)?.let {
-                    state.item = it
-                    onTransfer(it)
-                }
-            }
-            incoming[id]?.let { transfer ->
-                pausedIncoming.add(id)
-                val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
-                onTransfer(TransferItem(id, transfer.name, transfer.offer.size, committed, false,
-                    TransferStatus.PAUSED, transfer.offer.messageId, transfer.offer.attachmentId,
-                    transfer.offer.mimeType, role = transfer.offer.role))
-            }
-            if (negotiation.supports(BtxCapabilities.TRANSFER_CONTROL))
-                enqueue(WireMessageType.TRANSFER_CONTROL, 0,
-                    TransferControlCodec.encode(TransferControl(id, TransferControlAction.PAUSE,
-                        System.currentTimeMillis(), "用户暂停"))).await()
-        }
-    }
+    fun pauseTransfer(id: UUID) = changeLocalPause(id, true)
 
-    fun resumeTransfer(id: UUID) {
+    fun resumeTransfer(id: UUID) = changeLocalPause(id, false)
+
+    private fun changeLocalPause(id: UUID, paused: Boolean) {
         scope.launch {
-            outgoing[id]?.let { state ->
-                state.item?.copy(status = TransferStatus.RESUMING)?.let {
-                    state.item = it
-                    onTransfer(it)
-                }
-                state.resume()
-            }
-            incoming[id]?.let { transfer ->
-                pausedIncoming.remove(id)
-                val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
-                onTransfer(TransferItem(id, transfer.name, transfer.offer.size, committed, false,
-                    TransferStatus.RESUMING, transfer.offer.messageId, transfer.offer.attachmentId,
-                    transfer.offer.mimeType, role = transfer.offer.role))
-            }
+            val progress = outgoing[id]?.progress ?: incoming[id]?.progress ?: mtp.progress(id) ?: return@launch
+            if (!progress.setPaused(local = true, paused = paused)) return@launch
             if (negotiation.supports(BtxCapabilities.TRANSFER_CONTROL))
                 enqueue(WireMessageType.TRANSFER_CONTROL, 0,
-                    TransferControlCodec.encode(TransferControl(id, TransferControlAction.RESUME,
-                        System.currentTimeMillis(), "用户继续"))).await()
+                    TransferControlCodec.encode(TransferControl(id,
+                        if (paused) TransferControlAction.PAUSE else TransferControlAction.RESUME,
+                        System.currentTimeMillis(), if (paused) "用户暂停" else "用户继续"))).await()
         }
     }
 
     fun close() {
-        incoming.values.forEach { runCatching { it.receiver.close() } }
-        incoming.clear()
-        pausedIncoming.clear()
-        val stopped = CancellationException("蓝牙会话已结束")
+        if (!closed.compareAndSet(false, true)) return
+        onClosed("设备会话已结束")
+        mtp.close()
+        val receivers = synchronized(receiveDecisionLock) {
+            receiveClosed = true
+            pendingConfirmations.values.forEach { it.first.cancel() }
+            pendingConfirmations.clear()
+            pendingOffers.clear()
+            finishing.values.forEach { it.cancel() }
+            finishing.clear()
+            incoming.values.toList().also { values ->
+                values.forEach { it.publication.cancel() }
+                incoming.clear()
+            }
+        }
+        scope.launch(kotlinx.coroutines.NonCancellable) { receivers.forEach { runCatching { it.receiver.close() } } }
+
+        val stopped = CancellationException("设备会话已结束")
         outgoing.values.forEach { it.fail(stopped) }
         outgoing.clear()
-        runCatching { socket.close() }
+        failPendingWrites(stopped)
+        runCatching { connection.close() }
         scope.cancel()
-    }
-
-    private suspend fun handshake(): SessionKeys {
-        onDiagnostic(DiagnosticLevel.INFO, "Handshake", "正在加载设备身份并创建 Handshake Hello")
-        val local = HandshakeHello.create(identityStore.identity)
-        val remote = if (listenerRole) {
-            onDiagnostic(DiagnosticLevel.INFO, "Handshake", "正在读取对端 Handshake Hello")
-            readHello().also {
-                onDiagnostic(DiagnosticLevel.INFO, "Handshake", "已读取对端 Hello，正在发送本机 Hello")
-                writeHello(local)
-            }
-        } else {
-            onDiagnostic(DiagnosticLevel.INFO, "Handshake", "正在发送本机 Handshake Hello")
-            writeHello(local)
-            onDiagnostic(DiagnosticLevel.INFO, "Handshake", "本机 Hello 已发送，正在读取对端 Hello")
-            readHello()
-        }
-        onDiagnostic(DiagnosticLevel.INFO, "Handshake", "双方 Hello 已交换，正在派生会话密钥")
-        val derived = local.derive(remote)
-        when (identityStore.matchesTrustedKey(derived.remotePeerId(), derived.remoteIdentityPublicKey())) {
-            false -> throw SecurityException("已信任设备的身份密钥发生变化")
-            true -> Unit
-            null -> {
-                onDiagnostic(DiagnosticLevel.WARNING, "Handshake", "首次连接，等待用户核对安全代码")
-                val accepted = onTrustRequired(derived.remotePeerId().hex(), derived.remoteIdentityPublicKey(),
-                    derived.formattedSafetyCode())
-                if (!accepted) throw SecurityException("用户未确认安全代码")
-                identityStore.trust(derived.remotePeerId(), derived.remoteIdentityPublicKey())
-                onDiagnostic(DiagnosticLevel.INFO, "Handshake", "用户已确认并固定对端身份")
-            }
-        }
-        return derived
-    }
-
-    private fun writeHello(hello: HandshakeHello) {
-        val encoded = hello.encode()
-        require(encoded.size <= 4096)
-        DataOutputStream(socket.outputStream).apply { writeInt(encoded.size); write(encoded); flush() }
-    }
-
-    private fun readHello(): HandshakeHello {
-        val input = DataInputStream(socket.inputStream)
-        val length = input.readInt()
-        if (length !in 1..4096) throw IOException("握手消息长度无效")
-        return HandshakeHello.decode(input.readNBytes(length))
     }
 
     private suspend fun writerLoop() {
@@ -459,11 +494,11 @@ internal class PeerSession(
             val item = outbound.poll(500, TimeUnit.MILLISECONDS) ?: continue
             try {
                 val frame = BtxFrame(item.type, 0, item.streamId, sendSequence++, item.payload)
-                BtxRecordCodec.write(socket.outputStream, frame, keys.sendKey(), keys.sendNoncePrefix())
+                BtxRecordCodec.write(connection.output, frame, keys.sendKey(), keys.sendNoncePrefix())
                 item.done.complete(Unit)
             } catch (failure: Throwable) {
                 item.done.completeExceptionally(failure)
-                runCatching { socket.close() }
+                runCatching { connection.close() }
                 throw failure
             }
         }
@@ -478,18 +513,23 @@ internal class PeerSession(
 
     private fun enqueue(type: WireMessageType, streamId: Int, payload: ByteArray): CompletableDeferred<Unit> {
         val result = CompletableDeferred<Unit>()
-        outbound.put(Outbound(type.priority(), order.getAndIncrement(), type, streamId, payload, result))
+        synchronized(receiveDecisionLock) {
+            if (closed.get()) result.completeExceptionally(CancellationException("设备会话已结束"))
+            else outbound.put(Outbound(type.priority(), order.getAndIncrement(), type, streamId, payload, result))
+        }
         return result
     }
 
-    private fun readLoop(replay: ReplayGuard) {
+    private suspend fun readLoop(replay: ReplayGuard) {
         while (true) {
-            val frame = BtxRecordCodec.read(socket.inputStream, keys.receiveKey(), keys.receiveNoncePrefix(), replay)
+            val frame = BtxRecordCodec.read(connection.input, keys.receiveKey(), keys.receiveNoncePrefix(), replay)
+            usbLiveness?.received()
             when (frame.type()) {
                 WireMessageType.CHAT -> receiveChat(frame.payload())
                 WireMessageType.CHAT_RECEIPT -> if (negotiation.supports(BtxCapabilities.MESSAGE_RECEIPTS))
                     onReceipt(MessagePayloadCodec.decodeReceipt(frame.payload()))
                 WireMessageType.PING -> enqueue(WireMessageType.PONG, 0, frame.payload())
+                WireMessageType.GOAWAY -> { onClosed("对端已结束连接。"); return }
                 WireMessageType.TRANSFER_OFFER -> receiveOffer(TransferWire.readOffer(frame.payload()))
                 WireMessageType.TRANSFER_ACCEPT -> {
                     val accept = TransferWire.readAccept(frame.payload())
@@ -502,7 +542,7 @@ internal class PeerSession(
                     }
                 }
                 WireMessageType.TRANSFER_EXTENT -> receiveExtent(TransferWire.readExtent(frame.payload()))
-                WireMessageType.TRANSFER_FINISH -> finishTransfer(TransferWire.readId(frame.payload()))
+                WireMessageType.TRANSFER_FINISH -> beginFinalization(TransferWire.readId(frame.payload()))
                 WireMessageType.TRANSFER_EXTENT_ACK -> {
                     val acknowledgement = TransferWire.readExtentAck(frame.payload())
                     outgoing[acknowledgement.id]?.acknowledgeExtent(acknowledgement.index)
@@ -514,6 +554,10 @@ internal class PeerSession(
                     FileTransferFailure(TransferWire.readId(frame.payload()), "对端拒绝了文件传输"))
                 WireMessageType.TRANSFER_FAILED -> handleTransferFailure(TransferWire.readFailure(frame.payload()))
                 WireMessageType.TRANSFER_CONTROL -> handleTransferControl(TransferControlCodec.decode(frame.payload()))
+                WireMessageType.MTP_CONTROL -> {
+                    require(negotiation.supports(BtxCapabilities.MTP_FILES))
+                    mtp.receive(frame.payload())
+                }
                 else -> Unit
             }
         }
@@ -540,28 +584,11 @@ internal class PeerSession(
     private fun handleTransferControl(control: TransferControl) {
         if (!negotiation.supports(BtxCapabilities.TRANSFER_CONTROL))
             throw IOException("对端发送了未协商的传输控制消息")
-        if (control.action() == TransferControlAction.PAUSE) {
-            outgoing[control.transferId()]?.let { state ->
-                state.pause()
-                state.item?.copy(status = TransferStatus.PAUSED)?.let {
-                    state.item = it
-                    onTransfer(it)
-                }
-            }
+        if (control.action() == TransferControlAction.PAUSE || control.action() == TransferControlAction.RESUME) {
+            val progress = outgoing[control.transferId()]?.progress ?: incoming[control.transferId()]?.progress ?: mtp.progress(control.transferId())
+            progress?.setPaused(local = false, paused = control.action() == TransferControlAction.PAUSE)
             onDiagnostic(DiagnosticLevel.INFO, "Transfer",
-                "对端暂停文件传输（id=${control.transferId().toString().take(8)}）")
-            return
-        }
-        if (control.action() == TransferControlAction.RESUME) {
-            outgoing[control.transferId()]?.let { state ->
-                state.item?.copy(status = TransferStatus.RESUMING)?.let {
-                    state.item = it
-                    onTransfer(it)
-                }
-                state.resume()
-            }
-            onDiagnostic(DiagnosticLevel.INFO, "Transfer",
-                "对端继续文件传输（id=${control.transferId().toString().take(8)}）")
+                "收到对端传输控制（id=${control.transferId().toString().take(8)}，action=${control.action()}）")
             return
         }
         if (control.action() != TransferControlAction.CANCEL) {
@@ -569,24 +596,27 @@ internal class PeerSession(
                 "已收到暂不支持的控制指令（id=${control.transferId().toString().take(8)}，action=${control.action()}）")
             return
         }
-        outgoing[control.transferId()]?.fail(CancellationException(control.reason().ifBlank { "对端取消传输" }))
-        incoming.remove(control.transferId())?.let { transfer ->
-            pausedIncoming.remove(control.transferId())
-            val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
-            runCatching { transfer.receiver.close() }
-            onTransfer(TransferItem(control.transferId(), transfer.name, transfer.offer.size, committed,
-                false, TransferStatus.CANCELED, transfer.offer.messageId, transfer.offer.attachmentId,
-                transfer.offer.mimeType, role = transfer.offer.role))
+        synchronized(receiveDecisionLock) {
+            pendingConfirmations.remove(control.transferId())?.let { (job, item) ->
+                job.cancel(); onTransfer(item.copy(status = TransferStatus.CANCELED, failureDetail = control.reason()))
+            }
         }
+        pendingOffers.remove(control.transferId())?.let { onTransfer(it.item.copy(status = TransferStatus.CANCELED, failureDetail = control.reason())) }
+        outgoing[control.transferId()]?.fail(CancellationException(control.reason().ifBlank { "对端取消传输" }))
+        mtp.cancel(control.transferId())
+        cancelIncoming(control.transferId(), control.reason(), TransferStatus.CANCELED)
         onDiagnostic(DiagnosticLevel.WARNING, "Transfer",
             "对端取消文件传输（id=${control.transferId().toString().take(8)}）")
     }
 
     private fun receiveOffer(offer: FileOffer) {
+        mtp.validateOffer(offer)
+        synchronized(receiveDecisionLock) {
+        if (receiveClosed) return
         try {
-            if (incoming.containsKey(offer.id) || pendingOffers.containsKey(offer.id))
+            if (incoming.containsKey(offer.id) || pendingOffers.containsKey(offer.id) || pendingConfirmations.containsKey(offer.id))
                 throw IOException("重复文件 Offer")
-            if (!autoAcceptFiles) throw IOException("对端已关闭自动接收文件")
+            if (needsCharging(offer.size)) throw IOException("请连接充电器后再接收此大文件")
             if (offer.size > maxReceiveBytes) {
                 val item = incomingItem(offer, TransferStatus.REJECTED).copy(
                     failureDetail = "超过当前接收限制（$maxReceiveBytes B）；30 秒内提高限制可继续接收")
@@ -600,7 +630,45 @@ internal class PeerSession(
                 }
                 return
             }
-            acceptOffer(offer)
+            if (!autoAcceptFiles && offer.role != AttachmentRole.IMAGE_PREVIEW) {
+                val item = incomingItem(offer, TransferStatus.OFFERED)
+                onTransfer(item)
+                val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                    try {
+                        val accepted = kotlinx.coroutines.withTimeoutOrNull(OFFER_TIMEOUT_MS) { onReceiveConfirmation(item) } ?: false
+                        if (!accepted) throw IOException("未确认接收文件")
+                        if (offer.size > maxReceiveBytes) throw IOException("文件超过当前接收大小限制")
+                        if (needsCharging(offer.size)) throw IOException("请连接充电器后再接收此大文件")
+                        val decisionContext = currentCoroutineContext()
+                        synchronized(receiveDecisionLock) {
+                            decisionContext.ensureActive()
+                            if (!receiveClosed && pendingConfirmations[offer.id]?.first === decisionContext[Job]) acceptOffer(offer)
+                        }
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        val detail = failure.message ?: "接收未完成"
+                        val decisionContext = currentCoroutineContext()
+                        synchronized(receiveDecisionLock) {
+                            decisionContext.ensureActive()
+                            if (!receiveClosed && pendingConfirmations[offer.id]?.first === decisionContext[Job]) {
+                                onTransfer(item.copy(status = TransferStatus.REJECTED, failureDetail = detail))
+                                enqueue(WireMessageType.TRANSFER_FAILED, 2, TransferWire.failure(FileTransferFailure(offer.id, detail)))
+                            }
+                        }
+                    } finally {
+                        val ownJob = currentCoroutineContext()[Job]
+                        pendingConfirmations.computeIfPresent(offer.id) { _, pending -> if (pending.first === ownJob) null else pending }
+                    }
+                }
+                synchronized(receiveDecisionLock) {
+                    if (receiveClosed) { job.cancel(); return }
+                    pendingConfirmations[offer.id] = job to item
+                    job.start()
+                }
+                return
+            }
+            synchronized(receiveDecisionLock) { if (!receiveClosed) acceptOffer(offer) }
         } catch (failure: Throwable) {
             val detail = failure.message ?: failure.javaClass.simpleName
             onTransfer(TransferItem(offer.id,
@@ -614,6 +682,7 @@ internal class PeerSession(
                 TransferWire.failure(FileTransferFailure(offer.id, detail)))
         }
     }
+        }
 
     private fun incomingItem(offer: FileOffer, status: TransferStatus) = TransferItem(
         offer.id,
@@ -629,10 +698,11 @@ internal class PeerSession(
 
     private fun acceptOffer(offer: FileOffer, existing: TransferItem? = null) {
         val safeName = offer.name.substringAfterLast('/').substringAfterLast('\\').ifBlank { "received.bin" }
-        val receiver = TransferReceiver(context.filesDir.resolve("received").toPath(), safeName,
+        val receiver = TransferReceiver(context.filesDir.resolve("received").resolve(offer.id.toString()).toPath(), safeName,
             offer.size, offer.extentSize, offer.hash, null, offer.id.toString().replace("-", ""))
-        incoming[offer.id] = IncomingTransfer(offer, safeName, receiver)
-        onTransfer((existing ?: incomingItem(offer, TransferStatus.OFFERED)).copy(
+        val transfer = IncomingTransfer(offer, safeName, receiver, mtp.progress(offer.id) ?: TransferPauseController(onTransfer))
+        incoming[offer.id] = transfer
+        transfer.progress.report((existing ?: incomingItem(offer, TransferStatus.OFFERED)).copy(
             status = TransferStatus.OFFERED, failureDetail = null))
         val nextExtent = (receiver.contiguousCommittedOffset() / offer.extentSize).toInt()
         enqueue(WireMessageType.TRANSFER_ACCEPT, 2,
@@ -644,12 +714,11 @@ internal class PeerSession(
     }
 
     private fun reconsiderPendingOffers() {
-        if (!autoAcceptFiles) return
         scope.launch {
             pendingOffers.entries.toList().forEach { (id, pending) ->
-                if (pending.offer.size > maxReceiveBytes || pending.expiresAt <= System.currentTimeMillis()) return@forEach
+                if (pending.offer.size > maxReceiveBytes || needsCharging(pending.offer.size) || pending.expiresAt <= System.currentTimeMillis()) return@forEach
                 if (!pendingOffers.remove(id, pending)) return@forEach
-                runCatching { acceptOffer(pending.offer, pending.item) }
+                runCatching { synchronized(receiveDecisionLock) { if (!receiveClosed) receiveOffer(pending.offer) } }
                     .onFailure { failure ->
                         val detail = failure.message ?: failure.javaClass.simpleName
                         onTransfer(pending.item.copy(status = TransferStatus.FAILED, failureDetail = detail))
@@ -680,21 +749,21 @@ internal class PeerSession(
         try {
             transfer.receiver.accept(extent.index, extent.data, extent.hash)
             val completed = transfer.receiver.contiguousCommittedOffset()
-            onTransfer(TransferItem(extent.id, transfer.name, transfer.offer.size, completed, false,
-                if (pausedIncoming.contains(extent.id)) TransferStatus.PAUSED else TransferStatus.TRANSFERRING,
+            transfer.progress.report(TransferItem(extent.id, transfer.name, transfer.offer.size, completed, false,
+                TransferStatus.TRANSFERRING,
                 transfer.offer.messageId, transfer.offer.attachmentId, transfer.offer.mimeType,
                 role = transfer.offer.role))
             enqueue(WireMessageType.TRANSFER_EXTENT_ACK, 2,
                 TransferWire.extentAck(FileExtentAck(extent.id, extent.index)))
         } catch (failure: Throwable) {
             incoming.remove(extent.id)
-            pausedIncoming.remove(extent.id)
+
             val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
             runCatching { transfer.receiver.close() }
-            onTransfer(TransferItem(extent.id, transfer.name, transfer.offer.size, committed,
+            transfer.progress.report(TransferItem(extent.id, transfer.name, transfer.offer.size, committed,
                 outgoing = false, status = TransferStatus.FAILED, messageId = transfer.offer.messageId,
                 attachmentId = transfer.offer.attachmentId, mimeType = transfer.offer.mimeType,
-                role = transfer.offer.role))
+                role = transfer.offer.role, failureDetail = failure.message ?: "文件保存未完成"))
             val detail = failure.message ?: failure.javaClass.simpleName
             onDiagnostic(DiagnosticLevel.ERROR, "Transfer",
                 "接收文件块失败（id=${extent.id.toString().take(8)}，index=${extent.index}）：$detail")
@@ -703,58 +772,93 @@ internal class PeerSession(
         }
     }
 
-    private fun finishTransfer(id: UUID) {
+    private fun cancelIncoming(id: UUID, reason: String, status: TransferStatus) {
+        val transfer = synchronized(receiveDecisionLock) {
+            val value = incoming[id] ?: return
+            if (!value.publication.cancel()) return // A completed commit wins over a late cancel.
+            incoming.remove(id, value)
+            finishing.remove(id)?.cancel()
+
+            value
+        }
+        val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
+        transfer.progress.report(TransferItem(id, transfer.name, transfer.offer.size, committed, false, status,
+            transfer.offer.messageId, transfer.offer.attachmentId, transfer.offer.mimeType,
+            role = transfer.offer.role, failureDetail = reason))
+        scope.launch(kotlinx.coroutines.NonCancellable) { runCatching { transfer.receiver.close() } }
+    }
+
+    private fun beginFinalization(id: UUID): Unit = synchronized(receiveDecisionLock) {
+        if (receiveClosed || finishing.containsKey(id)) return
         val transfer = incoming[id]
         if (transfer == null) {
-            enqueue(WireMessageType.TRANSFER_FAILED, 2,
-                TransferWire.failure(FileTransferFailure(id, "未知文件传输")))
+            enqueue(WireMessageType.TRANSFER_FAILED, 2, TransferWire.failure(FileTransferFailure(id, "未知文件传输")))
             return
         }
-        onTransfer(TransferItem(id, transfer.name, transfer.offer.size, transfer.offer.size, false, TransferStatus.VERIFYING,
-            transfer.offer.messageId, transfer.offer.attachmentId, transfer.offer.mimeType, role = transfer.offer.role))
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            try { finishTransfer(id, transfer) }
+            finally { finishing.remove(id, currentCoroutineContext()[Job]) }
+        }
+        finishing[id] = job
+        job.start()
+        Unit
+    }
+
+    private suspend fun finishTransfer(id: UUID, transfer: IncomingTransfer) {
         try {
+            transfer.publication.active {
+                transfer.progress.report(TransferItem(id, transfer.name, transfer.offer.size, transfer.offer.size, false, TransferStatus.VERIFYING,
+                    transfer.offer.messageId, transfer.offer.attachmentId, transfer.offer.mimeType, role = transfer.offer.role))
+            }
             val target = transfer.receiver.finish()
-            val published = if (transfer.offer.role == AttachmentRole.IMAGE_PREVIEW) Uri.fromFile(target.toFile())
+            currentCoroutineContext().ensureActive()
+            transfer.publication.checkpoint()
+            transfer.publication.active {
+                transfer.progress.report(incomingItem(transfer.offer, TransferStatus.COMMITTING).copy(completedBytes = transfer.offer.size))
+            }
+            val published = if (!com.bluelink.android.domain.ReceivePolicy.saveToDirectory(transfer.offer.role,
+                transfer.offer.mimeType, autoSaveImages, autoSaveOtherAttachments)) transfer.publication.commit { Uri.fromFile(target.toFile()) }
                 else ReceivedFileStore.publish(context, target, transfer.name, transfer.offer.mimeType,
-                    downloadDestination)
+                    downloadDestination, duplicateFilePolicy, onFileConflict, transfer.publication)
             incoming.remove(id)
-            pausedIncoming.remove(id)
-            onTransfer(TransferItem(id, transfer.name, transfer.offer.size, transfer.offer.size, false, TransferStatus.COMPLETED,
+
+            transfer.progress.report(TransferItem(id, transfer.name, transfer.offer.size, transfer.offer.size, false, TransferStatus.COMPLETED,
                 transfer.offer.messageId, transfer.offer.attachmentId, transfer.offer.mimeType,
                 published.toString(), role = transfer.offer.role))
             onDiagnostic(DiagnosticLevel.INFO, "Transfer",
                 "文件接收与校验完成（id=${id.toString().take(8)}，bytes=${transfer.offer.size}）")
             enqueue(WireMessageType.TRANSFER_COMPLETE, 2, TransferWire.id(id))
-        } catch (failure: Throwable) {
-            incoming.remove(id)
-            pausedIncoming.remove(id)
+        } catch (canceled: CancellationException) {
+            if (incoming[id] === transfer) cancelIncoming(id, "接收已取消", TransferStatus.CANCELED)
+            if (currentCoroutineContext().isActive) {
+                if (negotiation.supports(BtxCapabilities.TRANSFER_CONTROL)) enqueue(WireMessageType.TRANSFER_CONTROL, 0,
+                    TransferControlCodec.encode(TransferControl(id, TransferControlAction.CANCEL, System.currentTimeMillis(), "接收已取消")))
+                else enqueue(WireMessageType.TRANSFER_FAILED, 2, TransferWire.failure(FileTransferFailure(id, "接收已取消")))
+            }
+            throw canceled
+        } catch (failure: Exception) {
+            if (!incoming.remove(id, transfer)) return
+
             val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
             runCatching { transfer.receiver.close() }
-            onTransfer(TransferItem(id, transfer.name, transfer.offer.size, committed,
+            transfer.progress.report(TransferItem(id, transfer.name, transfer.offer.size, committed,
                 outgoing = false, status = TransferStatus.FAILED, messageId = transfer.offer.messageId,
                 attachmentId = transfer.offer.attachmentId, mimeType = transfer.offer.mimeType,
-                role = transfer.offer.role))
+                role = transfer.offer.role, failureDetail = failure.message ?: "文件保存未完成"))
             val detail = failure.message ?: failure.javaClass.simpleName
             onDiagnostic(DiagnosticLevel.ERROR, "Transfer",
-                "文件完成校验失败（id=${id.toString().take(8)}）：$detail")
+                "文件校验或保存失败（id=${id.toString().take(8)}）：$detail")
             enqueue(WireMessageType.TRANSFER_FAILED, 2,
                 TransferWire.failure(FileTransferFailure(id, detail)))
         }
     }
 
     private fun handleTransferFailure(failure: FileTransferFailure) {
+        mtp.cancel(failure.id, TransferStatus.FAILED)
         val exception = RemoteTransferException(if (failure.reason.isBlank()) "对端报告文件传输失败"
             else "对端报告文件传输失败：${failure.reason}")
         outgoing[failure.id]?.fail(exception)
-        incoming.remove(failure.id)?.let { transfer ->
-            pausedIncoming.remove(failure.id)
-            val committed = runCatching { transfer.receiver.contiguousCommittedOffset() }.getOrDefault(0L)
-            runCatching { transfer.receiver.close() }
-            onTransfer(TransferItem(failure.id, transfer.name, transfer.offer.size, committed,
-                outgoing = false, status = TransferStatus.FAILED, messageId = transfer.offer.messageId,
-                attachmentId = transfer.offer.attachmentId, mimeType = transfer.offer.mimeType,
-                role = transfer.offer.role))
-        }
+        cancelIncoming(failure.id, failure.reason, TransferStatus.FAILED)
         onDiagnostic(DiagnosticLevel.ERROR, "Transfer",
             "收到对端失败通知（id=${failure.id.toString().take(8)}）：${failure.reason}")
     }
@@ -852,7 +956,9 @@ internal class PeerSession(
         else -> "application/octet-stream"
     }
 
-    private data class IncomingTransfer(val offer: FileOffer, val name: String, val receiver: TransferReceiver)
+    private data class IncomingTransfer(val offer: FileOffer, val name: String, val receiver: TransferReceiver,
+        val progress: TransferPauseController,
+        val publication: com.bluelink.android.files.PublicationGuard = com.bluelink.android.files.PublicationGuard())
     private data class PendingOffer(val offer: FileOffer, val item: TransferItem, val expiresAt: Long)
     private data class OutgoingSnapshot(
         val file: File,
@@ -866,24 +972,12 @@ internal class PeerSession(
         val mimeType: String,
     )
     private class RemoteTransferException(message: String) : IOException(message)
-    private class OutgoingTransfer {
+    private class OutgoingTransfer(notify: (TransferItem) -> Unit) {
         val accepted = CompletableDeferred<Int>()
         val completed = CompletableDeferred<Unit>()
         private val acknowledgements = ConcurrentHashMap<Int, CompletableDeferred<Unit>>()
-        private val pauseLock = Any()
-        private var resumeSignal = CompletableDeferred<Unit>().also { it.complete(Unit) }
-        @Volatile var item: TransferItem? = null
-
-        fun pause() = synchronized(pauseLock) {
-            if (resumeSignal.isCompleted) resumeSignal = CompletableDeferred()
-        }
-
-        fun resume() = synchronized(pauseLock) { resumeSignal.complete(Unit) }
-
-        suspend fun awaitResumed() {
-            val signal = synchronized(pauseLock) { resumeSignal }
-            signal.await()
-        }
+        val progress = TransferPauseController(notify)
+        suspend fun awaitResumed() = progress.awaitResumed()
 
         fun expectExtent(index: Int): CompletableDeferred<Unit> {
             val acknowledgement = CompletableDeferred<Unit>()
@@ -902,7 +996,7 @@ internal class PeerSession(
         }
 
         fun fail(failure: Throwable) {
-            synchronized(pauseLock) { resumeSignal.completeExceptionally(failure) }
+            progress.fail(failure)
             accepted.completeExceptionally(failure)
             completed.completeExceptionally(failure)
             acknowledgements.values.forEach { it.completeExceptionally(failure) }

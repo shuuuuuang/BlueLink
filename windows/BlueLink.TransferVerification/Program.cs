@@ -17,32 +17,292 @@ using BlueLink.Transfer;
 using BlueLink.Domain;
 using BlueLink.Files;
 
-var previewSourceArgument = args.FirstOrDefault(value =>
-    value.StartsWith("--preview-source=", StringComparison.OrdinalIgnoreCase));
-var previewSource = previewSourceArgument?["--preview-source=".Length..];
-
-if (args.Contains("--image-preview-only", StringComparer.OrdinalIgnoreCase))
+try
 {
-    new ImagePreviewViewportVerification().Run(previewSource);
-    return;
-}
+    if (args.Contains("--mtp-responsiveness")) { await MtpResponsivenessVerification.RunAsync(); return; }
+    if (args.Length == 2 && args[0] == "--forget-device") { ForgetPeerVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--notices-only") { TransientNoticeVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--dialogs-only") { DialogVerification.Run(args[1]); return; }
+    if (args.Length == 4 && args[0] == "--desktop-dialog") { DialogVerification.Run(args[1], args[2], args[3]); return; }
+    if (args.Length == 2 && args[0] == "--peer-reconnect") { await new UsbVerification().VerifyTransferReconnectAsync(args[1]); return; }
+    if (args.Contains("--transfer-reconnect-only")) { await SessionTransferLedgerVerification.RunAsync(); return; }
+    if (args.Contains("--mtp-only")) { await MtpVerification.RunAsync(); return; }
+    if (args.Contains("--protocol-only", StringComparer.OrdinalIgnoreCase))
+    {
+        new BtxProtocolVerification().Run();
+        return;
+    }
+    var fileIconsArgument = args.FirstOrDefault(value => value.StartsWith("--file-icons=", StringComparison.OrdinalIgnoreCase));
+    if (fileIconsArgument is not null) { FileIconVerification.Run(fileIconsArgument["--file-icons=".Length..]); return; }
+    if (args.Contains("--message-polish-protocol-only", StringComparer.OrdinalIgnoreCase))
+    {
+        DeviceNameVerification.Run();
+        await new SecurityHandshakeVerification().RunAsync();
+        return;
+    }
+    if (args.Contains("--bluetooth-callback-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await BluetoothCallbackVerification.RunAsync();
+        return;
+    }
+    var inputLayoutArgument = args.FirstOrDefault(value => value.StartsWith("--background-inputs=", StringComparison.OrdinalIgnoreCase));
+    if (inputLayoutArgument is not null)
+    {
+        BackgroundSettingsVerification.Run(inputLayoutArgument["--background-inputs=".Length..], inputsOnly: true);
+        return;
+    }
+    if (args.Contains("--settings-alignment-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new TransferReceiverVerification().RunAsync();
+        await new SettingsVerification().RunAsync();
+        await ReceiveSettingsVerification.RunAsync();
+        await new SecurityHandshakeVerification().RunAsync();
+        NotificationVerification.Run();
+        return;
+    }
+    var settingsControlsArgument = args.FirstOrDefault(value => value.StartsWith("--background-settings-controls=", StringComparison.OrdinalIgnoreCase));
+    if (settingsControlsArgument is not null)
+    {
+        BackgroundSettingsVerification.Run(settingsControlsArgument["--background-settings-controls=".Length..], controlsOnly: true);
+        return;
+    }
+    var settingsLayoutArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-settings=", StringComparison.OrdinalIgnoreCase));
+    if (settingsLayoutArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(settingsLayoutArgument["--offscreen-settings=".Length..], settingsOnly: true);
+        return;
+    }
+    var workspaceLayoutArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-workspace=", StringComparison.OrdinalIgnoreCase));
+    if (workspaceLayoutArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(workspaceLayoutArgument["--offscreen-workspace=".Length..], workspaceOnly: true);
+        return;
+    }
+    var aboutUiArgument = args.FirstOrDefault(value => value.StartsWith("--background-about=", StringComparison.OrdinalIgnoreCase));
+    if (aboutUiArgument is not null)
+    {
+        BackgroundSettingsVerification.Run(aboutUiArgument["--background-about=".Length..], aboutOnly: true);
+        return;
+    }
+    var settingsUiArgument = args.FirstOrDefault(value => value.StartsWith("--background-settings=", StringComparison.OrdinalIgnoreCase));
+    if (settingsUiArgument is not null)
+    {
+        BackgroundSettingsVerification.Run(settingsUiArgument["--background-settings=".Length..]);
+        return;
+    }
+    if (args.Contains("--failure-reporting-self-test", StringComparer.OrdinalIgnoreCase))
+        throw new InvalidOperationException("Expected verification failure for the log-and-exit regression.");
 
-if (args.Contains("--chat-scrollbar-only", StringComparer.OrdinalIgnoreCase))
-{
+    // Explicit, read-only hardware inventory; never opens a USB pipe or changes drivers.
+    if (args.Contains("--usb-inventory", StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(
+            new BlueLink.Usb.WindowsUsbInventory().Enumerate(CancellationToken.None),
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return;
+    }
+
+    var accessoryArgument = args.FirstOrDefault(value => value.StartsWith("--usb-start-accessory=", StringComparison.OrdinalIgnoreCase));
+    if (accessoryArgument is not null)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var targetId = accessoryArgument["--usb-start-accessory=".Length..];
+        var target = new BlueLink.Usb.WindowsUsbInventory().Enumerate(deadline.Token)
+            .Single(device => device.InstanceId.Equals(targetId, StringComparison.OrdinalIgnoreCase));
+        if (target.AccessoryMode) throw new InvalidOperationException("Selected device is already in accessory mode.");
+        await using var connection = new BlueLink.Usb.WinUsbConnection(target);
+        await BlueLink.Usb.AoaProtocol.StartAccessoryAsync(connection, "BlueLink-USB-benchmark", deadline.Token);
+        Console.WriteLine("AOA start request completed for selected device: " + target.InstanceId);
+        return;
+    }
+
+    var hardwareArgument = args.FirstOrDefault(value => value.StartsWith("--usb-hardware=", StringComparison.OrdinalIgnoreCase));
+    if (hardwareArgument is not null)
+    {
+        var output = args.Single(value => value.StartsWith("--hardware-output=", StringComparison.OrdinalIgnoreCase))["--hardware-output=".Length..];
+        await new UsbHardwareVerification().RunAsync(hardwareArgument["--usb-hardware=".Length..], output,
+            args.Contains("--hardware-session-only", StringComparer.OrdinalIgnoreCase),
+            args.Contains("--hardware-commands", StringComparer.OrdinalIgnoreCase),
+            args.FirstOrDefault(value => value.StartsWith("--hardware-identity=", StringComparison.OrdinalIgnoreCase))?["--hardware-identity=".Length..]);
+        return;
+    }
+
+    var previewSourceArgument = args.FirstOrDefault(value =>
+        value.StartsWith("--preview-source=", StringComparison.OrdinalIgnoreCase));
+    var previewSource = previewSourceArgument?["--preview-source=".Length..];
+
+    var usbArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-usb=", StringComparison.OrdinalIgnoreCase));
+    if (usbArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(usbArgument["--offscreen-usb=".Length..], usbOnly: true);
+        return;
+    }
+
+    var interactionsArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-interactions=", StringComparison.OrdinalIgnoreCase));
+    if (interactionsArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(interactionsArgument["--offscreen-interactions=".Length..], interactionsOnly: true);
+        return;
+    }
+
+    var nativeThumbnailArgument = args.FirstOrDefault(value => value.StartsWith("--background-thumbnails=", StringComparison.OrdinalIgnoreCase));
+    if (nativeThumbnailArgument is not null)
+    {
+        BackgroundConversationVerification.Run(nativeThumbnailArgument["--background-thumbnails=".Length..], thumbnailsOnly: true);
+        return;
+    }
+
+    var nativeConversationArgument = args.FirstOrDefault(value => value.StartsWith("--background-conversations=", StringComparison.OrdinalIgnoreCase));
+    if (nativeConversationArgument is not null)
+    {
+        BackgroundConversationVerification.Run(nativeConversationArgument["--background-conversations=".Length..]);
+        return;
+    }
+
+    var nativePreviewArgument = args.FirstOrDefault(value => value.StartsWith("--background-native-preview=", StringComparison.OrdinalIgnoreCase));
+    if (nativePreviewArgument is not null)
+    {
+        BackgroundPreviewVerification.Run(nativePreviewArgument["--background-native-preview=".Length..]);
+        return;
+    }
+
+    var imagePreviewArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-image-preview=", StringComparison.OrdinalIgnoreCase));
+    if (imagePreviewArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(imagePreviewArgument["--offscreen-image-preview=".Length..], imagePreviewOnly: true);
+        return;
+    }
+
+    var fileAvailabilityArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-file-availability=", StringComparison.OrdinalIgnoreCase));
+    if (fileAvailabilityArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(fileAvailabilityArgument["--offscreen-file-availability=".Length..], fileAvailabilityOnly: true);
+        return;
+    }
+
+    var identityArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-identity=", StringComparison.OrdinalIgnoreCase));
+    if (identityArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(identityArgument["--offscreen-identity=".Length..], identityOnly: true);
+        return;
+    }
+
+    var nearbyLayoutArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-nearby=", StringComparison.OrdinalIgnoreCase));
+    if (nearbyLayoutArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(nearbyLayoutArgument["--offscreen-nearby=".Length..], nearbyOnly: true);
+        return;
+    }
+
+    var offscreenArgument = args.FirstOrDefault(value => value.StartsWith("--offscreen-layout=", StringComparison.OrdinalIgnoreCase));
+    if (offscreenArgument is not null)
+    {
+        new OffscreenWpfVerification().Run(offscreenArgument["--offscreen-layout=".Length..]);
+        return;
+    }
+
+    var safeBackgroundOnly = args.Contains("--safe-background-only", StringComparer.OrdinalIgnoreCase);
+    if (safeBackgroundOnly || args.Contains("--background-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new TransferReceiverVerification().RunAsync();
+        await new LocalStorageVerification().RunAsync();
+        await new FeedbackVerification().RunAsync();
+        await new SettingsVerification().RunAsync();
+        await ReceiveSettingsVerification.RunAsync();
+        await new WindowSizeVerification().RunAsync();
+        await new SecurityHandshakeVerification().RunAsync();
+        await new UpdateVerification().RunAsync();
+        await new UsbVerification().RunAsync();
+        // The safe suite never starts installation fixtures or touches startup registration.
+        if (!safeBackgroundOnly) await new InstallationVerification().RunAsync();
+        NotificationVerification.Run();
+        new IdentityRecoveryVerification().Run();
+        new BtxProtocolVerification().Run();
+        new FileDragDropVerification().Run();
+        new ChatTimeVerification().Run();
+        new HistoryQueryVerification().Run();
+        await new OutgoingSnapshotVerification().RunAsync();
+        new ImagePreviewViewportVerification().Run();
+        return;
+    }
+
+    if (args.Contains("--installation-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new InstallationVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--usb-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new UsbVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--updates-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new UpdateVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--security-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new SecurityHandshakeVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--feedback-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new FeedbackVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--settings-only", StringComparer.OrdinalIgnoreCase))
+    {
+        await new SettingsVerification().RunAsync();
+        return;
+    }
+
+    if (args.Contains("--history-query-only", StringComparer.OrdinalIgnoreCase))
+    {
+        new HistoryQueryVerification().Run();
+        return;
+    }
+
+    if (args.Contains("--image-preview-only", StringComparer.OrdinalIgnoreCase))
+    {
+        new ImagePreviewViewportVerification().Run(previewSource);
+        return;
+    }
+
+    if (args.Contains("--chat-scrollbar-only", StringComparer.OrdinalIgnoreCase))
+    {
+        new ChatScrollBarVerification().Run();
+        return;
+    }
+
+    var verification = new TransferReceiverVerification();
+    await verification.RunAsync();
+    await new LocalStorageVerification().RunAsync();
+    await new FeedbackVerification().RunAsync();
+    await new SettingsVerification().RunAsync();
+    await new SecurityHandshakeVerification().RunAsync();
+    await new UpdateVerification().RunAsync();
+    await new UsbVerification().RunAsync();
+    new IdentityRecoveryVerification().Run();
+    new BtxProtocolVerification().Run();
+    new FileDragDropVerification().Run();
+    new ChatTimeVerification().Run();
+    new HistoryQueryVerification().Run();
+    await new OutgoingSnapshotVerification().RunAsync();
     new ChatScrollBarVerification().Run();
-    return;
-}
+    new ImagePreviewViewportVerification().Run(previewSource);
 
-var verification = new TransferReceiverVerification();
-await verification.RunAsync();
-await new LocalStorageVerification().RunAsync();
-new IdentityRecoveryVerification().Run();
-new BtxProtocolVerification().Run();
-new FileDragDropVerification().Run();
-new ChatTimeVerification().Run();
-await new OutgoingSnapshotVerification().RunAsync();
-new ChatScrollBarVerification().Run();
-new ImagePreviewViewportVerification().Run(previewSource);
+}
+catch (Exception failure)
+{
+    Console.Error.WriteLine("Verification failed: " + failure);
+    Environment.ExitCode = 1;
+}
 
 internal sealed class ImagePreviewViewportVerification
 {
@@ -182,7 +442,8 @@ internal sealed class ChatScrollBarVerification
             {
                 var app = new App();
                 app.InitializeComponent();
-                var window = new MainWindow(initializeRuntime: false)
+                var testRoot = Path.Combine(Path.GetTempPath(), $"BlueLinkChatLayout-{Guid.NewGuid():N}");
+                var window = new MainWindow(initializeRuntime: false, dataRoot: testRoot)
                 {
                     Width = 1180,
                     Height = 720,
@@ -235,11 +496,13 @@ internal sealed class ChatScrollBarVerification
                         scrollViewer.VerticalOffset <= before ||
                         Math.Abs(scrollViewer.VerticalOffset - scrollViewer.ScrollableHeight) > 0.5)
                         throw new InvalidOperationException("Message scrollbar could not scroll to the end.");
+                    VerifyHistoryWindow();
                 }
                 finally
                 {
                     window.Close();
                     app.Shutdown();
+                    Directory.Delete(testRoot, recursive: true);
                 }
             }
             catch (Exception exception)
@@ -254,7 +517,43 @@ internal sealed class ChatScrollBarVerification
         if (failure is not null) throw new InvalidOperationException(
             "Chat scrollbar WPF verification failed.", failure);
         Console.WriteLine(
-            $"BlueLink chat scrollbar verification passed: SafetyGap={measuredGap:0.##} px; ScrollToEnd=True");
+            $"BlueLink chat scrollbar verification passed: SafetyGap={measuredGap:0.##} px; ScrollToEnd=True; HistoryWindow=True");
+    }
+
+    private static void VerifyHistoryWindow()
+    {
+        var records = new System.Collections.ObjectModel.ObservableCollection<ChatItem>
+        {
+            new(Guid.NewGuid(), "QA Review", true, DateTimeOffset.Now, MessageStatus.Read),
+            new(Guid.NewGuid(), "", false, DateTimeOffset.Now.AddDays(-1), MessageStatus.Received,
+                ChatItemKind.Image, [new(Guid.NewGuid(), Guid.NewGuid(), "QA.png", "image/png", 32)]),
+        };
+        var history = new MessageSearchWindow("QA 回归", records)
+        { Left = -32000, Top = -32000, WindowStartupLocation = WindowStartupLocation.Manual };
+        try
+        {
+            history.Show();
+            history.UpdateLayout();
+            var input = (Wpf.Ui.Controls.TextBox)history.FindName("QueryInput");
+            var results = (ListBox)history.FindName("Results");
+            if (!history.IsVisible || results.Items.Count != 2 || results.SelectedItem is not null)
+                throw new InvalidOperationException("History grouping must not select a result or close during window creation.");
+            input.Text = " review ";
+            history.UpdateLayout();
+            if (results.Items.Count != 1) throw new InvalidOperationException("History input must filter rendered results.");
+            input.Text = "missing QA";
+            if (((TextBlock)history.FindName("EmptyMessage")).Visibility != Visibility.Visible)
+                throw new InvalidOperationException("Empty history result state is missing.");
+            input.Text = "";
+            var imageTab = FindVisualChild<RadioButton>(history, button => (string?)button.Tag == "Images")!;
+            imageTab.IsChecked = true;
+            if (results.Items.Count != 1) throw new InvalidOperationException("Image tab must filter attachment history.");
+            var dateTab = FindVisualChild<RadioButton>(history, button => (string?)button.Tag == "Date")!;
+            dateTab.IsChecked = true;
+            ((DatePicker)history.FindName("DateInput")).SelectedDate = DateTime.Today.AddDays(-1);
+            if (results.Items.Count != 1) throw new InvalidOperationException("Date filter must use the selected local day.");
+        }
+        finally { history.Close(); }
     }
 
     private static T? FindVisualChild<T>(DependencyObject root, Predicate<T>? predicate = null)
@@ -276,7 +575,7 @@ internal sealed class ChatTimeVerification
     public void Run()
     {
         var now = DateTimeOffset.Now;
-        Check(Create(now.Date.AddHours(9).AddMinutes(7)).GroupTimeText == "09:07", "today uses HH:mm");
+        Check(Create(now.Date.AddHours(9).AddMinutes(7)).GroupTimeText == "今天 09:07", "today includes its relative date and HH:mm");
         Check(Create(now.Date.AddDays(-1).AddHours(8).AddMinutes(6)).GroupTimeText == "昨天 08:06", "yesterday label");
         Check(Create(new DateTimeOffset(new DateTime(now.Year - 1, 12, 31, 7, 5, 0), now.Offset)).GroupTimeText ==
               $"{now.Year - 1}年12月31日 07:05", "previous year label");
@@ -404,12 +703,18 @@ internal sealed class BtxProtocolVerification
 {
     public void Run()
     {
-        Check(Convert.ToHexString(ProtocolGreeting.Current.Encode()) == "010100000000001F",
+        Check(Convert.ToHexString(ProtocolGreeting.Current.Encode()) == "010100000000003F",
             "BTX/1.1 greeting vector");
         var legacy = ProtocolGreeting.Decode([1, 0, 0, 0]);
         var downgrade = ProtocolGreeting.Current.Negotiate(legacy);
         Check(downgrade.Minor == 0 && downgrade.Capabilities == BtxCapability.None,
             "BTX/1.0 capability downgrade");
+        var previous = ProtocolGreeting.Decode(Convert.FromHexString("010100000000001F"));
+        var previousNegotiation = ProtocolGreeting.Current.Negotiate(previous);
+        Check(previousNegotiation.Capabilities == (BtxCapability)0x1f &&
+            (previousNegotiation.Capabilities & BtxCapability.MtpFiles) == BtxCapability.None,
+            "previous BTX/1.1 peer preserves Bluetooth capabilities without MTP");
+        Check((byte)WireMessageType.MtpControl == 33, "MTP control message code");
 
         var hash = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();
         var message = new ChatEnvelope(
@@ -458,7 +763,7 @@ internal sealed class BtxProtocolVerification
         Check(truncatedRejected, "truncated structured message rejection");
         Check(WireMessagePriority.Of(WireMessageType.TransferControl) == 0,
             "transfer control bypasses bulk frames");
-        Console.WriteLine("BlueLink BTX/1.1 Windows verification passed: 12 checks");
+        Console.WriteLine("BlueLink BTX/1.1 Windows verification passed: 14 checks");
     }
 
     private static void Check(bool condition, string message)
@@ -480,13 +785,30 @@ internal sealed class LocalStorageVerification
 
             var settings = BlueLinkSettings.Defaults(Path.Combine(root, "inbox")) with
             {
-                MaxConcurrentConnections = 6,
                 ReceiveSizeLimitBytes = 123_456_789,
-                TransferPanelExpanded = false,
+                DuplicateFilePolicy = "ask",
+                AllowDiscovery = false,
+                ReconnectAfterDisconnect = false,
+                MessageNotifications = false,
+                ConnectionNotifications = false,
+                TransferNotifications = false,
             };
             await database.SaveSettingsAsync(settings);
             var loadedSettings = await database.LoadSettingsAsync();
             Check(loadedSettings == settings, "settings must round-trip through SQLite");
+
+            using (var connection = new NativeSqliteConnection(database.DatabasePath))
+            using (var query = connection.Prepare("SELECT key FROM app_setting WHERE key='max_connections'"))
+                Check(!query.Read(), "new settings do not persist a connection limit");
+            foreach (var legacyLimit in new[] { "1", "4", "8", "999", "invalid" })
+            {
+                using (var connection = new NativeSqliteConnection(database.DatabasePath))
+                using (var insert = connection.Prepare("INSERT OR REPLACE INTO app_setting(key,value) VALUES('max_connections',?)"))
+                    insert.Bind(1, legacyLimit).ExecuteNonQuery();
+                Check(await database.LoadSettingsAsync() == settings, "legacy connection limit is ignored: " + legacyLimit);
+                await database.SaveSettingsAsync(settings);
+                Check(await database.LoadSettingsAsync() == settings, "saving unrelated preferences cannot restore the limit");
+            }
 
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             const string peerId = "0123456789ABCDEF0123456789ABCDEF";
@@ -575,10 +897,12 @@ internal sealed class TransferReceiverVerification
 
         Check(Directory.EnumerateFiles(root, "same-name.bin.*.part").Count() == 2,
             "same-name transfers must use different partial files");
-        await first.FinishAsync(CancellationToken.None);
+        var firstTarget = await first.FinishAsync(CancellationToken.None);
         var target = await second.FinishAsync(CancellationToken.None);
         Check(File.ReadAllBytes(target).SequenceEqual(secondData),
-            "later same-name commit must atomically replace the target");
+            "renamed file must contain the second transfer");
+        Check(target != firstTarget && File.ReadAllBytes(firstTarget).SequenceEqual(firstData),
+            "default same-name handling must preserve both files");
     }
 
     private async Task PreservesAndRetriesACommitBlockedByAnotherHandle(string root)
@@ -588,7 +912,7 @@ internal sealed class TransferReceiverVerification
         var target = Path.Combine(root, "temporarily-locked.bin");
         await File.WriteAllBytesAsync(target, oldData);
         var offer = Offer(Path.GetFileName(target), newData);
-        await using var receiver = new TransferReceiver(root, offer);
+        await using var receiver = new TransferReceiver(root, offer, "overwrite");
         await WriteExtents(receiver, offer, newData);
 
         IOException? commitFailure = null;

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Intentionally no INTERNET permission: BlueLink is Bluetooth-only. -->
+    <!-- Intentionally no INTERNET permission: Message and file channels use Bluetooth or USB, without network sockets. -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
@@ -20,6 +20,7 @@
         android:theme="@style/Theme.BlueLink">
         <activity
             android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -1,0 +1,25 @@
+{
+  "source": "android/app/src/main/res/font/noto_sans_sc.ttf",
+  "sourceSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+  "tool": "fontTools 4.59.2 varLib.instancer updateFontNames=True",
+  "fonts": [
+    {
+      "file": "windows\\BlueLink.App\\Assets\\Fonts\\NotoSansSC-Bold.ttf",
+      "weight": 700,
+      "family": "Noto Sans SC",
+      "sha256": "eae1fe39e2356ae10467c6a0cfa6e3a10f03a3d002e3c6fbf23c139e3bf4130b"
+    },
+    {
+      "file": "windows\\BlueLink.App\\Assets\\Fonts\\NotoSansSC-Medium.ttf",
+      "weight": 500,
+      "family": "Noto Sans SC",
+      "sha256": "6bf4ae073adfa5266b431e16e29c6f9cc2da542bc578073ae3329e4aa290b534"
+    },
+    {
+      "file": "windows\\BlueLink.App\\Assets\\Fonts\\NotoSansSC-Regular.ttf",
+      "weight": 400,
+      "family": "Noto Sans SC",
+      "sha256": "76451f152823f651af6fa513c1d355e6006f3ac945d5d57bf70236ca45323b7e"
+    }
+  ]
+}

@@ -10,6 +10,7 @@
           Compressed="yes"
           IconSourceFile="$(var.IconPath)">
     <BootstrapperApplication>
+      <Payload Name="incoming-install-manifest.json" SourceFile="$(var.ManifestPath)" />
       <Payload Name="WixToolset.Mba.Host.config" SourceFile="$(var.BaOutput)\BlueLink.SetupUI.BootstrapperCore.config" />
       <Payload SourceFile="$(var.BaOutput)\BlueLink.SetupUI.dll" />
       <Payload SourceFile="$(var.BaOutput)\mbanative.dll" />

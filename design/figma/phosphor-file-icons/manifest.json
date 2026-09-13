@@ -1,0 +1,224 @@
+{
+  "source": "phosphor-icons/core",
+  "ref": "2b75f3ad12b420c9504ef05df8d2564a28f8500e",
+  "weight": "duotone",
+  "status": "preview-only",
+  "icons": [
+    {
+      "name": "file-pdf",
+      "label": "PDF",
+      "extensions": "pdf",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-pdf-duotone.svg",
+      "sha": "5f3e46e2751a2e3fc1eedd2ff2fb6c94dfa32259",
+      "file": "svg/file-pdf-duotone.svg"
+    },
+    {
+      "name": "file-doc",
+      "label": "Word",
+      "extensions": "doc · docx",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-doc-duotone.svg",
+      "sha": "c93f70b6371a112b875e2be56b9e57b76d7201e4",
+      "file": "svg/file-doc-duotone.svg"
+    },
+    {
+      "name": "file-xls",
+      "label": "Excel",
+      "extensions": "xls · xlsx",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-xls-duotone.svg",
+      "sha": "47ac1067763a64442bda58f1a4ef98d83993daaa",
+      "file": "svg/file-xls-duotone.svg"
+    },
+    {
+      "name": "file-ppt",
+      "label": "PowerPoint",
+      "extensions": "ppt · pptx",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-ppt-duotone.svg",
+      "sha": "7721199c980d85666df323bc9d08e4de95c16364",
+      "file": "svg/file-ppt-duotone.svg"
+    },
+    {
+      "name": "file-csv",
+      "label": "CSV 表格",
+      "extensions": "csv · tsv",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-csv-duotone.svg",
+      "sha": "f13da21352fb3dfe1c9cbeea22aeb96c3df3a0ed",
+      "file": "svg/file-csv-duotone.svg"
+    },
+    {
+      "name": "file-txt",
+      "label": "纯文本",
+      "extensions": "txt · log",
+      "group": "文档",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-txt-duotone.svg",
+      "sha": "58a23ab1caa8cb5d2a8d4aa0a171831b3d0d8d55",
+      "file": "svg/file-txt-duotone.svg"
+    },
+    {
+      "name": "file-md",
+      "label": "Markdown",
+      "extensions": "md · markdown",
+      "group": "文本",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-md-duotone.svg",
+      "sha": "1d9eaa6e8dabf9df29022f1113aa1ba7af19039e",
+      "file": "svg/file-md-duotone.svg"
+    },
+    {
+      "name": "file-text",
+      "label": "通用文档",
+      "extensions": "rtf · odt",
+      "group": "文本",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-text-duotone.svg",
+      "sha": "daff55db854ffd779edda46423bad37478bdc941",
+      "file": "svg/file-text-duotone.svg"
+    },
+    {
+      "name": "file-image",
+      "label": "通用图片",
+      "extensions": "gif · webp · bmp · heic",
+      "group": "图片",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-image-duotone.svg",
+      "sha": "204531ef1359861b6002c82b3b3ce5dd5aeacdb0",
+      "file": "svg/file-image-duotone.svg"
+    },
+    {
+      "name": "file-png",
+      "label": "PNG 图片",
+      "extensions": "png",
+      "group": "图片",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-png-duotone.svg",
+      "sha": "8a726e4cdae9a4d0725cc1b6cef0fef6add5373a",
+      "file": "svg/file-png-duotone.svg"
+    },
+    {
+      "name": "file-jpg",
+      "label": "JPEG 图片",
+      "extensions": "jpg · jpeg",
+      "group": "图片",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-jpg-duotone.svg",
+      "sha": "074dd22a6f21b43e88fab4db96706aac7bc2e313",
+      "file": "svg/file-jpg-duotone.svg"
+    },
+    {
+      "name": "file-svg",
+      "label": "SVG 矢量",
+      "extensions": "svg",
+      "group": "图片",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-svg-duotone.svg",
+      "sha": "6de2939a6d91f6d79ab41529a9e3c4a33fa7bb47",
+      "file": "svg/file-svg-duotone.svg"
+    },
+    {
+      "name": "file-audio",
+      "label": "音频",
+      "extensions": "mp3 · wav · flac · m4a",
+      "group": "媒体",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-audio-duotone.svg",
+      "sha": "63e822d7d9251f34e3030f29b8a046dd56a7b1b3",
+      "file": "svg/file-audio-duotone.svg"
+    },
+    {
+      "name": "file-video",
+      "label": "视频",
+      "extensions": "mp4 · mkv · mov · avi",
+      "group": "媒体",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-video-duotone.svg",
+      "sha": "e998840206d5cf0972e6e04f408719db35115a80",
+      "file": "svg/file-video-duotone.svg"
+    },
+    {
+      "name": "file-zip",
+      "label": "ZIP 压缩包",
+      "extensions": "zip",
+      "group": "压缩",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-zip-duotone.svg",
+      "sha": "88f333b6e1d1090af9b6c0157d6a27fefed7c429",
+      "file": "svg/file-zip-duotone.svg"
+    },
+    {
+      "name": "file-archive",
+      "label": "通用压缩包",
+      "extensions": "rar · 7z · tar · gz",
+      "group": "压缩",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-archive-duotone.svg",
+      "sha": "069ca54b7ba4f48be26dc4e611ceb6a9b5084d59",
+      "file": "svg/file-archive-duotone.svg"
+    },
+    {
+      "name": "file-code",
+      "label": "代码与数据",
+      "extensions": "json · xml · yaml",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-code-duotone.svg",
+      "sha": "6835d88f853f6d1d108060859b9d785038bbe875",
+      "file": "svg/file-code-duotone.svg"
+    },
+    {
+      "name": "file-html",
+      "label": "HTML",
+      "extensions": "html · htm",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-html-duotone.svg",
+      "sha": "eaa20d7ddaa1669d64c33d0f6242f28a30257907",
+      "file": "svg/file-html-duotone.svg"
+    },
+    {
+      "name": "file-css",
+      "label": "CSS",
+      "extensions": "css · scss · less",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-css-duotone.svg",
+      "sha": "094ca0296ea56b76a9f124cc1411edf0ee022a80",
+      "file": "svg/file-css-duotone.svg"
+    },
+    {
+      "name": "file-js",
+      "label": "JavaScript",
+      "extensions": "js · mjs · cjs",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-js-duotone.svg",
+      "sha": "7ff374a11a1a02877ddf44f5854ae98b066e3618",
+      "file": "svg/file-js-duotone.svg"
+    },
+    {
+      "name": "file-ts",
+      "label": "TypeScript",
+      "extensions": "ts · tsx",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-ts-duotone.svg",
+      "sha": "54695aff45415fedbe91f57ee139856dc8907065",
+      "file": "svg/file-ts-duotone.svg"
+    },
+    {
+      "name": "file-sql",
+      "label": "SQL",
+      "extensions": "sql",
+      "group": "代码",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-sql-duotone.svg",
+      "sha": "95926320051c15ddcce33bacc02cce410461bdd1",
+      "file": "svg/file-sql-duotone.svg"
+    },
+    {
+      "name": "package",
+      "label": "安装包（类别替代）",
+      "extensions": "apk · exe · msi",
+      "group": "安装包",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/package-duotone.svg",
+      "sha": "6e813d2bd32832c5796f964f3b5867519db8d2d6",
+      "file": "svg/package-duotone.svg"
+    },
+    {
+      "name": "file",
+      "label": "未知文件",
+      "extensions": "无扩展名 · 未匹配格式",
+      "group": "其他",
+      "source": "https://github.com/phosphor-icons/core/blob/2b75f3ad12b420c9504ef05df8d2564a28f8500e/assets/duotone/file-duotone.svg",
+      "sha": "ff8a54b2bf8216baa2f2acf51ee32cf5a7597d29",
+      "file": "svg/file-duotone.svg"
+    }
+  ]
+}

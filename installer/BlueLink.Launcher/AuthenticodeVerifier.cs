@@ -1,3 +1,6 @@
+#if NET8_0_OR_GREATER
+#nullable disable
+#endif
 namespace BlueLink.Launcher
 {
     using System;
@@ -16,9 +19,9 @@ namespace BlueLink.Launcher
             {
                 var status = WinVerifyTrust(IntPtr.Zero, ActionGenericVerifyV2, data);
                 if (status != 0) throw new InvalidOperationException("运行时安装包的 Authenticode 签名无效（0x" + status.ToString("X8") + "）。");
-                var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
-                if (certificate.Subject.IndexOf("Microsoft", StringComparison.OrdinalIgnoreCase) < 0)
-                    throw new InvalidOperationException("运行时安装包不是 Microsoft 签名。");
+                using (var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(path)))
+                    if (!certificate.GetNameInfo(X509NameType.SimpleName, false).Equals("Microsoft Corporation", StringComparison.Ordinal))
+                        throw new InvalidOperationException("运行时安装包不是 Microsoft Corporation 签名。");
             }
             finally
             {

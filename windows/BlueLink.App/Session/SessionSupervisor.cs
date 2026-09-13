@@ -2,12 +2,16 @@ using BlueLink.Bluetooth;
 using BlueLink.Domain;
 using BlueLink.Protocol;
 using BlueLink.Security;
+using BlueLink.Transport;
 
 namespace BlueLink.Session;
 
 public sealed record SessionSnapshot(Guid SessionId, string? PeerId, string PeerName,
-    string TransportAddress, ConnectionPhase Phase, string Detail, DateTimeOffset StartedAt)
+    string TransportAddress, ConnectionPhase Phase, string Detail, DateTimeOffset StartedAt,
+    TransportKind Transport = TransportKind.Bluetooth, PeerPlatform Platform = PeerPlatform.Unknown, string? IdentityHint = null)
 {
+    public bool HasPeerProvidedName { get; init; }
+    public bool UsbFileReady { get; init; }
     public string RoutingKey => PeerId ?? SessionId.ToString("N");
 }
 
@@ -18,12 +22,22 @@ public sealed record SessionSnapshot(Guid SessionId, string? PeerId, string Peer
 public sealed class SessionSupervisor : IAsyncDisposable
 {
     private readonly IdentityStore _identity;
-    private readonly Func<string, string, string, Task<bool>> _confirmTrust;
+    private readonly Action<TrustRequest> _presentTrust;
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Entry> _entries = [];
     private readonly Dictionary<string, Guid> _peerIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, Entry> _transferOwners = [];
+    private bool _suspended;
+    private bool _disposed;
 
-    public int MaxConcurrentSessions { get; set; } = 4;
+    public Func<IPeerConnection, IdentityAssociationHandler>? IdentityAssociations { get; set; }
+    public IReadOnlyList<string> IdentityHints(string peerId)
+    {
+        lock (_gate) return _entries.Values.Where(value => value.PeerId?.Equals(peerId, StringComparison.OrdinalIgnoreCase) == true &&
+            value.Phase == ConnectionPhase.Connected && value.IdentityHint is not null).Select(value => value.IdentityHint!).Distinct().ToArray();
+    }
+    public string LocalDeviceName { get; set; } = "";
+    public string OutgoingDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Cache", "Outgoing");
     private string _receiveDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Received");
     private long _maxReceiveBytes = 500L * 1024 * 1024;
@@ -38,13 +52,20 @@ public sealed class SessionSupervisor : IAsyncDisposable
         get => _maxReceiveBytes;
         set { _maxReceiveBytes = value; ForEachSession(session => session.MaxReceiveBytes = value); }
     }
+    public Func<BlueLink.Transfer.IncomingFileDecision, CancellationToken, Task<string?>>? ReceiveDecision { get; set; }
+    private string _duplicateFilePolicy = "rename";
+    public string DuplicateFilePolicy
+    {
+        get => _duplicateFilePolicy;
+        set { _duplicateFilePolicy = BlueLink.Transfer.DuplicateFilePolicy.Normalize(value); ForEachSession(session => session.DuplicateFilePolicy = _duplicateFilePolicy); }
+    }
     public bool AutoAcceptFiles
     {
         get => _autoAcceptFiles;
         set { _autoAcceptFiles = value; ForEachSession(session => session.AutoAcceptFiles = value); }
     }
-    public int ActiveCount { get { lock (_gate) return _entries.Count; } }
-    public bool CanAccept => ActiveCount < Math.Clamp(MaxConcurrentSessions, 1, 8);
+    public int ActiveCount { get { lock (_gate) return PublicSnapshots().Length; } }
+    public bool CanAccept { get { lock (_gate) return !_suspended && !_disposed; } }
 
     public event Action<SessionSnapshot>? SessionChanged;
     public event Action<SessionSnapshot, ChatItem>? MessageReceived;
@@ -52,23 +73,32 @@ public sealed class SessionSupervisor : IAsyncDisposable
     public event Action<SessionSnapshot, ChatReceipt>? ReceiptReceived;
     public event Action<SessionSnapshot, TransferItem>? TransferChanged;
 
-    public SessionSupervisor(IdentityStore identity, Func<string, string, string, Task<bool>> confirmTrust)
+    public SessionSupervisor(IdentityStore identity, Action<TrustRequest> presentTrust)
     {
         _identity = identity;
-        _confirmTrust = confirmTrust;
+        _presentTrust = presentTrust;
     }
 
     public IReadOnlyList<SessionSnapshot> Snapshot()
     {
-        lock (_gate) return _entries.Values.Select(value => value.Snapshot()).ToArray();
+        lock (_gate) return PublicSnapshots();
     }
 
-    public Task<Guid?> AddAsync(RfcommConnection connection, bool listenerRole, string? transportAddress = null)
+    private SessionSnapshot[] PublicSnapshots() => _entries.Values.Where(value => value.PeerId is null ||
+        _peerIndex.GetValueOrDefault(value.PeerId) == value.Id).Select(value => value.Snapshot()).ToArray();
+
+    public bool HasTransport(string peerId, TransportKind transport)
+    {
+        lock (_gate) return _entries.Values.Any(value => value.PeerId?.Equals(peerId, StringComparison.OrdinalIgnoreCase) == true &&
+            value.Transport == transport && value.Phase == ConnectionPhase.Connected && !value.IsClosed);
+    }
+
+    public Task<Guid?> AddAsync(IPeerConnection connection, bool listenerRole, string? transportAddress = null, string? expectedTrustedPeerId = null)
     {
         Entry? entry = null;
         lock (_gate)
         {
-            if (_entries.Count >= Math.Clamp(MaxConcurrentSessions, 1, 8))
+            if (_suspended || _disposed)
             {
                 _ = connection.DisposeAsync();
                 return Task.FromResult<Guid?>(null);
@@ -76,20 +106,27 @@ public sealed class SessionSupervisor : IAsyncDisposable
             var id = Guid.NewGuid();
             PeerSession? session = null;
             session = new PeerSession(connection, listenerRole, _identity,
-                async (name, code, remoteFingerprint) =>
+                request =>
                 {
                     Update(entry!, ConnectionPhase.TrustRequired, "等待用户核对安全代码");
-                    return await _confirmTrust(name, code, remoteFingerprint);
+                    request.TransportAddress = entry!.TransportAddress;
+                    _presentTrust(request);
                 },
                 message => MessageReceived?.Invoke(entry!.Snapshot(), message),
-                transfer => TransferChanged?.Invoke(entry!.Snapshot(), transfer),
+                transfer => PublishTransfer(entry!, transfer),
                 peerId => Ready(entry!, peerId),
                 reason => CloseEntry(entry!, reason),
                 (envelope, outgoing) => EnvelopeReceived?.Invoke(entry!.Snapshot(), envelope, outgoing),
                 receipt => ReceiptReceived?.Invoke(entry!.Snapshot(), receipt), ReceiveDirectory, MaxReceiveBytes,
-                AutoAcceptFiles);
+                AutoAcceptFiles, expectedTrustedPeerId, IdentityAssociations?.Invoke(connection));
+            session.LocalDeviceName = LocalDeviceName;
+            session.OutgoingDirectory = OutgoingDirectory;
+            session.ReceiveDecision = ReceiveDecision;
+            session.DuplicateFilePolicy = DuplicateFilePolicy;
+            session.MtpEnabled = UsbEnabled;
+            session.MtpAvailabilityChanged = _ => { if (entry is not null) SessionChanged?.Invoke(entry.Snapshot()); };
             entry = new Entry(id, connection.PeerName,
-                string.IsNullOrWhiteSpace(transportAddress) ? connection.TransportAddress : transportAddress, session);
+                string.IsNullOrWhiteSpace(transportAddress) ? connection.TransportAddress : transportAddress, session, connection.Transport, connection.Platform, connection.IdentityHint);
             _entries.Add(id, entry);
         }
         Update(entry, ConnectionPhase.SecureHandshake, "正在验证设备身份");
@@ -108,23 +145,31 @@ public sealed class SessionSupervisor : IAsyncDisposable
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
     public Task CancelTransferAsync(Guid sessionId, Guid transferId, string reason = "用户取消") =>
-        Find(sessionId)?.Session.CancelTransferAsync(transferId, reason)
+        FindTransfer(sessionId, transferId)?.Session.CancelTransferAsync(transferId, reason)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
     public Task PauseTransferAsync(Guid sessionId, Guid transferId) =>
-        Find(sessionId)?.Session.PauseTransferAsync(transferId)
+        FindTransfer(sessionId, transferId)?.Session.PauseTransferAsync(transferId)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
     public Task ResumeTransferAsync(Guid sessionId, Guid transferId) =>
-        Find(sessionId)?.Session.ResumeTransferAsync(transferId)
+        FindTransfer(sessionId, transferId)?.Session.ResumeTransferAsync(transferId)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
     public async Task DisconnectAsync(Guid sessionId)
     {
-        var entry = Find(sessionId);
-        if (entry is null) return;
-        await entry.Session.DisposeAsync();
-        CloseEntry(entry, "已断开");
+        Entry[] entries;
+        lock (_gate) entries = _entries.Values.Where(value => value.RoutingId == sessionId).ToArray();
+        foreach (var entry in entries) { CloseEntry(entry, "已断开"); await entry.Session.CloseAsync(); }
+        await AwaitStoppedAsync(entries);
+    }
+
+    public async Task DisconnectTransportAsync(TransportKind transport)
+    {
+        Entry[] entries;
+        lock (_gate) entries = _entries.Values.Where(value => value.Transport == transport).ToArray();
+        foreach (var entry in entries) { CloseEntry(entry, "通道已断开"); await entry.Session.CloseAsync(); }
+        await AwaitStoppedAsync(entries);
     }
 
     private async Task RunAsync(Entry entry)
@@ -135,30 +180,36 @@ public sealed class SessionSupervisor : IAsyncDisposable
 
     private void Ready(Entry entry, string peerId)
     {
-        Entry? existing = null;
+        SessionSnapshot? merged = null;
+        SessionSnapshot? primary = null;
+        string? rejection = null;
         lock (_gate)
         {
             if (entry.IsClosed) return;
-            if (_peerIndex.TryGetValue(peerId, out var existingId) && existingId != entry.Id &&
-                _entries.TryGetValue(existingId, out existing))
-            {
-                // Deterministic duplicate resolution: the older established session wins.
-            }
+            var existing = _peerIndex.TryGetValue(peerId, out var currentId) ? _entries.GetValueOrDefault(currentId) : null;
+            if (_suspended || _disposed || _identity.FindTrustedKey(peerId) is null)
+                rejection = "设备身份或信任关系已变化";
+            else if (_entries.Values.Any(value => value != entry && value.PeerId == peerId && value.Transport == entry.Transport && !value.IsClosed))
+                rejection = "同一设备已有活动会话";
             else
             {
+                if (existing is not null)
+                {
+                    merged = entry.Snapshot() with { Phase = ConnectionPhase.Disconnected, Detail = "同一设备通道已合并" };
+                    entry.RoutingId = existing.RoutingId;
+                }
+                entry.PeerName = entry.Session.PeerName;
                 entry.PeerId = peerId;
                 entry.Phase = ConnectionPhase.Connected;
-                entry.Detail = "端到端加密 · BTX/1.1";
-                _peerIndex[peerId] = entry.Id;
+                entry.Detail = entry.Transport == TransportKind.Usb ? "USB · 端到端加密 · BTX/1.1" : "Bluetooth · 端到端加密 · BTX/1.1";
+                // Keep the authenticated Bluetooth session warm. Existing transfers stay with their owner.
+                if (existing is null || entry.Transport == TransportKind.Usb) _peerIndex[peerId] = entry.Id;
+                primary = _entries[_peerIndex[peerId]].Snapshot();
             }
         }
-        if (existing is not null)
-        {
-            _ = entry.Session.DisposeAsync();
-            CloseEntry(entry, "同一设备已有活动会话");
-            return;
-        }
-        SessionChanged?.Invoke(entry.Snapshot());
+        if (rejection is not null) { CloseEntry(entry, rejection); _ = entry.Session.DisposeAsync(); return; }
+        if (merged is not null) SessionChanged?.Invoke(merged);
+        if (primary is not null) SessionChanged?.Invoke(primary);
     }
 
     private void Update(Entry entry, ConnectionPhase phase, string detail)
@@ -174,20 +225,65 @@ public sealed class SessionSupervisor : IAsyncDisposable
 
     private void CloseEntry(Entry entry, string reason)
     {
+        SessionSnapshot? changed = null;
+        TransferItem[] interrupted;
         lock (_gate)
         {
             if (entry.IsClosed) return;
             entry.IsClosed = true;
+            interrupted = entry.Transfers.Close();
             _entries.Remove(entry.Id);
-            if (entry.PeerId is not null && _peerIndex.TryGetValue(entry.PeerId, out var indexed) && indexed == entry.Id)
-                _peerIndex.Remove(entry.PeerId);
+            foreach (var transfer in _transferOwners.Where(value => value.Value == entry).Select(value => value.Key).ToArray())
+                _transferOwners.Remove(transfer);
             entry.Phase = ConnectionPhase.Disconnected;
             entry.Detail = reason;
+            if (entry.PeerId is null) changed = entry.Snapshot();
+            else if (_peerIndex.GetValueOrDefault(entry.PeerId) == entry.Id)
+            {
+                var alternate = !_suspended && !_disposed && _identity.FindTrustedKey(entry.PeerId) is not null
+                    ? _entries.Values.Where(value => value.PeerId == entry.PeerId && value.Phase == ConnectionPhase.Connected && !value.IsClosed)
+                        .OrderByDescending(value => value.Transport == TransportKind.Usb).FirstOrDefault() : null;
+                if (alternate is not null)
+                {
+                    _peerIndex[entry.PeerId] = alternate.Id;
+                    changed = alternate.Snapshot();
+                }
+                else { _peerIndex.Remove(entry.PeerId); changed = entry.Snapshot(); }
+            }
         }
-        SessionChanged?.Invoke(entry.Snapshot());
+        foreach (var transfer in interrupted) TransferChanged?.Invoke(entry.Snapshot(), transfer);
+        if (changed is not null) SessionChanged?.Invoke(changed);
     }
 
-    private Entry? Find(Guid id) { lock (_gate) return _entries.GetValueOrDefault(id); }
+    // Gate new sends immediately when settings change, before asynchronous USB disposal finishes.
+    private bool _usbEnabled;
+    public bool UsbEnabled { get => _usbEnabled; set { _usbEnabled = value; ForEachSession(session => session.MtpEnabled = value); } }
+
+    public void RequestMtpProbe() { if (UsbEnabled) ForEachSession(session => session.RequestMtpProbe()); }
+
+    private Entry? Find(Guid id)
+    {
+        lock (_gate) return _entries.Values.FirstOrDefault(value => value.RoutingId == id && !value.IsClosed &&
+            (UsbEnabled ? value.PeerId is null || _peerIndex.GetValueOrDefault(value.PeerId) == value.Id :
+                value.Transport == TransportKind.Bluetooth && value.Phase == ConnectionPhase.Connected));
+    }
+    private Entry? FindTransfer(Guid id, Guid transferId)
+    {
+        lock (_gate) return _transferOwners.TryGetValue(transferId, out var owner) && owner.RoutingId == id && !owner.IsClosed ? owner : Find(id);
+    }
+    private void PublishTransfer(Entry entry, TransferItem transfer)
+    {
+        TransferItem? snapshot;
+        lock (_gate)
+        {
+            snapshot = entry.Transfers.Record(transfer);
+            if (snapshot is null) return;
+            if (snapshot.IsActive) _transferOwners[transfer.Id] = entry;
+            else _transferOwners.Remove(transfer.Id);
+        }
+        TransferChanged?.Invoke(entry.Snapshot(), snapshot);
+    }
+
     private void ForEachSession(Action<PeerSession> action)
     {
         PeerSession[] sessions;
@@ -197,20 +293,39 @@ public sealed class SessionSupervisor : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        Entry[] sessions;
-        lock (_gate) sessions = _entries.Values.ToArray();
-        foreach (var entry in sessions)
-        {
-            try { await entry.Session.DisposeAsync(); } catch { }
-            CloseEntry(entry, "应用已关闭");
-        }
+        lock (_gate) _disposed = true;
+        await SuspendAsync();
     }
 
-    private sealed class Entry(Guid id, string peerName, string transportAddress, PeerSession session)
+    public async Task SuspendAsync()
+    {
+        Entry[] sessions;
+        lock (_gate) { _suspended = true; sessions = _entries.Values.ToArray(); }
+        foreach (var entry in sessions)
+        {
+            CloseEntry(entry, "应用已关闭");
+            try { await entry.Session.CloseAsync(); } catch { }
+        }
+        await AwaitStoppedAsync(sessions);
+    }
+
+    private static async Task AwaitStoppedAsync(IEnumerable<Entry> entries)
+    {
+        foreach (var entry in entries)
+            if (entry.RunTask is { } task)
+                try { await task.ConfigureAwait(false); } catch { /* PeerSession reports the terminal failure. */ }
+    }
+
+    public void Resume() { lock (_gate) { if (!_disposed) _suspended = false; } }
+
+    private sealed class Entry(Guid id, string peerName, string transportAddress, PeerSession session, TransportKind transport, PeerPlatform platform, string? identityHint)
     {
         public Guid Id { get; } = id;
+        public Guid RoutingId { get; set; } = id;
+        public TransportKind Transport { get; } = transport;
+        public PeerPlatform Platform { get; } = platform;
         public string? PeerId { get; set; }
-        public string PeerName { get; } = peerName;
+        public string PeerName { get; set; } = peerName;
         public string TransportAddress { get; } = transportAddress;
         public PeerSession Session { get; } = session;
         public ConnectionPhase Phase { get; set; } = ConnectionPhase.Connecting;
@@ -218,6 +333,8 @@ public sealed class SessionSupervisor : IAsyncDisposable
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
         public Task? RunTask { get; set; }
         public bool IsClosed { get; set; }
-        public SessionSnapshot Snapshot() => new(Id, PeerId, PeerName, TransportAddress, Phase, Detail, StartedAt);
+        public SessionTransferLedger Transfers { get; } = new();
+        public string? IdentityHint { get; } = identityHint;
+        public SessionSnapshot Snapshot() => new(RoutingId, PeerId, PeerName, TransportAddress, Phase, Detail, StartedAt, Transport, Platform, IdentityHint) { HasPeerProvidedName = Session.HasPeerProvidedName, UsbFileReady = Session.MtpReady };
     }
 }

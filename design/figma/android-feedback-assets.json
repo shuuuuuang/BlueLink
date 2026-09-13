@@ -1,0 +1,14 @@
+{
+  "fileKey": "Tna537kDQdpsVwDX0lXlCs",
+  "scale": 3,
+  "assets": [
+    {
+      "nodeId": "976:4475",
+      "file": "figma_feedback_success.png"
+    },
+    {
+      "nodeId": "976:4480",
+      "file": "figma_feedback_failure.png"
+    }
+  ]
+}

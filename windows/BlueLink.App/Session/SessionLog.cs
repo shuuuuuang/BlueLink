@@ -6,15 +6,16 @@ internal static class SessionLog
 {
     private static readonly object Gate = new();
     public static volatile bool Enabled = true;
+    public static string DirectoryPath { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueLink", "Logs");
+    public static string FilePath => Path.Combine(DirectoryPath, "windows-session.log");
 
     public static void Write(string component, string message, Exception? failure = null)
     {
         if (!Enabled) return;
         try
         {
-            var directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "BlueLink", "Logs");
+            var directory = DirectoryPath;
             Directory.CreateDirectory(directory);
             var line = new StringBuilder()
                 .Append('[').Append(DateTimeOffset.Now.ToString("O")).Append("] ")

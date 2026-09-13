@@ -1,6 +1,8 @@
 # 蓝联 / BlueLink
 
-BlueLink 是一个 Android 与 Windows 之间只使用 Bluetooth 的端到端通信应用。应用使用 BLE Presence 查找当前在附近的 BlueLink 节点，通过 GATT Rendezvous 协商 RFCOMM 参数，再在可靠双向流上运行统一的 BTX/1.1 安全会话、聊天和文件传输。
+BlueLink 是一个 Android 与 Windows 之间的端到端本地通信应用，以 Bluetooth 为基础通道。应用使用 BLE Presence 查找当前在附近的 BlueLink 节点，通过 GATT Rendezvous 协商 RFCOMM 参数，再在可靠双向流上运行统一的 BTX/1.1 安全会话、聊天和文件传输。
+
+USB 配件通道已接入双端源码，默认关闭；使用同一 BTX/1.1 身份认证与加密，安全握手完成后优先使用 USB。同一设备的蓝牙通道仍可备用。Android 已完成部分真机页面验收，实际 AOA、驱动、双端文件传输与拔插回退尚未完成验收，详见 `docs/IMPLEMENTATION_STATUS.md`。
 
 运行时不会申请或使用互联网、Wi-Fi、Wi-Fi Direct、局域网、HTTP 或 WebSocket。构建阶段仍需从 Google、NuGet 和 Gradle 仓库下载编译依赖。
 
