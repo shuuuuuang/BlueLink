@@ -1,13 +1,14 @@
 param(
     [ValidateSet('x86','x64','arm64','all')][string[]]$Architecture = @('all'),
     [ValidateSet('Installer','Portable','Both')][string]$Format = 'Both',
+    [ValidateSet('Bundled','External','Both')][string]$InstallerRuntime = 'Both',
     [string]$DotnetPath = '',
     [string]$OutputDirectory = '',
     [string]$NuGetConfig = (Join-Path $PSScriptRoot '../NuGet.Config'),
     [switch]$Offline,
     [switch]$SkipTests
 )
-# Builds unsigned review installers and self-contained portable packages. Does not install them.
+# Builds bundled/external-runtime review installers and self-contained portable packages. Does not install them.
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 if (-not $DotnetPath) {
@@ -49,7 +50,34 @@ function Assert-PeMachine([string]$Path, [string]$Architecture) {
     } finally { $reader.Dispose() }
 }
 function Record-Artifact([string]$Path, [string]$Arch, [string]$Kind) {
-    $manifest.Add([ordered]@{ File = [IO.Path]::GetFileName($Path); Architecture = $Arch; Kind = $Kind; Version = $version; SelfContained = $true; RuntimeVerification = $nativeVerification; Signed = $false; Size = (Get-Item -LiteralPath $Path).Length; Sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash })
+    $manifest.Add([ordered]@{ File = [IO.Path]::GetFileName($Path); Architecture = $Arch; Kind = $Kind; Version = $version; SelfContained = $bundled; RuntimeVerification = $nativeVerification; Signed = $false; Size = (Get-Item -LiteralPath $Path).Length; Sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash })
+}
+function Get-ExternalRuntime([string]$Rid) {
+    $items = @(Get-Content -LiteralPath (Join-Path $root 'installer/runtime-packages.json') -Raw | ConvertFrom-Json)
+    $matching = @($items | Where-Object Rid -eq $Rid)
+    if ($matching.Count -ne 1) { throw "Expected one official runtime entry for $Rid." }
+    $info = $matching[0]
+    $expectedName = "windowsdesktop-runtime-$($info.Version)-$Rid.exe"
+    if ($info.Version -notmatch '^8[.]0[.][0-9]+$' -or $info.FileName -cne $expectedName -or
+        $info.Url -cne "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/$($info.Version)/$expectedName" -or
+        $info.Sha512 -notmatch '^[0-9a-fA-F]{128}$' -or $info.Size -le 0 -or $info.Size -gt 256MB) {
+        throw 'Invalid pinned Microsoft runtime metadata.'
+    }
+    $cache = Join-Path $root '.build/dotnet-runtime-multiarch'
+    New-Item -ItemType Directory -Path $cache -Force | Out-Null
+    $path = Join-Path $cache $expectedName
+    if (-not (Test-Path -LiteralPath $path)) {
+        if ($Offline) { throw "Offline runtime payload missing: $path" }
+        Invoke-WebRequest -Uri $info.Url -OutFile $path
+    }
+    if ((Get-Item -LiteralPath $path).Length -ne $info.Size -or (Get-FileHash -LiteralPath $path -Algorithm SHA512).Hash -ne $info.Sha512) {
+        throw "Runtime download integrity check failed: $path"
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        throw "Runtime is not signed by Microsoft: $path"
+    }
+    return @{ Info = $info; Path = $path }
 }
 if (-not ('BlueLinkPackageSummary' -as [type])) {
     Add-Type -TypeDefinition @"
@@ -78,118 +106,168 @@ Push-Location $root
 try {
     $buildOptions = @('-c','Release','--no-restore','-m:1','-nodeReuse:false','-p:UseSharedCompilation=false')
     foreach ($arch in $architectures) {
-        Write-Host "Building Windows $arch ($Format)..."
-        $rid = "win-$arch"
-        $work = Join-Path $OutputDirectory $rid
-        New-Item -ItemType Directory -Path $work | Out-Null
-        $publish = Join-Path $work 'publish'
-        $appProject = 'windows/BlueLink.App/BlueLink.App.csproj'
-        Restore-Project $appProject $rid (Join-Path $work 'restore-app.log')
-        Invoke-Dotnet (@('publish',$appProject) + $buildOptions + @('-r',$rid,'--self-contained','true','-p:PublishSingleFile=false','-p:PublishTrimmed=false','-p:DebugType=None','-p:DebugSymbols=false','-o',$publish)) (Join-Path $work 'publish.log')
-        foreach ($native in @('BlueLink.exe','coreclr.dll','hostfxr.dll','wpfgfx_cor3.dll')) { Assert-PeMachine (Join-Path $publish $native) $arch }
-        $runtime = Get-Content -LiteralPath (Join-Path $publish 'BlueLink.runtimeconfig.json') -Raw | ConvertFrom-Json
-        if (-not $runtime.runtimeOptions.includedFrameworks -or $runtime.runtimeOptions.frameworks) { throw 'Expected self-contained runtime config.' }
-        $nativeVerification = 'Not verified on this host'
-        $hostArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-        $canRun = $arch -eq $hostArchitecture -or ($arch -eq 'x86' -and $hostArchitecture -in @('x64','arm64')) -or ($arch -eq 'x64' -and $hostArchitecture -eq 'arm64' -and [Environment]::OSVersion.Version.Build -ge 22000)
-        if (-not $SkipTests -and $canRun) {
-            $verification = Join-Path $work 'verification'
-            $verificationProject = 'windows/BlueLink.TransferVerification/BlueLink.TransferVerification.csproj'
-            Restore-Project $verificationProject $rid (Join-Path $work 'restore-verification.log')
-            Invoke-Dotnet (@('publish',$verificationProject) + $buildOptions + @('-r',$rid,'--self-contained','true','-p:DebugType=None','-p:DebugSymbols=false','-o',$verification)) (Join-Path $work 'build-verification.log')
-            # Exercise the exact app assembly included in the artifact.
-            Copy-Item -LiteralPath (Join-Path $publish 'BlueLink.dll') -Destination (Join-Path $verification 'BlueLink.dll') -Force
-            & (Join-Path $verification 'BlueLink.TransferVerification.exe') --portable-only *> (Join-Path $work 'runtime-tests.log')
-            if ($LASTEXITCODE -ne 0) { throw "Native $arch regression failed. See $work/runtime-tests.log" }
-            [IO.File]::WriteAllText((Join-Path $verification 'BlueLink.portable'), 'portable')
-            & (Join-Path $verification 'BlueLink.TransferVerification.exe') --portable-probe *> (Join-Path $work 'portable-probe.log')
-            if ($LASTEXITCODE -ne 0) { throw "Portable $arch probe failed. See $work/portable-probe.log" }
-            $nativeVerification = 'Passed: SQLite, relocation, local data roots and update policy'
-        }
-        if ($Format -in @('Portable','Both')) {
-            # Clone only the freshly published payload; never copy user Data or Download contents.
-            $portable = Join-Path $work 'portable'
-            Copy-Item -LiteralPath $publish -Destination $portable -Recurse
-            [IO.File]::WriteAllText((Join-Path $portable 'BlueLink.portable'), "BlueLink portable $version $rid`n")
-            New-Item -ItemType Directory -Path (Join-Path $portable 'Data'),(Join-Path $portable 'Download') | Out-Null
-            [IO.File]::WriteAllText((Join-Path $portable 'PORTABLE.txt'), "Extract to a writable directory and run BlueLink.exe. Keep BlueLink.portable, Data and Download when updating. Exit BlueLink before moving the directory. Identity keys use Windows user protection; another account/PC requires trust verification again. External file paths are not moved. This unsigned build is for review.`r`n")
-            $zip = Join-Path $OutputDirectory "BlueLink-$version-$rid-Portable.zip"
-            [IO.Compression.ZipFile]::CreateFromDirectory($portable, $zip)
-            Record-Artifact $zip $arch 'Portable'
-        }
-        if ($Format -in @('Installer','Both')) {
-            $stage = Join-Path $work 'stage'
-            New-Item -ItemType Directory -Path $stage,(Join-Path $stage 'bootstrap'),(Join-Path $stage 'Download') | Out-Null
-            Copy-Item -LiteralPath $publish -Destination (Join-Path $stage 'app') -Recurse
-            # WiX 4 managed BA uses the x86 .NET Framework host on ARM64; client/runtime remain native ARM64.
-            $hostArch = if ($arch -eq 'arm64') { 'x86' } else { $arch }
-            $hostRid = "win-$hostArch"
-            foreach ($component in @('Launcher','Uninstall','SetupUI','Installation.Tests')) {
-                $project = "installer/BlueLink.$component/BlueLink.$component.csproj"
-                $output = Join-Path $work $component
-                Restore-Project $project $hostRid (Join-Path $work "restore-$component.log")
-                Invoke-Dotnet (@('build',$project) + $buildOptions + @('-r',$hostRid,"-p:PlatformTarget=$hostArch",'-o',$output)) (Join-Path $work "build-$component.log")
-                if ($component -in @('Launcher','Uninstall')) {
-                    foreach ($file in Get-ChildItem -LiteralPath $output -File | Where-Object Extension -ne '.pdb') {
-                        $destination = if ($file.Name -in @('BlueLink.exe','BlueLink.exe.config','Uninstall.exe','Uninstall.exe.config')) { $stage } else { Join-Path $stage 'bootstrap' }
-                        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+        $deployments = if ($Format -eq 'Portable') { @('Bundled') }
+            elseif ($InstallerRuntime -eq 'Both' -or ($InstallerRuntime -eq 'External' -and $Format -eq 'Both')) { @('Bundled','External') }
+            else { @($InstallerRuntime) }
+        foreach ($deployment in $deployments) {
+            $bundled = $deployment -eq 'Bundled'
+            $runtimeFlag = $bundled.ToString().ToLowerInvariant()
+            $bundleFlag = [int]$bundled
+            $externalRuntime = $null
+            Write-Host "Building Windows $arch ($Format, $deployment runtime)..."
+
+            $rid = "win-$arch"
+            $work = Join-Path $OutputDirectory ($rid + '-' + $deployment.ToLowerInvariant())
+            New-Item -ItemType Directory -Path $work | Out-Null
+            $publish = Join-Path $work 'publish'
+            $appProject = 'windows/BlueLink.App/BlueLink.App.csproj'
+            Restore-Project $appProject $rid (Join-Path $work 'restore-app.log')
+            Invoke-Dotnet (@('publish',$appProject) + $buildOptions + @('-r',$rid,'--self-contained',$runtimeFlag,'-p:PublishSingleFile=false','-p:PublishTrimmed=false','-p:DebugType=None','-p:DebugSymbols=false','-o',$publish)) (Join-Path $work 'publish.log')
+            Assert-PeMachine (Join-Path $publish 'BlueLink.exe') $arch
+            if ($bundled) {
+                foreach ($native in @('coreclr.dll','hostfxr.dll','wpfgfx_cor3.dll')) { Assert-PeMachine (Join-Path $publish $native) $arch }
+            } else {
+                foreach ($native in @('coreclr.dll','hostfxr.dll','PresentationFramework.dll','System.Windows.Forms.dll','System.Private.CoreLib.dll')) {
+                    if (Test-Path -LiteralPath (Join-Path $publish $native)) { throw "NoRuntime publish contains a framework file: $native" }
+                }
+                $deps = Get-Content -LiteralPath (Join-Path $publish 'BlueLink.deps.json') -Raw | ConvertFrom-Json
+                if (@($deps.libraries.PSObject.Properties.Name | Where-Object { $_ -match '^runtimepack[.]Microsoft[.](NETCore|WindowsDesktop)[.]App' }).Count) {
+                    throw 'NoRuntime publish must not include runtime packs.'
+                }
+                $externalRuntime = Get-ExternalRuntime $rid
+            }
+            $runtime = Get-Content -LiteralPath (Join-Path $publish 'BlueLink.runtimeconfig.json') -Raw | ConvertFrom-Json
+            if ($bundled) {
+                if (-not $runtime.runtimeOptions.includedFrameworks -or $runtime.runtimeOptions.frameworks) { throw 'Expected self-contained runtime config.' }
+            } elseif ($runtime.runtimeOptions.includedFrameworks -or
+                -not @($runtime.runtimeOptions.frameworks | Where-Object { $_.name -eq 'Microsoft.WindowsDesktop.App' -and $_.version -like '8.*' }).Count) {
+                throw 'Expected framework-dependent .NET Desktop 8 runtime config.'
+            }
+            $nativeVerification = 'Not verified on this host'
+            $hostArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+            $canRun = $arch -eq $hostArchitecture -or ($arch -eq 'x86' -and $hostArchitecture -in @('x64','arm64')) -or ($arch -eq 'x64' -and $hostArchitecture -eq 'arm64' -and [Environment]::OSVersion.Version.Build -ge 22000)
+            if (-not $SkipTests -and $canRun) {
+                $verification = Join-Path $work 'verification'
+                $verificationProject = 'windows/BlueLink.TransferVerification/BlueLink.TransferVerification.csproj'
+                Restore-Project $verificationProject $rid (Join-Path $work 'restore-verification.log')
+                Invoke-Dotnet (@('publish',$verificationProject) + $buildOptions + @('-r',$rid,'--self-contained','true','-p:DebugType=None','-p:DebugSymbols=false','-o',$verification)) (Join-Path $work 'build-verification.log')
+                # Exercise the exact app assembly included in the artifact.
+                Copy-Item -LiteralPath (Join-Path $publish 'BlueLink.dll') -Destination (Join-Path $verification 'BlueLink.dll') -Force
+                & (Join-Path $verification 'BlueLink.TransferVerification.exe') --portable-only *> (Join-Path $work 'runtime-tests.log')
+                if ($LASTEXITCODE -ne 0) { throw "Native $arch regression failed. See $work/runtime-tests.log" }
+                [IO.File]::WriteAllText((Join-Path $verification 'BlueLink.portable'), 'portable')
+                & (Join-Path $verification 'BlueLink.TransferVerification.exe') --portable-probe *> (Join-Path $work 'portable-probe.log')
+                if ($LASTEXITCODE -ne 0) { throw "Portable $arch probe failed. See $work/portable-probe.log" }
+                & (Join-Path $verification 'BlueLink.TransferVerification.exe') --runtime-packages-only *> (Join-Path $work 'runtime-detection-tests.log')
+                if ($LASTEXITCODE -ne 0) { throw "Runtime architecture regression failed. See $work/runtime-detection-tests.log" }
+                $nativeVerification = 'Passed: SQLite, relocation, local data roots, update policy and runtime detection'
+            }
+            if ($bundled -and $Format -in @('Portable','Both')) {
+                # Clone only the freshly published payload; never copy user Data or Download contents.
+                $portable = Join-Path $work 'portable'
+                Copy-Item -LiteralPath $publish -Destination $portable -Recurse
+                [IO.File]::WriteAllText((Join-Path $portable 'BlueLink.portable'), "BlueLink portable $version $rid`n")
+                New-Item -ItemType Directory -Path (Join-Path $portable 'Data'),(Join-Path $portable 'Download') | Out-Null
+                [IO.File]::WriteAllText((Join-Path $portable 'PORTABLE.txt'), "Extract to a writable directory and run BlueLink.exe. Keep BlueLink.portable, Data and Download when updating. Exit BlueLink before moving the directory. Identity keys use Windows user protection; another account/PC requires trust verification again. External file paths are not moved. This unsigned build is for review.`r`n")
+                $zip = Join-Path $OutputDirectory "BlueLink-$version-$rid-Portable.zip"
+                [IO.Compression.ZipFile]::CreateFromDirectory($portable, $zip)
+                Record-Artifact $zip $arch 'Portable'
+            }
+            if ($Format -in @('Installer','Both') -and ($InstallerRuntime -eq 'Both' -or $InstallerRuntime -eq $deployment)) {
+                $stage = Join-Path $work 'stage'
+                New-Item -ItemType Directory -Path $stage,(Join-Path $stage 'bootstrap'),(Join-Path $stage 'Download') | Out-Null
+                Copy-Item -LiteralPath $publish -Destination (Join-Path $stage 'app') -Recurse
+                # WiX 4 managed BA uses the x86 .NET Framework host on ARM64; client/runtime remain native ARM64.
+                $hostArch = if ($arch -eq 'arm64') { 'x86' } else { $arch }
+                $hostRid = "win-$hostArch"
+                foreach ($component in @('Launcher','Uninstall','SetupUI','Installation.Tests')) {
+                    $project = "installer/BlueLink.$component/BlueLink.$component.csproj"
+                    $output = Join-Path $work $component
+                    Restore-Project $project $hostRid (Join-Path $work "restore-$component.log")
+                    Invoke-Dotnet (@('build',$project) + $buildOptions + @('-r',$hostRid,"-p:PlatformTarget=$hostArch",'-o',$output)) (Join-Path $work "build-$component.log")
+                    if ($component -in @('Launcher','Uninstall')) {
+                        foreach ($file in Get-ChildItem -LiteralPath $output -File | Where-Object Extension -ne '.pdb') {
+                            $destination = if ($file.Name -in @('BlueLink.exe','BlueLink.exe.config','Uninstall.exe','Uninstall.exe.config')) { $stage } else { Join-Path $stage 'bootstrap' }
+                            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+                        }
                     }
                 }
+                $registration = 'Software\BlueLink.Review'
+                $packageUpgrade = '{1968FCA3-785D-49B1-9328-62EC6101FB9A}'
+                $bundleUpgrade = '{BEF13DA0-A4EB-44EB-82F2-0A608304CC25}'
+                [xml]$config = Get-Content -LiteralPath (Join-Path $stage 'Uninstall.exe.config') -Raw
+                foreach ($setting in $config.configuration.appSettings.add) {
+                    if ($setting.key -eq 'ProductRegistryKey') { $setting.value = $registration }
+                    if ($setting.key -eq 'BundleUpgradeCode') { $setting.value = $bundleUpgrade }
+                }
+                $config.Save((Join-Path $stage 'Uninstall.exe.config'))
+                if ($bundled) {
+                    [ordered]@{ RuntimeIdentifier = $rid; SelfContained = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'bootstrap/bundled-runtime.json') -Encoding utf8
+                    [ordered]@{ Version = @($runtime.runtimeOptions.includedFrameworks | Where-Object name -eq 'Microsoft.WindowsDesktop.App')[0].version; Rid = $rid; SelfContained = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'bootstrap/runtime-package.json') -Encoding utf8
+                } else {
+                    $externalRuntime.Info | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'bootstrap/runtime-package.json') -Encoding utf8
+                }
+                $ownership = Join-Path $stage '.bluelink-install.json'
+                $generated = Join-Path $work 'Package.Generated.wxs'
+                & (Join-Path $PSScriptRoot 'generate-wix-payload.ps1') -AppPublishDir (Join-Path $stage 'app') -BootstrapDir (Join-Path $stage 'bootstrap') -ManifestPath $ownership -OutputFile $generated -Version $version -GuidNamespace "BlueLink.Review/$arch/" *> (Join-Path $work 'payload.log')
+                $payload = Get-Content -LiteralPath $ownership -Raw | ConvertFrom-Json
+                & (Join-Path $work 'Installation.Tests/BlueLink.Installation.Tests.exe') $stage (Join-Path $root ('.acceptance/install-ownership-' + [Guid]::NewGuid().ToString('N'))) *> (Join-Path $work 'ownership.log')
+                if ($LASTEXITCODE -ne 0) { throw 'Installation ownership verification failed.' }
+                foreach ($component in @('Package','Bundle')) { Restore-Project "installer/BlueLink.$component/BlueLink.$component.wixproj" '' (Join-Path $work "restore-$component.log") }
+                $productCode = [Guid]::NewGuid().ToString('B')
+                $provider = 'BlueLink.Review.' + [Guid]::NewGuid().ToString('N')
+                $common = $buildOptions + @("-p:ProductVersion=$version","-p:ProductCode=$productCode","-p:PackageUpgradeCode=$packageUpgrade","-p:BundleUpgradeCode=$bundleUpgrade","-p:BundleProviderKey=$provider","-p:ProductRegistryKey=$registration","-p:ManifestPath=$ownership")
+                $msiArgs = @('build','installer/BlueLink.Package/BlueLink.Package.wixproj','-t:Rebuild') + $common + @("-p:Platform=$arch","-p:InstallerPlatform=$arch",'-p:MajorUpgradeSchedule=afterInstallInitialize','-p:AllowSameVersionUpgrades=yes',"-p:GeneratedPayloadPath=$generated","-p:ProductName=BlueLink Review ($arch)","-p:LauncherExe=$stage\BlueLink.exe","-p:LauncherConfig=$stage\BlueLink.exe.config","-p:UninstallExe=$stage\Uninstall.exe","-p:UninstallConfig=$stage\Uninstall.exe.config")
+                foreach ($name in @('ApplicationComponentGuid','UninstallerComponentGuid','ManifestComponentGuid','DownloadComponentGuid','StartMenuComponentGuid','DesktopComponentGuid','AutoStartComponentGuid')) { $msiArgs += "-p:$name=" + [Guid]::NewGuid().ToString('B') }
+                Invoke-Dotnet $msiArgs (Join-Path $work 'msi-build.log')
+                $msi = Join-Path $root "installer/BlueLink.Package/bin/$arch/Release/BlueLink.Package.msi"
+                $prerequisites = if ($bundled) { @('-p:IncludePrerequisites=no') } else {
+                    @('-p:IncludePrerequisites=yes', "-p:RuntimePayload=$($externalRuntime.Path)",
+                        "-p:RuntimeDownloadUrl=$($externalRuntime.Info.Url)", "-p:RuntimeVersion=$($externalRuntime.Info.Version)",
+                        "-p:RuntimeSize=$([Math]::Round($externalRuntime.Info.Size / 1MB, 1)) MiB")
+                }
+                Invoke-Dotnet (@('build','installer/BlueLink.Bundle/BlueLink.Bundle.wixproj','-t:Rebuild') + $common + @("-p:Platform=$hostArch","-p:InstallerPlatform=$hostArch","-p:TargetArchitecture=$arch","-p:BundledDesktopRuntime=$bundleFlag","-p:BundleName=BlueLink Review ($arch)","-p:MsiPath=$msi","-p:BaOutput=$work\SetupUI","-p:PayloadFingerprint=$($payload.PayloadFingerprint)") + $prerequisites) (Join-Path $work 'bundle-build.log')
+                $exe = Join-Path $root "installer/BlueLink.Bundle/bin/$hostArch/Release/BlueLink.Bundle.exe"
+                # WiX does not track every preprocessor property in incremental outputs.
+                # Rebuild above, then verify the embedded architecture and exact MSI before publishing.
+                $wixAssets = Get-Content -LiteralPath 'installer/BlueLink.Bundle/obj/project.assets.json' -Raw | ConvertFrom-Json
+                $wixPath = @($wixAssets.packageFolders.PSObject.Properties.Name | ForEach-Object { Join-Path $_ 'wixtoolset.sdk/4.0.6/tools/net6.0/wix.dll' } | Where-Object { Test-Path -LiteralPath $_ }) | Select-Object -First 1
+                if (-not $wixPath) { throw 'WiX extraction tool missing from restored package cache.' }
+                $extracted = Join-Path $work 'bundle-content'
+                $ba = Join-Path $work 'bundle-ba'
+                Invoke-Dotnet @($wixPath,'burn','extract',$exe,'-o',$extracted,'-oba',$ba) (Join-Path $work 'bundle-verification.log')
+                [xml]$burn = Get-Content -LiteralPath (Join-Path $ba 'manifest.xml') -Raw
+                $variables = @{}
+                foreach ($variable in $burn.BurnManifest.Variable) { $variables[$variable.Id] = $variable.Value }
+                if ($variables.TargetArchitecture -ne $arch -or $variables.BundledDesktopRuntime -ne [string]$bundleFlag -or $variables.ExpectedPayloadFingerprint -ne $payload.PayloadFingerprint -or $variables.ExpectedMsiProductCode -ne $productCode) { throw 'Embedded Burn metadata does not match this architecture/payload.' }
+                $runtimePayloads = @($burn.SelectNodes("//*[local-name()='Payload']") | Where-Object { $_.FilePath -like 'windowsdesktop-runtime-*.exe' })
+                if ($bundled -and $runtimePayloads.Count -ne 0) { throw 'Bundled installer unexpectedly contains an external runtime package.' }
+                if (-not $bundled) {
+                    if ($runtimePayloads.Count -ne 1 -or $runtimePayloads[0].Packaging -ne 'external' -or
+                        $runtimePayloads[0].DownloadUrl -ne $externalRuntime.Info.Url -or
+                        [long]$runtimePayloads[0].FileSize -ne $externalRuntime.Info.Size -or
+                        $runtimePayloads[0].Hash -ne $externalRuntime.Info.Sha512) {
+                        throw 'NoRuntime bundle must download the matching runtime externally.'
+                    }
+                    if (Get-ChildItem -LiteralPath $extracted -Recurse -File -Filter 'windowsdesktop-runtime-*.exe') { throw 'NoRuntime bundle embeds the runtime installer.' }
+                }
+                $embedded = @(Get-ChildItem -LiteralPath $extracted -Recurse -Filter '*.msi')
+                if ($embedded.Count -ne 1 -or (Get-FileHash -LiteralPath $embedded[0].FullName).Hash -ne (Get-FileHash -LiteralPath $msi).Hash) { throw 'Burn contains a stale or mismatched MSI.' }
+                if ((Get-FileHash -LiteralPath (Join-Path $ba 'incoming-install-manifest.json')).Hash -ne (Get-FileHash -LiteralPath $ownership).Hash) { throw 'Embedded recovery manifest mismatch.' }
+                Assert-PeMachine (Join-Path $ba 'mbanative.dll') $hostArch
+                $msiTemplate = [BlueLinkPackageSummary]::GetTemplate($msi).Split(';')[0]
+                if ($msiTemplate -ne @{ x86='Intel'; x64='x64'; arm64='Arm64' }[$arch]) { throw "MSI platform mismatch: $msiTemplate vs $arch" }
+                foreach ($kind in @('msi','exe')) {
+                    $source = if ($kind -eq 'msi') { $msi } else { $exe }
+                    $label = if ($bundled) { '' } else { '-NoRuntime' }
+                    $destination = Join-Path $OutputDirectory "BlueLink-Review-$version-$rid$label-Setup.$kind"
+                    Copy-Item -LiteralPath $source -Destination $destination
+                    Record-Artifact $destination $arch $(if ($bundled) { 'ReviewInstaller' } else { 'ReviewInstallerNoRuntime' })
+                }
             }
-            $registration = 'Software\BlueLink.Review'
-            $packageUpgrade = '{1968FCA3-785D-49B1-9328-62EC6101FB9A}'
-            $bundleUpgrade = '{BEF13DA0-A4EB-44EB-82F2-0A608304CC25}'
-            [xml]$config = Get-Content -LiteralPath (Join-Path $stage 'Uninstall.exe.config') -Raw
-            foreach ($setting in $config.configuration.appSettings.add) {
-                if ($setting.key -eq 'ProductRegistryKey') { $setting.value = $registration }
-                if ($setting.key -eq 'BundleUpgradeCode') { $setting.value = $bundleUpgrade }
-            }
-            $config.Save((Join-Path $stage 'Uninstall.exe.config'))
-            [ordered]@{ RuntimeIdentifier = $rid; SelfContained = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'bootstrap/bundled-runtime.json') -Encoding utf8
-            [ordered]@{ Version = @($runtime.runtimeOptions.includedFrameworks | Where-Object name -eq 'Microsoft.WindowsDesktop.App')[0].version; Rid = $rid; SelfContained = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'bootstrap/runtime-package.json') -Encoding utf8
-            $ownership = Join-Path $stage '.bluelink-install.json'
-            $generated = Join-Path $work 'Package.Generated.wxs'
-            & (Join-Path $PSScriptRoot 'generate-wix-payload.ps1') -AppPublishDir (Join-Path $stage 'app') -BootstrapDir (Join-Path $stage 'bootstrap') -ManifestPath $ownership -OutputFile $generated -Version $version -GuidNamespace "BlueLink.Review/$arch/" *> (Join-Path $work 'payload.log')
-            $payload = Get-Content -LiteralPath $ownership -Raw | ConvertFrom-Json
-            & (Join-Path $work 'Installation.Tests/BlueLink.Installation.Tests.exe') $stage (Join-Path $root ('.acceptance/install-ownership-' + [Guid]::NewGuid().ToString('N'))) *> (Join-Path $work 'ownership.log')
-            if ($LASTEXITCODE -ne 0) { throw 'Installation ownership verification failed.' }
-            foreach ($component in @('Package','Bundle')) { Restore-Project "installer/BlueLink.$component/BlueLink.$component.wixproj" '' (Join-Path $work "restore-$component.log") }
-            $productCode = [Guid]::NewGuid().ToString('B')
-            $provider = 'BlueLink.Review.' + [Guid]::NewGuid().ToString('N')
-            $common = $buildOptions + @("-p:ProductVersion=$version","-p:ProductCode=$productCode","-p:PackageUpgradeCode=$packageUpgrade","-p:BundleUpgradeCode=$bundleUpgrade","-p:BundleProviderKey=$provider","-p:ProductRegistryKey=$registration","-p:ManifestPath=$ownership")
-            $msiArgs = @('build','installer/BlueLink.Package/BlueLink.Package.wixproj','-t:Rebuild') + $common + @("-p:Platform=$arch","-p:InstallerPlatform=$arch",'-p:MajorUpgradeSchedule=afterInstallInitialize','-p:AllowSameVersionUpgrades=yes',"-p:GeneratedPayloadPath=$generated","-p:ProductName=BlueLink Review ($arch)","-p:LauncherExe=$stage\BlueLink.exe","-p:LauncherConfig=$stage\BlueLink.exe.config","-p:UninstallExe=$stage\Uninstall.exe","-p:UninstallConfig=$stage\Uninstall.exe.config")
-            foreach ($name in @('ApplicationComponentGuid','UninstallerComponentGuid','ManifestComponentGuid','DownloadComponentGuid','StartMenuComponentGuid','DesktopComponentGuid','AutoStartComponentGuid')) { $msiArgs += "-p:$name=" + [Guid]::NewGuid().ToString('B') }
-            Invoke-Dotnet $msiArgs (Join-Path $work 'msi-build.log')
-            $msi = Join-Path $root "installer/BlueLink.Package/bin/$arch/Release/BlueLink.Package.msi"
-            Invoke-Dotnet (@('build','installer/BlueLink.Bundle/BlueLink.Bundle.wixproj','-t:Rebuild') + $common + @("-p:Platform=$hostArch","-p:InstallerPlatform=$hostArch","-p:TargetArchitecture=$arch",'-p:BundledDesktopRuntime=1',"-p:BundleName=BlueLink Review ($arch)","-p:MsiPath=$msi","-p:BaOutput=$work\SetupUI",'-p:IncludePrerequisites=no',"-p:PayloadFingerprint=$($payload.PayloadFingerprint)")) (Join-Path $work 'bundle-build.log')
-            $exe = Join-Path $root "installer/BlueLink.Bundle/bin/$hostArch/Release/BlueLink.Bundle.exe"
-            # WiX does not track every preprocessor property in incremental outputs.
-            # Rebuild above, then verify the embedded architecture and exact MSI before publishing.
-            $wixAssets = Get-Content -LiteralPath 'installer/BlueLink.Bundle/obj/project.assets.json' -Raw | ConvertFrom-Json
-            $wixPath = @($wixAssets.packageFolders.PSObject.Properties.Name | ForEach-Object { Join-Path $_ 'wixtoolset.sdk/4.0.6/tools/net6.0/wix.dll' } | Where-Object { Test-Path -LiteralPath $_ }) | Select-Object -First 1
-            if (-not $wixPath) { throw 'WiX extraction tool missing from restored package cache.' }
-            $extracted = Join-Path $work 'bundle-content'
-            $ba = Join-Path $work 'bundle-ba'
-            Invoke-Dotnet @($wixPath,'burn','extract',$exe,'-o',$extracted,'-oba',$ba) (Join-Path $work 'bundle-verification.log')
-            [xml]$burn = Get-Content -LiteralPath (Join-Path $ba 'manifest.xml') -Raw
-            $variables = @{}
-            foreach ($variable in $burn.BurnManifest.Variable) { $variables[$variable.Id] = $variable.Value }
-            if ($variables.TargetArchitecture -ne $arch -or $variables.BundledDesktopRuntime -ne '1' -or $variables.ExpectedPayloadFingerprint -ne $payload.PayloadFingerprint -or $variables.ExpectedMsiProductCode -ne $productCode) { throw 'Embedded Burn metadata does not match this architecture/payload.' }
-            $embedded = @(Get-ChildItem -LiteralPath $extracted -Recurse -Filter '*.msi')
-            if ($embedded.Count -ne 1 -or (Get-FileHash -LiteralPath $embedded[0].FullName).Hash -ne (Get-FileHash -LiteralPath $msi).Hash) { throw 'Burn contains a stale or mismatched MSI.' }
-            if ((Get-FileHash -LiteralPath (Join-Path $ba 'incoming-install-manifest.json')).Hash -ne (Get-FileHash -LiteralPath $ownership).Hash) { throw 'Embedded recovery manifest mismatch.' }
-            Assert-PeMachine (Join-Path $ba 'mbanative.dll') $hostArch
-            $msiTemplate = [BlueLinkPackageSummary]::GetTemplate($msi).Split(';')[0]
-            if ($msiTemplate -ne @{ x86='Intel'; x64='x64'; arm64='Arm64' }[$arch]) { throw "MSI platform mismatch: $msiTemplate vs $arch" }
-            foreach ($kind in @('msi','exe')) {
-                $source = if ($kind -eq 'msi') { $msi } else { $exe }
-                $destination = Join-Path $OutputDirectory "BlueLink-Review-$version-$rid-Setup.$kind"
-                Copy-Item -LiteralPath $source -Destination $destination
-                Record-Artifact $destination $arch 'ReviewInstaller'
-            }
+            $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'build-manifest.json') -Encoding utf8
+            $manifest | ForEach-Object { "$($_.Sha256)  $($_.File)" } | Set-Content -LiteralPath (Join-Path $OutputDirectory 'SHA256SUMS.txt') -Encoding ascii
         }
-        $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'build-manifest.json') -Encoding utf8
-        $manifest | ForEach-Object { "$($_.Sha256)  $($_.File)" } | Set-Content -LiteralPath (Join-Path $OutputDirectory 'SHA256SUMS.txt') -Encoding ascii
     }
     Write-Host "Windows artifacts: $OutputDirectory"
 } finally { Pop-Location; $env:DOTNET_CLI_HOME = $previousCli; $env:NUGET_PACKAGES = $previousPackages }

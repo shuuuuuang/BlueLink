@@ -29,6 +29,7 @@ def collect(source, output, tag, version, commit):
     for arch in ARCHES:
         for extension in ("exe", "msi"):
             expected[f"BlueLink-Review-{version}-win-{arch}-Setup.{extension}"] = (f"windows-{arch}", arch, "ReviewInstaller")
+            expected[f"BlueLink-Review-{version}-win-{arch}-NoRuntime-Setup.{extension}"] = (f"windows-{arch}", arch, "ReviewInstallerNoRuntime")
         expected[f"BlueLink-{version}-win-{arch}-Portable.zip"] = (f"windows-{arch}", arch, "Portable")
     for abi in ABIS:
         expected[f"BlueLink-{version}-android-{abi}-release.apk"] = ("android", abi, "release")
@@ -60,7 +61,7 @@ def collect(source, output, tag, version, commit):
                     raise ValueError("Missing Android signing certificate fingerprint.")
                 certificates.add(cert)
             else:
-                if entry.get("Architecture") != architecture or entry.get("Kind") != kind or entry.get("SelfContained") is not True:
+                if entry.get("Architecture") != architecture or entry.get("Kind") != kind or entry.get("SelfContained") is not (kind != "ReviewInstallerNoRuntime"):
                     raise ValueError(f"Windows package metadata mismatch: {name}")
                 if architecture != "arm64" and not entry.get("RuntimeVerification", "").startswith("Passed"):
                     raise ValueError(f"Native regression not verified: {name}")
@@ -88,12 +89,14 @@ def collect(source, output, tag, version, commit):
     (output / "RELEASE_NOTES.md").write_text(
         f"""BlueLink {version} 预览版
 
-- Windows：x86、x64、ARM64 的自包含 EXE/MSI 安装包和 Portable ZIP，无需另装 .NET 8。
+- Windows：x86、x64、ARM64 均提供内置运行库 EXE/MSI、NoRuntime 精简 EXE/MSI 和自包含 Portable ZIP。
+- NoRuntime 包不内置 .NET 8 Desktop Runtime；EXE 安装向导在缺少对应架构运行库时提示从 Microsoft 下载，直接使用 MSI 则在首次启动时引导补装。
 - Android：ARM32、ARM64、x86、x86_64 及 universal 通用包，均以正式应用密钥签名。
 - Portable：数据保存在程序目录的 Data，接收文件默认在 Download；更新请保留这两个目录。
 - 修复 x86 SQLite 调用约定，并增加包内架构、原生运行回归和附件 SHA256 校验。
 
 下载建议：Windows 常见电脑选择 win-x64-Setup.exe；免安装选相同架构的 Portable.zip。
+电脑已安装对应架构 .NET 8 Desktop Runtime 时可选 NoRuntime-Setup.exe；首次补装运行库需要联网和管理员权限。
 Android 不确定架构时选择 universal-release.apk；最低 Android 13。
 
 已知限制：

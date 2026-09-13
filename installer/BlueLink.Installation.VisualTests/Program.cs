@@ -20,6 +20,7 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--runtime-architectures") return RuntimeDesktopVerification.Run(args[1]);
             if (args.Length == 2 && (args[0] == "--notices-only" || args[0] == "--desktop-notice"))
                 return NoticeWindowVerification.Run(args[1], args[0] == "--desktop-notice");
             if (args.Length == 2 && args[0] == "--background-compact") return CompactInstallerScenes.Run(args[1]);
@@ -125,7 +126,6 @@ internal static class Program
                 VerifyActions(dialog, running ? "关闭并继续安装" : "确认");
                 ((Window)dialog).Close();
             }
-            setup.Close();
 
             var uninstall = new BlueLink.Uninstall.UninstallWindow(Path.Combine(output, "isolated-location", "BlueLink"));
             var uninstallRoot = Detach(uninstall);
@@ -143,6 +143,20 @@ internal static class Program
                 VerifyConfirmation(setupDialog, output, "setup-confirm-" + (delete ? "delete" : "keep"), delete);
             }
             uninstall.Close();
+            foreach (var arch in new[] { "x86", "x64", "arm64" })
+            {
+                setup.SetTargetArchitecture(arch);
+                setup.ShowRuntimeRequired("8.0.30", "55.8 MiB");
+                Capture(setup, root, output, "setup-runtime-" + arch);
+                var text = Descendants<TextBlock>(root).Single(b => b.Name == "RuntimeArchitectureText");
+                Check(new System.Windows.Automation.Peers.TextBlockAutomationPeer(text).GetName() == "架构：" + arch, "runtime target architecture automation name");
+                var view = new RuntimeWindow(new RuntimePackageInfo { Version = "8.0.30", Size = 58510672, Rid = "win-" + arch }, new string[0]);
+                var content = Detach(view);
+                Capture(view, content, output, "launcher-runtime-" + arch);
+                var label = Descendants<TextBlock>(content).Single(b => b.Name == "RuntimeArchitectureText");
+                Check(new System.Windows.Automation.Peers.TextBlockAutomationPeer(label).GetName() == "架构：" + arch, "launcher target architecture automation name");
+                view.Close();
+            }
             var package = new RuntimePackageInfo { Version = "8.0.30", Size = 58510672 };
             var runtime = new RuntimeWindow(package, new string[0]);
             var runtimeRoot = Detach(runtime);
@@ -152,6 +166,7 @@ internal static class Program
                 Capture(runtime, runtimeRoot, output, "launcher-" + state.ToString().ToLowerInvariant());
             }
             runtime.Close();
+            setup.Close();
             application.Shutdown();
             Console.WriteLine("Installer offscreen verification passed: " + checks + " checks; " + images + " images; all HWND = 0.");
             return 0;

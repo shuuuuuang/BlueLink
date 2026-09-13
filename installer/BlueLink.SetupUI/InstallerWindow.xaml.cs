@@ -100,7 +100,7 @@ namespace BlueLink.SetupUI
         }
 
         private string targetArchitecture = "x64";
-        public void SetTargetArchitecture(string value) { targetArchitecture = value == "x86" || value == "arm64" ? value : "x64"; }
+        public void SetTargetArchitecture(string value) { targetArchitecture = value == "x86" || value == "arm64" ? value : "x64"; RuntimeArchitectureText.Text = "架构：" + targetArchitecture; }
 
         public void SetDisplayVersion(string version)
         {

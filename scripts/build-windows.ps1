@@ -1,4 +1,5 @@
-﻿param(
+param(
+    [ValidateSet('Bundled','External','Both')][string]$InstallerRuntime = 'Both',
     [ValidateSet('x86','x64','arm64','all')][string[]]$Architecture = @('x64'),
     [ValidateSet('None','Installer','Portable','Both')][string]$Package = 'None'
 )
@@ -14,7 +15,7 @@ if (-not $sdkList) { throw '.NET SDK not found. Install the .NET 8 SDK (the runt
 $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet-home'
 $env:NUGET_PACKAGES = Join-Path $root '.nuget-mirror-test'
 if ($Package -ne 'None') {
-    & (Join-Path $PSScriptRoot 'build-windows-packages.ps1') -Architecture $Architecture -Format $Package -DotnetPath $dotnet
+    & (Join-Path $PSScriptRoot 'build-windows-packages.ps1') -Architecture $Architecture -Format $Package -InstallerRuntime $InstallerRuntime -DotnetPath $dotnet
     exit $LASTEXITCODE
 }
 $architectures = if ($Architecture -contains 'all') { @('x86','x64','arm64') } else { @($Architecture | Select-Object -Unique) }

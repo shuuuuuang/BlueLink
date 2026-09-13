@@ -1,5 +1,13 @@
 # BlueLink 实现状态
 
+## 2026-09-13 Windows NoRuntime 安装包
+
+- 在现有 x86/x64/ARM64 自包含 EXE/MSI 和 portable 之外，增加各架构 NoRuntime EXE/MSI，默认矩阵为 15 个 Windows 产物；与 Android 五 APK 合计 20 个安装附件。
+- 精简包由 framework-dependent publish 生成；构建检查无内置运行库、Burn 外部下载 URL/架构/大小/SHA512，沿用同一 Review 安装身份。
+- 启动器补齐三架构检测，核对 dotnet/图形/基础运行库 PE 架构，避免将其他架构的 .NET 或不完整安装误认作满足条件；运行库提示页同步显示目标架构。
+- 本地 x64 实测 EXE 约 86.0 MiB、MSI 约 65.1 MiB。27 项架构回归、23 项安装安全回归、14 项发布附件回归通过；界面回归 152 检查/42 图，真实桌面 UI Automation 18 检查/6 图通过。
+- 全架构云端构建与新预览发布待本轮流水线确认。实际执行 Microsoft 运行库安装、缺运行库系统的完整安装升级矩阵、ARM64 实机仍未验证。
+
 ## 2026-09-13 GitHub 预览版自动发布
 
 - 新增标签触发和手动触发工作流：三种 Windows 架构、Android 四 ABI + 通用包，14 个安装附件及统一清单/哈希。

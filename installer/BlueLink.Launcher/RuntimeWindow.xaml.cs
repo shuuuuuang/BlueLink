@@ -29,6 +29,7 @@ namespace BlueLink.Launcher
             this.package = package;
             this.originalArguments = originalArguments;
             InitializeComponent();
+            RuntimeArchitectureText.Text = "架构：" + package.Architecture;
             Closing += (sender, args) => { if (busy) { args.Cancel = true; if (!installing) stop?.Cancel(); } };
             PackageSizeText.Text = "预计下载：" + package.DisplaySize;
             RuntimeStatusText.Text = package.Version == "8.0.x" ? "尚未安装" : "尚未安装 · " + package.Version;
@@ -60,7 +61,7 @@ namespace BlueLink.Launcher
                         ShowRuntimeProgress(new RuntimeProgress { Stage = RuntimeStage.Installing });
                         await Task.Run(() => process.WaitForExit());
                         if (process.ExitCode != 0 && process.ExitCode != 3010) throw new InvalidOperationException("运行时安装失败，错误代码：" + process.ExitCode + "。");
-                        if (!RuntimeDetector.IsDesktopRuntime8X64Installed()) throw new InvalidOperationException(process.ExitCode == 3010 ? "需要重启 Windows。重启后请重新打开蓝联。" : "安装结束后仍未检测到 x64 Microsoft.WindowsDesktop.App 8.x。");
+                        if (!RuntimeDetector.IsDesktopRuntime8Installed(package.Architecture)) throw new InvalidOperationException(process.ExitCode == 3010 ? "需要重启 Windows。重启后请重新打开蓝联。" : "安装结束后仍未检测到 " + package.Architecture + " Microsoft.WindowsDesktop.App 8.x。");
                     }
                 }
                 completed = true;
@@ -94,8 +95,8 @@ namespace BlueLink.Launcher
         private void Redetect_Click(object sender, RoutedEventArgs e)
         {
             if (busy) return;
-            if (RuntimeDetector.IsDesktopRuntime8X64Installed()) RuntimeReady?.Invoke();
-            else SetStatus(InfoBarSeverity.Warning, "仍未检测到 x64 Microsoft .NET Desktop Runtime 8。请完成安装后重试。");
+            if (RuntimeDetector.IsDesktopRuntime8Installed(package.Architecture)) RuntimeReady?.Invoke();
+            else SetStatus(InfoBarSeverity.Warning, "仍未检测到 " + package.Architecture + " Microsoft .NET Desktop Runtime 8。请完成安装后重试。");
         }
 
         private void OfficialDownload_Click(object sender, RoutedEventArgs e)

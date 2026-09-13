@@ -1,0 +1,29 @@
+[
+  {
+    "Rid": "win-x86",
+    "Version": "8.0.30",
+    "Url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x86.exe",
+    "Sha512": "32297a75f7d40c4eb3489bb0765988f0a5a340e600e998b0c497e2bea0c869fee8b79ff718dada6349b8f30f7e9c5b6b941e852c2a114214f92c0add69028986",
+    "Size": 53581064,
+    "FileName": "windowsdesktop-runtime-8.0.30-win-x86.exe",
+    "ManualUrl": "https://dotnet.microsoft.com/download/dotnet/8.0/runtime"
+  },
+  {
+    "Rid": "win-x64",
+    "Version": "8.0.30",
+    "Url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x64.exe",
+    "Sha512": "b4498f93cd6817e28acd5c2aaa80fb7271f5ea62d7f3e2171b2b30d36a15ba950311208cea55fc0903fc962fbc3184d457885dfe7c4ab19c022b52fff6fcaceb",
+    "Size": 58510672,
+    "FileName": "windowsdesktop-runtime-8.0.30-win-x64.exe",
+    "ManualUrl": "https://dotnet.microsoft.com/download/dotnet/8.0/runtime"
+  },
+  {
+    "Rid": "win-arm64",
+    "Version": "8.0.30",
+    "Url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-arm64.exe",
+    "Sha512": "3561589c54a5eadd46e3e07c4bfaefc09aeb10160c655730178208e80378c43172f6c4095b9381ceefba0749487855cb8e816b294a4d3d991b86c5b47173ecb9",
+    "Size": 54010984,
+    "FileName": "windowsdesktop-runtime-8.0.30-win-arm64.exe",
+    "ManualUrl": "https://dotnet.microsoft.com/download/dotnet/8.0/runtime"
+  }
+]

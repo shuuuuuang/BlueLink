@@ -74,7 +74,7 @@ jobs:
         env:
           BUILD_ARCH: ${{ matrix.architecture }}
         run: |
-          ./scripts/build-windows-packages.ps1 -Architecture $env:BUILD_ARCH -Format Both -NuGetConfig ./NuGet.CI.Config -OutputDirectory (Join-Path $PWD 'artifacts/packages')
+          ./scripts/build-windows-packages.ps1 -Architecture $env:BUILD_ARCH -Format Both -InstallerRuntime Both -NuGetConfig ./NuGet.CI.Config -OutputDirectory (Join-Path $PWD 'artifacts/packages')
       - name: Upload verified packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

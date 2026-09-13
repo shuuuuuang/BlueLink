@@ -111,11 +111,11 @@ Debug APK 可用于开发验收；未签名 Release APK 需要签名后才能安
 
 ### Windows 客户端与多架构打包
 
-| 架构 | 客户端 | Review 安装包 | Portable 免安装包 |
-| --- | --- | --- | --- |
-| x86（32 位） | 原生 x86 | EXE / MSI | ZIP |
-| x64 | 原生 x64 | EXE / MSI | ZIP |
-| ARM64 | 原生 ARM64 | EXE / MSI | ZIP |
+| 架构 | 客户端 | 内置运行库安装包 | NoRuntime 精简安装包 | Portable 免安装包 |
+| --- | --- | --- | --- | --- |
+| x86（32 位） | 原生 x86 | EXE / MSI | EXE / MSI | ZIP |
+| x64 | 原生 x64 | EXE / MSI | EXE / MSI | ZIP |
+| ARM64 | 原生 ARM64 | EXE / MSI | EXE / MSI | ZIP |
 
 Windows ARM 指 ARM64，不包含 ARM32。ARM64 安装包目前使用 x86 的 .NET Framework 安装引导界面，通过系统兼容层运行；客户端和内置 .NET 8 运行库为原生 ARM64。
 
@@ -123,21 +123,30 @@ Windows ARM 指 ARM64，不包含 ARM32。ARM64 安装包目前使用 x86 的 .N
 # 只编译客户端；Architecture 默认为 x64，也可传 x86、arm64 或 all。
 .\scripts\build-windows.ps1 -Architecture all
 
-# 一次生成三种架构的 Review EXE/MSI 与 portable ZIP。
+# 一次生成三种架构的两类 Review EXE/MSI 与 portable ZIP。
 .\scripts\build-windows-packages.ps1 -Architecture all
+
+# 只生成三种架构的不内置 .NET 安装包。
+.\scripts\build-windows-packages.ps1 -Architecture all -Format Installer -InstallerRuntime External
 
 # 只生成某种架构的 portable 包。
 .\scripts\build-windows-packages.ps1 -Architecture arm64 -Format Portable
 ```
 
-普通编译输出位于 `windows/BlueLink.App/bin/Release/net8.0-windows10.0.19041.0/win-<架构>/`，需要对应架构的 .NET 8 Desktop Runtime。打包脚本则使用自包含部署，将对应架构的运行库一并打入包中，无需另外安装 .NET 8。
+普通编译输出位于 `windows/BlueLink.App/bin/Release/net8.0-windows10.0.19041.0/win-<架构>/`，需要对应架构的 .NET 8 Desktop Runtime。内置运行库安装包和 portable 使用自包含部署，无需另外安装 .NET 8。新增 NoRuntime EXE/MSI 不内置 .NET、WPF 和 WinForms 运行库，需要系统已安装对应架构的 .NET 8 Desktop Runtime；普通 .NET Runtime、其他架构或只有 .NET 9/10 都不能替代。
 
 打包脚本会恢复依赖、校验客户端和关键运行库的 PE 架构，对当前主机可运行的架构执行 SQLite/portable/更新回归；安装包还会执行目录归属测试，并解包核对 MSI 平台、Burn 内嵌架构和载荷哈希。可用 `-SkipTests` 跳过原生运行回归，结构与包内容校验仍保留；可用 `-DotnetPath` 指定 SDK、`-Offline` 使用已缓存的依赖，或用 `-Format Installer` / `Portable` / `Both` 选择产物。输出到新的 `artifacts/windows/multiarch-<时间戳>/`，避免覆盖旧产物：
 
 - `BlueLink-Review-<VERSION>-win-<架构>-Setup.exe`
 - `BlueLink-Review-<VERSION>-win-<架构>-Setup.msi`
+- `BlueLink-Review-<VERSION>-win-<架构>-NoRuntime-Setup.exe`
+- `BlueLink-Review-<VERSION>-win-<架构>-NoRuntime-Setup.msi`
 - `BlueLink-<VERSION>-win-<架构>-Portable.zip`
 - `build-manifest.json`、`SHA256SUMS.txt`
+
+`-InstallerRuntime Bundled` 只生成内置运行库安装包，`External` 只生成 NoRuntime 安装包，默认 `Both` 生成两种。该选项不改变 portable：portable 始终内置运行库。配合默认 `-Format Both` 使用 `External` 时，仍会额外生成自包含 portable。
+
+NoRuntime EXE 检测到缺少运行库时，会由现有向导提示从 Microsoft 下载并安装；直接安装 MSI 后，首次启动由启动器提供同样的补装入口。首次补装需要联网和管理员权限；已有运行库时可离线使用。两种安装包共用同一 Review 安装身份，不是可并排安装的两个产品，切换时保留既有用户数据。运行库下载信息固定在 `installer/runtime-packages.json`，构建校验 SHA512 和 Microsoft 签名，EXE 中只记录外部下载地址，不包含运行库安装文件。
 
 原有 `scripts/build-windows-review.ps1` 已接入同一流程，可继续使用 `-CompileInstaller`，并支持 `-Architecture` 选择架构。`scripts/build-windows.ps1 -Package Both` 也可直接进入打包流程。
 
@@ -169,7 +178,7 @@ git push origin v0.2.17-preview.1
 
 标签必须与根目录 `VERSION` 一致，指向远程 `main` 历史中的提交。每次发布使用新的标签；升级 Android 版本时还须递增 `android/app/build.gradle.kts` 的 `versionCode`。Actions 页面也可手动运行 **Publish preview release**，填写已有标签；手动运行默认保留草稿。
 
-工作流使用 Windows runner 分别构建 x86/x64/ARM64，并完成 Android 四 ABI 和通用包的测试、构建、签名。上传前检查全部 14 个安装附件的文件名、架构、版本、哈希和 Android 签名指纹，再生成 `release-manifest.json` 与 `SHA256SUMS.txt`。先上传到草稿，全部上传成功才公开。上传失败会保留草稿；排除故障并删除失败草稿后可以重跑，流程不会替换已发布版本。
+工作流使用 Windows runner 分别构建 x86/x64/ARM64，并完成 Android 四 ABI 和通用包的测试、构建、签名。上传前检查全部 20 个安装附件的文件名、架构、版本、哈希和 Android 签名指纹，再生成 `release-manifest.json` 与 `SHA256SUMS.txt`。先上传到草稿，全部上传成功才公开。上传失败会保留草稿；排除故障并删除失败草稿后可以重跑，流程不会替换已发布版本。
 
 Android 签名需要在 **Settings → Secrets and variables → Actions** 配置以下 repository Secrets：
 

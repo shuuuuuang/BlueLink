@@ -29,9 +29,11 @@ class ReleaseTests(unittest.TestCase):
                 ("ReviewInstaller", f"BlueLink-Review-{self.version}-win-{arch}-Setup.exe"),
                 ("ReviewInstaller", f"BlueLink-Review-{self.version}-win-{arch}-Setup.msi"),
                 ("Portable", f"BlueLink-{self.version}-win-{arch}-Portable.zip"),
+                ("ReviewInstallerNoRuntime", f"BlueLink-Review-{self.version}-win-{arch}-NoRuntime-Setup.exe"),
+                ("ReviewInstallerNoRuntime", f"BlueLink-Review-{self.version}-win-{arch}-NoRuntime-Setup.msi"),
             ]:
                 rows.append(dict(File=name, Architecture=arch, Kind=kind, Version=self.version,
-                                 SelfContained=True, RuntimeVerification="Passed: fixture", Signed=False))
+                                 SelfContained=kind != "ReviewInstallerNoRuntime", RuntimeVerification="Passed: fixture", Signed=False))
             self.entries[group] = rows
         self.entries["android"] = [
             dict(File=f"BlueLink-{self.version}-android-{abi}-release.apk", Abi=abi,
@@ -62,11 +64,19 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_complete_release(self):
-        self.assertEqual(len(self.collect()), 14)
-        self.assertEqual(len(list(self.output.iterdir())), 17)
+        self.assertEqual(len(self.collect()), 20)
+        self.assertEqual(len(list(self.output.iterdir())), 23)
         for line in (self.output / "SHA256SUMS.txt").read_text().splitlines():
             digest, name = line.split("  ")
             self.assertEqual(digest, release.sha256(self.output / name))
+
+    def test_wrong_runtime_variant(self):
+        self.entries["windows-x64"][-1]["SelfContained"] = True
+        self.reject()
+
+    def test_missing_no_runtime_installer(self):
+        self.entries["windows-x86"].pop()
+        self.reject()
 
     def test_missing_architecture(self):
         self.entries["windows-arm64"] = []

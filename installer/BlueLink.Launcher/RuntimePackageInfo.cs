@@ -25,6 +25,16 @@ namespace BlueLink.Launcher
         public string FileName { get; set; } = "windowsdesktop-runtime-win-x64.exe";
         [DataMember(Name = "ManualUrl")]
         public string ManualUrl { get; set; } = "https://dotnet.microsoft.com/download/dotnet/8.0/runtime";
+        [DataMember(Name = "Rid")]
+        public string Rid { get; set; } = "win-x64";
+        public string Architecture
+        {
+            get
+            {
+                if (Rid == "win-x86" || Rid == "win-x64" || Rid == "win-arm64") return Rid.Substring(4);
+                throw new InvalidDataException("Unsupported .NET runtime architecture: " + Rid);
+            }
+        }
         public string DisplaySize => Size <= 0 ? "正在读取实际包大小" : Format(Size);
 
         public static RuntimePackageInfo Load()
@@ -51,10 +61,11 @@ namespace BlueLink.Launcher
             return new RuntimePackageInfo();
         }
 
-        private static RuntimePackageInfo ParseInstallerManifest(string json)
+        internal static RuntimePackageInfo ParseInstallerManifest(string json)
         {
             var value = new RuntimePackageInfo
             {
+                Rid = ReadString(json, "Rid", "win-x64"),
                 Version = ReadString(json, "Version", "8.0.x"),
                 Url = ReadString(json, "Url", String.Empty),
                 Sha512 = ReadString(json, "Sha512", String.Empty),

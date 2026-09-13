@@ -26,15 +26,15 @@ namespace BlueLink.Launcher
             var snapshot = e.Args.FirstOrDefault(value =>
                 value.StartsWith("--runtime-ui-smoke-test=", StringComparison.OrdinalIgnoreCase));
             var forceRuntimePage = snapshot != null;
+            var package = RuntimePackageInfo.Load();
             if (!forceRuntimePage && File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bootstrap", "bundled-runtime.json")) && !RuntimeDetector.HasBundledDesktopRuntime())
                 throw new FileNotFoundException("The bundled runtime is incomplete. Repair this BlueLink installation.");
-            if (!forceRuntimePage && (RuntimeDetector.HasBundledDesktopRuntime() || RuntimeDetector.IsDesktopRuntime8X64Installed()))
+            if (!forceRuntimePage && (RuntimeDetector.HasBundledDesktopRuntime() || RuntimeDetector.IsDesktopRuntime8Installed(package.Architecture)))
             {
                 Shutdown(LaunchClient(e.Args));
                 return;
             }
 
-            var package = RuntimePackageInfo.Load();
             var window = new RuntimeWindow(package, e.Args);
             MainWindow = window;
             window.RuntimeReady += () => Shutdown(LaunchClient(e.Args));

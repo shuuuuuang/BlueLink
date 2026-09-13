@@ -1,4 +1,5 @@
 param(
+    [ValidateSet('Bundled','External','Both')][string]$InstallerRuntime = 'Both',
     [string]$DotnetPath = '',
     [string]$OutputDirectory = '',
     [switch]$CompileInstaller,
@@ -9,6 +10,7 @@ param(
 # Keep the existing entry point while using the shared architecture/ownership/embedding gates.
 $ErrorActionPreference = 'Stop'
 $arguments = @{
+    InstallerRuntime = $InstallerRuntime
     Architecture = $Architecture
     Format = $(if ($CompileInstaller) { 'Both' } else { 'Portable' })
     DotnetPath = $DotnetPath

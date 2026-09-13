@@ -110,6 +110,8 @@ namespace BlueLink.Launcher
                 package.Sha512 == null || !System.Text.RegularExpressions.Regex.IsMatch(package.Sha512, "\\A[0-9a-fA-F]{128}\\z"))
                 throw new IOException("运行时包元数据无效，请使用 Microsoft 官方下载入口。");
             ValidateUri(new Uri(package.Url));
+            if (Path.GetFileName(new Uri(package.Url).AbsolutePath) != "windowsdesktop-runtime-" + package.Version + "-win-" + package.Architecture + ".exe")
+                throw new IOException("运行时下载包与目标架构不一致。");
         }
         private static void ValidateUri(Uri uri)
         {

@@ -125,7 +125,7 @@
                                 <StackPanel Grid.Column="1"><TextBlock Text="Microsoft .NET Desktop Runtime 8" FontSize="18" FontWeight="Bold" LineHeight="26" LineStackingStrategy="BlockLineHeight"/>
                                     <Border x:Name="RuntimeStatusBorder" Background="#FFF0E4" CornerRadius="6" Padding="8,3" MinWidth="106" HorizontalAlignment="Left" Margin="0,3,0,0"><TextBlock x:Name="RuntimeStatusBadge" Text="尚未安装" Foreground="#DA7218" FontSize="12" LineHeight="18" LineStackingStrategy="BlockLineHeight"/></Border>
                                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="0.85*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="1.3*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="1.5*"/></Grid.ColumnDefinitions>
-                                        <TextBlock Text="架构：x64" FontSize="13" Foreground="{StaticResource Muted}"/>
+                                        <TextBlock x:Name="RuntimeArchitectureText" Text="架构：x64" FontSize="13" Foreground="{StaticResource Muted}"/>
                                         <Border Grid.Column="1" Background="#D9E1EE"/><TextBlock x:Name="RuntimePackageSizeText" Grid.Column="2" FontSize="13" Foreground="{StaticResource Muted}" Margin="14,0,0,0"/>
                                         <Border Grid.Column="3" Background="#D9E1EE"/><TextBlock Grid.Column="4" Text="来源：Microsoft 官方" FontSize="13" Foreground="{StaticResource Muted}" Margin="14,0,0,0"/>
                                     </Grid><ProgressBar Foreground="#1264F6" Background="#DCE5F4" x:Name="RuntimeDownloadProgress" Height="8" BorderThickness="0" Visibility="Collapsed" Margin="0,3,0,0"/>

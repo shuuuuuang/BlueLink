@@ -11,6 +11,7 @@
     <None Include="../../shared/thumbnail/tests/chat-thumbnail-cases.tsv" Link="chat-thumbnail-cases.tsv" CopyToOutputDirectory="PreserveNewest"/>
     <Compile Include="../../shared/UserDataCleanup.cs" Link="Installer/UserDataCleanup.cs"/>
     <Compile Include="../../installer/BlueLink.Launcher/RuntimeDownloadService.cs" Link="Installer/RuntimeDownloadService.cs"/>
+    <Compile Include="../../installer/BlueLink.Launcher/RuntimeDetector.cs" Link="Installer/RuntimeDetector.cs"/>
     <Compile Include="../../installer/BlueLink.Launcher/RuntimePackageInfo.cs" Link="Installer/RuntimePackageInfo.cs"/>
     <Compile Include="../../installer/BlueLink.Launcher/AuthenticodeVerifier.cs" Link="Installer/AuthenticodeVerifier.cs"/>
   </ItemGroup>
