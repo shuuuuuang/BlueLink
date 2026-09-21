@@ -2,6 +2,7 @@
 
 ## 2026-09-21 0.2.18 发布基线
 
+- 已公开发布 [v0.2.18-preview.2](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.2)，对应源码523a3da3adda0bcf9f57d0da86589eb83276de02；[Actions 35604840676](https://github.com/shuuuuuang/BlueLink/actions/runs/35604840676)全部成功。公开22个附件（15个Windows包、5个正式签名Android APK、清单和SHA256SUMS）均核对GitHub资产摘要/大小与清单一致，Android签名证书与0.2.17-preview.3一致；这不替代真实跨版本覆盖安装验收。
 - VERSION升级到0.2.18，Android versionCode从12升至13；预览标签为v0.2.18-preview.2，构建内嵌完整标签，继续采用GitHub Actions正式Android签名及Windows Review预览渠道。
 - 汇总此前消息搜索/选择/批量操作、日期范围、双端连续图片预览、输入与文件分享、传输恢复、设备备注、存储清理和应用内更新改动。收藏功能仅保留后续版本设计，不包含在本版。
 - 发布前验证：协议45项；Android单元测试356项（0失败/0错误，2项既有跳过），lint 0错误/30警告，全部ABI Debug/Release构建通过；Windows完整回归通过；版本/UI/安装器契约、14项Release附件测试与三次包保留回归通过。
