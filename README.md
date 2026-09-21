@@ -1,54 +1,108 @@
-# 蓝联 / BlueLink
+<p align="center">
+  <img src="design/brand/final/bluelink-final-logo.png" alt="蓝联 BlueLink LOGO" width="220">
+</p>
 
-BlueLink 是 Android 与 Windows 之间的本地聊天和文件传输应用。设备通过 Bluetooth 发现、连接并建立端到端加密会话；连接 USB 后，可使用 Windows WPD / Android MTP 文件通道加速传输。
+<h1 align="center">蓝联 · BlueLink</h1>
 
-当前源码版本为 **0.2.18**，主分支为 **main**。项目仍在开发与验收中，已验证范围和已知限制见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
+<p align="center">
+  让手机与电脑，通过蓝牙相连。<br>
+  无需联网，在附近的 Android 与 Windows 设备之间发送消息、图片和文件。
+</p>
 
-## 下载
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-x86%20%7C%20x64%20%7C%20ARM64-0078D4?style=flat-square" alt="Windows x86、x64 和 ARM64">
+  <img src="https://img.shields.io/badge/Android-13%2B-3DDC84?style=flat-square" alt="Android 13 及以上">
+  <img src="https://img.shields.io/badge/Bluetooth-USB-0082FC?style=flat-square" alt="蓝牙连接与 USB 文件传输">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License"></a>
+</p>
 
-安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.18-preview.2](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.2)，包含近期消息搜索、日期筛选、多选操作和双端图片预览优化；收藏功能留待后续版本。
+<p align="center">
+  <a href="#获取与安装">获取与安装</a> ·
+  <a href="#开始使用">开始使用</a> ·
+  <a href="#常见问题">常见问题</a> ·
+  <a href="https://github.com/shuuuuuang/BlueLink/issues">问题反馈</a>
+</p>
 
-- Windows 常见电脑选择 `win-x64-Setup.exe`；需要免安装时选择同架构的 `Portable.zip`，也提供 x86 与 ARM64。
-- Android 不确定架构时选择 `android-universal-release.apk`，最低 Android 13；正式签名 APK 无法直接覆盖旧 Debug 安装。
-- 附件包含 `SHA256SUMS.txt` 与源码/架构清单。Windows 当前未签名，仍属 Review 预览包，具体限制见版本说明。
+## 关于蓝联
 
-## 主要功能
+BlueLink 是一款连接 Android 手机与 Windows 电脑的蓝牙通信应用。想把手机里的图片传到电脑，或把一段文字、一个文件发给身边的设备？打开两端的蓝联，连接后就能在聊天中发送。
 
-- **设备与会话**：已连接、离线和附近新设备分类；保留离线聊天记录，支持多个设备会话与后台接收。
-- **聊天与搜索**：文字、图片、文件附件、历史记录搜索；Android 从会话底部操作抽屉中的“搜索聊天记录”进入，Windows 从会话区域搜索按钮进入。
-- **文件管理**：查看全部设备或当前会话的文件，支持搜索、筛选及按任务状态提供暂停、继续、取消和重试等操作。Windows 未选中会话时仍显示会话区域标题栏，可点击“文件”进入全局文件管理。
-- **图片预览**：查看原图、缩放、旋转与重置；双端使用统一的旋转与重置图标。
-- **USB 文件加速**：保留系统 MTP 模式，通过加密中转文件传输；同一手机的双向文件任务按队列执行，蓝牙继续承担身份核验、消息和控制。
-- **外观与设置**：简体中文、繁体中文、英文，浅色与深色主题；连接、文件接收、隐私、设备信任和诊断等设置。
-- **Windows 集成**：托盘驻留、文件拖入/拖出、安装路径选择，以及卸载时的数据保留选项。
+设备之间通过蓝牙建立连接，也可使用 USB 加速文件传输。无需连接同一个 Wi-Fi，也无需登录账号或经过云端中转。
 
-## 连接与使用
+## 你可以做什么
 
-1. 在两端开启蓝牙并启动 BlueLink，授予所需的蓝牙/附近设备权限。
-2. 查找附近设备：Android 在设备列表顶部下拉扫描；Windows 在附近设备标题或设备栏空白处打开右键菜单，选择“扫描附近设备”，也可按 `F5`。启动扫描由设置中的开关控制。
-3. 选择设备建立连接，首次连接核对两端显示的六位安全代码并确认信任。
-4. 在会话中发送文字或附件。离线时仍可查看已保存的历史；重新连接后，符合条件的失败发送任务可重试。
-5. 默认接收位置为 Android 的 `Download/BlueLink`，Windows 的安装目录下 `Download`；可在设置中调整。
+| 功能 | 使用体验 |
+| --- | --- |
+| 💬 发送文字 | 在手机与电脑之间互发消息，保留本地聊天记录 |
+| 📎 分享图片与文件 | 从聊天中发送附件，点击预览图片或用系统应用打开文件 |
+| 🔎 查找聊天记录 | 搜索历史消息、按日期筛选，并对消息进行多选操作 |
+| ⚡ USB 文件加速 | 连接数据线后优先通过 USB 发送文件，蓝牙继续保持消息与控制连接 |
+| 📊 查看传输进度 | 在传输列表中查看进度、速度和剩余时间 |
+| 🔒 确认安全连接 | 首次连接核对两端安全码，消息与文件采用端到端加密传输 |
+| 🗂️ 找回历史会话 | 设备离线后，仍可查看已保存在本机的聊天与传输记录 |
+| 🖥️ Windows 托盘驻留 | 支持托盘驻留，方便继续接收消息和文件 |
 
-### 使用 USB 文件加速
+## 获取与安装
 
-先建立可信蓝牙会话，再用支持数据传输的 USB 线连接手机与电脑：
+前往 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases) 下载。当前预览版为 [v0.2.18-preview.2](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.2)。
 
-1. 在手机系统 USB 选项中选择“传输文件”。
-2. 开启 BlueLink 的 USB 功能，并通过 Android 系统目录选择器授权专用中转目录（例如 `Download/BlueLinkUSB`）。
-3. 等待设备卡片显示 USB 就绪的闪电标记，再发送文件。
+| 设备 | 如何选择与安装 |
+| --- | --- |
+| Windows 电脑 | 常见电脑选择 `win-x64-Setup.exe`，也提供 x86 和 ARM64；需要免安装时选择同架构的 `Portable.zip`。普通包内置运行时；`NoRuntime` 包需要本机安装对应架构的 .NET 8 桌面运行时 |
+| Android 手机 | 最低 Android 13；不确定架构时选择 `android-universal-release.apk`，按系统提示安装 |
 
-生产通道使用 Windows 系统 WPD 和 Android SAF 授权目录，不要求开启 USB 调试或替换 MTP 驱动。USB 未就绪时，新文件可使用蓝牙；USB 在传输中失效时，任务可能失败并需要重试，不保证无缝切换。WPD 重试会重传当前完整文件，不提供密文断点续传或跨进程持久队列保证。
+> **当前为预览版。** Windows 包尚未签名；Android 使用正式签名，不能直接覆盖旧 Debug 安装，请勿通过卸载来绕过签名保护。下载页提供校验文件与版本说明，设备兼容性及已知限制见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
 
-## 通信与隐私
+## 开始使用
 
-设备间聊天和文件传输使用 Bluetooth 或 USB，不依赖云端服务，也不使用 Wi-Fi、局域网或互联网作为传输回退。聊天、文件记录和信任关系保存在本机。
+1. **打开两端蓝联**：开启手机与电脑的蓝牙，在应用中按提示授予蓝牙、附近设备等所需权限。
+2. **找到对方设备**：Android 在设备列表顶部下拉扫描；Windows 在附近设备标题或设备栏空白处右键选择「扫描附近设备」，也可按 `F5`。选择对方设备建立连接。首次连接如出现系统蓝牙配对提示，请按提示完成配对。
+3. **核对安全码**：确认手机与电脑显示的六位安全码一致，再在两端确认连接。如果不一致，请取消连接。
+4. **发送消息或文件**：连接完成后，在聊天区输入文字，或选择图片、文件发送；传输状态可在传输列表中查看。
 
-- 身份与会话安全采用 Ed25519、X25519 和 ChaCha20-Poly1305，首次连接需要人工核对安全代码。
-- 蓝牙使用 BTX/1.1 加密记录及顺序校验；USB 中转目录保存加密文件，传输密钥通过已加密的蓝牙会话交换。
-- 接收端执行文件完整性校验，并处理接收大小限制、同名文件和最终发布。
+### 收到的文件在哪里？
 
-双端仅在用户点击时查询固定 GitHub 仓库的公开 Release，并在应用内下载、核验更新包，不上传设备、消息或文件数据。Android 声明 `INTERNET` 与 `REQUEST_INSTALL_PACKAGES`，校验哈希、包名、版本和同一签名后交给系统安装确认；首次使用需由用户允许蓝联安装应用。Windows 正式包要求可信签名和相同发布者；用户批准的未签名 Review 预览包例外须通过固定来源、大小、SHA-256 和产品版本校验，并在安装前明确提示未签名。运行库获取也可能联网；消息与文件仍走设备直连。构建时需要下载 Gradle、Android 和 NuGet 依赖。
+| 设备 | 默认保存位置 |
+| --- | --- |
+| Android | 系统下载目录下的 `Download/BlueLink` |
+| Windows | 蓝联安装目录下的 `Download` 文件夹 |
+
+两端都可以在设置中更改接收位置，请选择有写入权限的目录。聊天记录与设备信任信息保存在本机。
+
+## 常见问题
+
+### 需要联网或连接同一个 Wi-Fi 吗？
+
+不需要。设备间消息与文件通过蓝牙或 USB 传输，不经过互联网、Wi-Fi、局域网或云端服务器。手动检查更新、下载更新包、获取 Windows 运行时或从源码构建时需要联网；更新功能不上传设备、消息或文件数据。
+
+### 为什么找不到对方设备？
+
+请先确认两端都打开了蓝联、蓝牙已开启、所需权限已允许，并让设备靠近后重新扫描。附近列表显示的是当前发现的蓝联设备，系统中曾经配对过的设备不一定会出现在这里。
+
+### 为什么大文件传输比较慢？
+
+蓝牙传输速度会受设备硬件、距离和干扰影响。**传输大文件时，建议使用 USB 高速传输**：先通过蓝牙连接并核对安全码，在两端「设置 → 连接与设备」中开启「USB 高速传输」，用支持数据传输的 USB 线连接手机与电脑，并在手机上选择「传输文件」。首次开启时，按提示选择并授权蓝联专用中转文件夹，例如 `Download/BlueLinkUSB`。设备名称旁出现闪电标识后，新发送的文件会优先使用 USB。
+
+无需开启 USB 调试或替换驱动。若 USB 尚未就绪，请检查手机连接模式和文件夹授权；其他程序占用手机文件时，可能需要等待。旧版本没有此入口时，可先使用蓝牙传输；兼容性与已知限制以对应版本说明为准。
+
+### 传输中断后怎么办？
+
+先恢复设备连接，再查看传输列表。符合条件的失败发送任务可重试；USB 重试会重传当前整个文件，不保证传输中无缝切换到蓝牙。具体限制见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
+
+### 支持 iPhone 或 Mac 吗？
+
+目前面向 Android 与 Windows。iOS 和 macOS 已进入规划，尚无可用客户端。
+
+### 如何反馈问题？
+
+请在 [GitHub Issues](https://github.com/shuuuuuang/BlueLink/issues) 中描述遇到的问题，附上两端应用版本、系统版本、设备型号和复现步骤。如果提供截图或诊断信息，请先隐去私人消息、文件内容等个人信息。
+
+## 开源与开发
+
+欢迎反馈问题、提出建议或参与改进。协议和验证细节见 [BTX/1.1 协议](docs/BTX_1_1_PROTOCOL.md) 与 [实现状态](docs/IMPLEMENTATION_STATUS.md)。当前开发主分支为 **main**。
+
+<details>
+<summary>源码结构、构建与发布说明（开发者）</summary>
 
 ## 工程结构
 
@@ -206,11 +260,7 @@ Android 签名需要在 **Settings → Secrets and variables → Actions** 配�
 
 GitHub CI 使用 `NuGet.CI.Config` 和官方 Maven 仓库恢复依赖；本地沿用原镜像配置。工作流固定 Actions 完整提交 SHA，构建任务仅有源码读取权限，只有最终上传任务拥有 Release 写入权限。Windows 当前没有 Authenticode 签名，ARM64 实机与完整安装矩阵尚未验证，发布说明会明确这些限制。
 
-## 当前验证边界
-
-双端已完成多轮协议、单元测试、界面及指定手机的实际传输验收，但多机/Hub、其他手机型号、长期运行和完整发布矩阵仍需继续验证。近期 Windows 完整 UI 回归存在剪贴板或前台焦点干扰；Review 包完整性检查不能替代实际安装验收。
-
-具体能力、限制和各次验证结果见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。构建产物、验收输出和本地工作文档不纳入源码仓库。
+</details>
 
 ## 许可证
 
