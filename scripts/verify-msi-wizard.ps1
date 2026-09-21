@@ -2,22 +2,28 @@ param([Parameter(Mandatory=$true)][string]$MsiPath, [switch]$FrameworkDependent)
 $ErrorActionPreference = 'Stop'
 $path = (Resolve-Path -LiteralPath $MsiPath).Path
 $installer = New-Object -ComObject WindowsInstaller.Installer
-$database = $installer.OpenDatabase($path, 0)
+$database = $null
 function Read-MsiRows([string]$Sql) {
     $view = $database.OpenView($Sql)
     try {
         [void]$view.Execute()
         while ($null -ne ($record = $view.Fetch())) {
-            $cells = for ($index=1; $index -le $record.GetType().InvokeMember('FieldCount','GetProperty',$null,$record,$null); $index++) { $record.StringData($index) }
-            Write-Output -NoEnumerate @($cells)
+            try {
+                $cells = for ($index=1; $index -le $record.GetType().InvokeMember('FieldCount','GetProperty',$null,$record,$null); $index++) { $record.StringData($index) }
+                Write-Output -NoEnumerate @($cells)
+            } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
         }
-    } finally { [void]$view.Close() }
+    } finally {
+        try { [void]$view.Close() }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+    }
 }
 function Require([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
     Write-Output "PASS: $Message"
 }
 try {
+    $database = $installer.OpenDatabase($path, 0)
     $properties = @{}
     foreach ($row in (Read-MsiRows 'SELECT `Property`, `Value` FROM `Property`')) { $properties[$row[0]]=$row[1] }
     $dialogs = @(Read-MsiRows 'SELECT `Dialog` FROM `Dialog`' | ForEach-Object { $_[0] })
@@ -56,6 +62,6 @@ try {
         Require (@($conditions | Where-Object { $_ -match 'BLUELINK_DOTNET_CHECK' -and $_ -match 'REMOVE' }).Count -eq 1) 'Runtime gate also protects quiet install and permits removal'
     }
 } finally {
-    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database)
+    if ($null -ne $database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
     [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
 }

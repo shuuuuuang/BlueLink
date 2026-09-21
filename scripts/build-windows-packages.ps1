@@ -259,6 +259,10 @@ try {
                 $msiTemplate = [BlueLinkPackageSummary]::GetTemplate($msi).Split(';')[0]
                 if ($msiTemplate -ne @{ x86='Intel'; x64='x64'; arm64='Arm64' }[$arch]) { throw "MSI platform mismatch: $msiTemplate vs $arch" }
                 & (Join-Path $PSScriptRoot 'verify-msi-wizard.ps1') -MsiPath $msi -FrameworkDependent:(-not $bundled) *> (Join-Path $work 'msi-wizard-verification.log')
+                # A retained COM view/record can lock this path until PowerShell exits,
+                # preventing the next runtime variant from rebuilding the MSI.
+                $msiProbe = [IO.File]::Open($msi, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+                $msiProbe.Dispose()
                 foreach ($kind in @('msi','exe')) {
                     $source = if ($kind -eq 'msi') { $msi } else { $exe }
                     $label = if ($bundled) { '' } else { '-NoRuntime' }

@@ -6,7 +6,7 @@ BlueLink 是 Android 与 Windows 之间的本地聊天和文件传输应用。�
 
 ## 下载
 
-安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.18-preview.1](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.1)，包含近期消息搜索、日期筛选、多选操作和双端图片预览优化；收藏功能留待后续版本。
+安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.18-preview.2](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.2)，包含近期消息搜索、日期筛选、多选操作和双端图片预览优化；收藏功能留待后续版本。
 
 - Windows 常见电脑选择 `win-x64-Setup.exe`；需要免安装时选择同架构的 `Portable.zip`，也提供 x86 与 ARM64。
 - Android 不确定架构时选择 `android-universal-release.apk`，最低 Android 13；正式签名 APK 无法直接覆盖旧 Debug 安装。
@@ -179,12 +179,12 @@ Android 在应用内下载 universal release APK，显示进度，支持取消�
 
 ### GitHub Releases 自动发布
 
-仓库的 `.github/workflows/release.yml` 在推送 `v<VERSION>-preview.N` 标签时执行自动发布，例如 `v0.2.18-preview.1`。当前多架构安装器仍为 Review 身份，因此此工作流只发布预览版；正式稳定发布继续遵守上面的发布锁和验收要求。
+仓库的 `.github/workflows/release.yml` 在推送 `v<VERSION>-preview.N` 标签时执行自动发布，例如 `v0.2.18-preview.2`。当前多架构安装器仍为 Review 身份，因此此工作流只发布预览版；正式稳定发布继续遵守上面的发布锁和验收要求。
 
 ```powershell
 git push origin main
-git tag -a v0.2.18-preview.1 -m "BlueLink 0.2.18 preview 1"
-git push origin v0.2.18-preview.1
+git tag -a v0.2.18-preview.2 -m "BlueLink 0.2.18 preview 2"
+git push origin v0.2.18-preview.2
 ```
 
 标签必须与根目录 `VERSION` 一致，指向远程 `main` 历史中的提交。每次发布使用新的标签；升级 Android 版本时还须递增 `android/app/build.gradle.kts` 的 `versionCode`。Actions 页面也可手动运行 **Publish preview release**，填写已有标签；手动运行默认保留草稿。

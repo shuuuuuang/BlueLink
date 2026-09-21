@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing preview tag, e.g. v0.2.18-preview.1'
+        description: 'Existing preview tag, e.g. v0.2.18-preview.2'
         required: true
         type: string
       draft:
