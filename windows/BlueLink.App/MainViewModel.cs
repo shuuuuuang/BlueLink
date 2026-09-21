@@ -31,10 +31,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private volatile bool _resettingIdentity;
     private readonly SemaphoreSlim _trustMutationGate = new(1, 1);
     private readonly SemaphoreSlim _conversationPersistenceGate = new(1, 1);
+    private readonly SemaphoreSlim _transferPersistenceGate = new(1, 1);
     private readonly IdentityStore _identity;
     private readonly BlueLinkDatabase _database;
     private readonly SessionSupervisor _sessions;
-    private readonly HashSet<Guid> _queueFlushes = [];
+    private readonly TransferRecoveryStore _recovery;
     private readonly HashSet<Guid> _historyLoaded = [];
     private readonly SemaphoreSlim _historyGate = new(1, 1);
     private long _conversationSelectionVersion;
@@ -87,6 +88,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public string DefaultDownloadDirectory => _database.DefaultDownloadDirectory;
     public string DataDirectory => Path.GetDirectoryName(_database.DatabasePath)!;
     public string CacheDirectory { get; }
+    internal TemporaryCleanup CollectTemporaryFiles(bool preview) => OwnedTemporaryFiles.Collect(
+        Path.Combine(CacheDirectory, "Outgoing"), _recovery.ReferencesTemporary, preview);
+    internal StorageInventory MeasureStorage(string received, CancellationToken token)
+    {
+        var locations = new List<StorageLocation> { new(DataDirectory,StorageCategory.Other), new(received,StorageCategory.Received) };
+        foreach (var location in new[] { new StorageLocation(CacheDirectory,StorageCategory.Other),
+            new(Path.Combine(CacheDirectory,"Thumbnails"),StorageCategory.Thumbnails),
+            new(Path.Combine(CacheDirectory,"Updates"),StorageCategory.Updates),
+            new(Path.Combine(CacheDirectory,"Outgoing"),StorageCategory.Snapshots),
+            new(Path.Combine(DataDirectory,"composer"),StorageCategory.Drafts) })
+            if (Directory.Exists(location.Path)) locations.Add(location);
+        return StorageInventory.Scan(locations,token);
+    }
     public string DiagnosticsPath => SessionLog.FilePath;
     public Updates.UpdateWorkflow Updates { get; private set; }
     public bool CanInstallUpdate => !_acceptanceUpdates && !AllTransfers.Any(value => value.IsActive);
@@ -104,7 +118,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         MessagesView = CollectionViewSource.GetDefaultView(Messages);
         MessagesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ChatItem.DateGroup)));
         InitializeHomeViews();
+        _recovery = new TransferRecoveryStore(Path.Combine(DataDirectory, "Recovery"));
         _sessions = new SessionSupervisor(_identity, PresentTrustRequest);
+        _sessions.PersistRecovery = (session, item) => _recovery.RecordTransfer(session.SessionId, session.StartedAt, session.Transport.ToString(), item);
         _sessions.IdentityAssociations = CreateIdentityAssociationHandler;
         _sessions.OutgoingDirectory = Path.Combine(CacheDirectory, "Outgoing");
         _sessions.ReceiveDecision = IncomingFilePrompt.DecideAsync;
@@ -177,15 +193,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool IsConnecting => Phase is ConnectionPhase.Connecting or ConnectionPhase.SecureHandshake or ConnectionPhase.TrustRequired;
     public int ActiveSessionCount => Sessions.Count(value => value.Phase == ConnectionPhase.Connected);
     public string ActiveSessionCountText => Localization.Strings.Format($"{ActiveSessionCount} 台设备已连接");
-    public string ActivePeerTitle => HasActiveConversation ? Status : Localization.Strings.Get("选择设备开始聊天");
+    public string ActivePeerTitle => HasActiveConversation ? (Conversations.FirstOrDefault(p => p.PeerId.Equals(_activePeerId,StringComparison.OrdinalIgnoreCase))?.DisplayName ?? Status) : Localization.Strings.Get("选择设备开始聊天");
     public string ActivePeerSubtitle => HasActiveConversation
-        ? (IsConnected ? Localization.Strings.Get(Sessions.FirstOrDefault(value => value.SessionId == _activeSessionId)?.Transport == TransportKind.Usb ? "USB · 端到端加密 · BTX/1.1" : "Bluetooth · 端到端加密 · BTX/1.1") : IsConnecting ? Detail : OfflinePeerSubtitle)
+        ? (IsConnected ? Localization.Strings.Get(Sessions.FirstOrDefault(value => value.SessionId == _activeSessionId)?.Transport == TransportKind.Usb ? "USB · 端到端加密" : "Bluetooth · 端到端加密") : IsConnecting ? Detail : OfflinePeerSubtitle)
         : Localization.Strings.Get("消息和文件通过 Bluetooth 或 USB 安全传输");
     private string OfflinePeerSubtitle => string.Join(" · ",
         IsBluetoothUnavailable ? Localization.Strings.Get("蓝牙未开启") : Localization.Strings.Get("设备离线"),
         Conversations.FirstOrDefault(peer => peer.PeerId == _activePeerId)?.LastSeenText ?? Localization.Strings.Get("可查看本地历史记录"));
-    public string ComposerPlaceholder => IsConnected ? Localization.Strings.Get("输入消息") : IsBluetoothUnavailable
-        ? Localization.Strings.Get("蓝牙未开启，无法发送消息") : Localization.Strings.Get("设备离线，暂不可发送");
+    public string ComposerPlaceholder => IsConnected ? Localization.Strings.Get("输入消息")
+        : Localization.Strings.Get("可编辑草稿，连接后手动发送");
     public bool CanStartConnection => !_resettingIdentity && !_isDialing && _sessions.CanAccept;
     public bool CanCancelConnection => _isDialing;
     public bool CanConnectSelected => SelectedDevice?.CanInitiate == true && CanStartConnection && !IsBluetoothUnavailable;
@@ -198,7 +214,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _activePeerId = conversation.PeerId;
         _activeSessionId = conversation.SessionId;
         Status = conversation.PeerName;
-        Detail = Localization.Strings.Get("端到端加密 · BTX/1.1");
+        Detail = Localization.Strings.Get("端到端加密");
         Phase = ConnectionPhase.Connected;
         Raise(nameof(HasActiveConversation));
         Raise(nameof(ActiveSessionCount));
@@ -207,6 +223,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task InitializeLocalStateAsync()
     {
+        _database.AssociateComposerDrafts = legacy =>
+        {
+            _recovery.Associate(_identity.IdentityAssociations);
+            return ComposerStore.Associate(_identity.IdentityAssociations, legacy);
+        };
         await _database.InitializeAsync(_identity);
         Settings = await _database.LoadSettingsAsync();
         _sessions.UsbEnabled = Settings.UsbEnabled;
@@ -221,11 +242,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var peer in await _database.LoadPeersAsync()) _storedPeers[peer.PeerId] = peer;
         foreach (var conversation in await _database.LoadConversationsAsync())
             _storedConversations[conversation.PeerId] = conversation;
+        LoadDrafts();
         AllTransfers.Clear();
         foreach (var transfer in await LoadStoredTransfersAsync(null)) AllTransfers.Add(transfer);
         RefreshConversations();
         foreach (var conversation in Conversations)
             Notifications.Restore(conversation.PeerId, conversation.PeerName, conversation.UnreadCount, conversation.LastActivityAt);
+        try {
+            var references = (await _database.LoadReferencedFilePathsAsync()).Concat(_recovery.MergeHistory([])
+                .Where(x => x.LocalPath is not null).Select(x => Path.GetFullPath(x.LocalPath!))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            await Task.Run(() => {
+                OwnedTemporaryFiles.Collect(Path.Combine(CacheDirectory,"Outgoing"), _recovery.ReferencesTemporary, preview:false, minimumAge:TimeSpan.FromDays(1));
+                ComposerStore.CollectStartupOrphans(references);
+            });
+        }
+        catch (Exception error) { SessionLog.Write("Storage", "暂未清理旧发送缓存", error); }
     }
 
     public async Task InitializeAsync()
@@ -392,15 +423,25 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _dialCancellation?.Cancel();
     }
 
-    public async Task SendAsync(string text)
+    public Task<bool> SendAsync(string text) => _activeSessionId is { } sessionId && IsConnected
+        ? SendTextToSessionAsync(sessionId, text) : Task.FromResult(false);
+
+    internal Task<bool> SendComposerTextAsync(string peer, string text)
     {
-        if (_activeSessionId is not { } sessionId || string.IsNullOrWhiteSpace(text)) return;
+        var route = Sessions.Where(value => value.Phase == ConnectionPhase.Connected && string.Equals(value.PeerId, peer, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(value => Settings.UsbEnabled && value.Transport == TransportKind.Usb).FirstOrDefault();
+        return route is null ? Task.FromResult(false) : SendTextToSessionAsync(route.SessionId, text);
+    }
+
+    private async Task<bool> SendTextToSessionAsync(Guid sessionId, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
         var item = new ChatItem(Guid.NewGuid(), text.Trim(), true, DateTimeOffset.Now, MessageStatus.Sending);
         if (!_sessionMessages.TryGetValue(sessionId, out var sessionItems))
             _sessionMessages[sessionId] = sessionItems = [];
         sessionItems.Add(item);
-        Messages.Add(item);
         var snapshot = Sessions.FirstOrDefault(value => value.SessionId == sessionId);
+        if (string.Equals(_activePeerId, snapshot?.PeerId, StringComparison.OrdinalIgnoreCase)) Messages.Add(item);
         if (snapshot?.PeerId is { } peerId) await PersistMessageAsync(snapshot, item, unread: false);
         try
         {
@@ -409,17 +450,34 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ReplaceSessionMessage(sessionId, sent);
             ReplaceMessage(sent);
             if (snapshot?.PeerId is not null) await PersistMessageAsync(snapshot, sent, unread: false);
+            return true;
         }
         catch
         {
-            var stillConnected = Sessions.Any(value => value.SessionId == sessionId && value.Phase == ConnectionPhase.Connected);
-            var failed = item with { Status = stillConnected ? MessageStatus.Failed : MessageStatus.LocalQueued };
+            var failed = item with { Status = MessageStatus.Failed };
             ReplaceSessionMessage(sessionId, failed);
             ReplaceMessage(failed);
             if (snapshot?.PeerId is not null) await PersistMessageAsync(snapshot, failed, unread: false);
+            return false;
         }
     }
 
+    internal Task SendComposerFileAsync(string peerId, string path, string? displayName = null)
+    {
+        var route = Sessions.Where(value => value.Phase == ConnectionPhase.Connected &&
+            string.Equals(value.PeerId, peerId, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(value => Settings.UsbEnabled && value.Transport == TransportKind.Usb).FirstOrDefault();
+        if (route is null) return Task.FromException(new IOException(Localization.Strings.Get("设备未连接，无法发送文件")));
+        var announced = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = ObserveComposerFileAsync(_sessions.SendFileAsync(route.SessionId, path, displayName, () => announced.TrySetResult()), announced);
+        return announced.Task;
+    }
+
+    private static async Task ObserveComposerFileAsync(Task transfer, TaskCompletionSource announced)
+    {
+        try { await transfer; announced.TrySetResult(); }
+        catch (Exception error) { announced.TrySetException(error); } // Announced files keep their transfer-row retry action.
+    }
     public Task SendFileAsync(string path) => _activeSessionId is { } id
         ? _sessions.SendFileAsync(id, path) : Task.CompletedTask;
 
@@ -439,6 +497,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var sessionId = ResolveSessionId(transfer);
         return sessionId is { } id ? _sessions.RetryFileAsync(id, transfer.LocalPath, transfer)
             : Task.FromException(new InvalidOperationException("设备当前未连接"));
+    }
+
+    internal Task SwitchQueuedToBluetoothAsync(TransferItem transfer) => ResolveSessionId(transfer) is { } session
+        ? _sessions.SwitchQueuedToBluetoothAsync(session, transfer)
+        : Task.FromException(new InvalidOperationException("设备当前未连接"));
+
+    internal Task RetryTransferFromAsync(TransferItem transfer, string path)
+    {
+        var current = AllTransfers.FirstOrDefault(item => item.Id == transfer.Id);
+        if (current is null || !current.CanReselectSource || !string.Equals(current.PeerId, transfer.PeerId, StringComparison.OrdinalIgnoreCase))
+            return Task.FromException(new InvalidOperationException("任务已变化或缺少原文件指纹，请重新选择文件创建新任务。"));
+        var session = ResolveSessionId(current);
+        if (session is null) return Task.FromException(new InvalidOperationException("设备当前未连接"));
+        var candidate = current.Snapshot(); candidate.LocalPath = path;
+        // The existing snapshot/hash validation runs before publication or network transfer.
+        return _sessions.RetryFileAsync(session.Value, path, candidate);
     }
 
     private Guid? ResolveSessionId(TransferItem transfer)
@@ -501,6 +575,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task SelectConversationAsync(string peerId)
     {
+        _ = FlushDraftsAsync();
         var selectionVersion = ++_conversationSelectionVersion;
         _activePeerId = peerId;
         var session = Sessions.FirstOrDefault(value => string.Equals(value.PeerId, peerId, StringComparison.OrdinalIgnoreCase));
@@ -565,6 +640,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task ClearConversationAsync(string peerId)
     {
+        await ClearDraftsAsync(peerId);
         await _conversationPersistenceGate.WaitAsync();
         try
         {
@@ -598,6 +674,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             Theme = Appearance.AppearancePreferences.NormalizeTheme(value.Theme),
             Language = Appearance.AppearancePreferences.NormalizeLanguage(value.Language),
+            SendShortcut = ComposerShortcuts.Normalize(value.SendShortcut),
         };
         await _database.SaveSettingsAsync(saved);
         Settings = saved;
@@ -714,6 +791,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task ClearChatHistoryAsync()
     {
+        await ClearDraftsAsync();
         await _conversationPersistenceGate.WaitAsync();
         try
         {
@@ -729,13 +807,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task ClearTransferHistoryAsync()
     {
         await _database.ClearTransfersAsync();
-        foreach (var values in _sessionTransfers.Values) values.Clear();
-        Transfers.Clear(); AllTransfers.Clear();
+        // Clearing history does not discard operational recovery or an active transfer.
+        foreach (var values in _sessionTransfers.Values)
+            foreach (var id in values.Where(x => !x.Value.IsActive && !x.Value.RecoveryPending).Select(x => x.Key).ToArray()) values.Remove(id);
+        foreach (var item in Transfers.Where(x => !x.IsActive && !x.RecoveryPending).ToArray()) Transfers.Remove(item);
+        foreach (var item in AllTransfers.Where(x => !x.IsActive && !x.RecoveryPending).ToArray())
+        {
+            if (_recovery.Dismiss(item.Id)) AllTransfers.Remove(item);
+        }
     }
 
     public async Task DeleteTransferAsync(TransferItem transfer)
     {
-        if (!transfer.CanDelete) return;
+        if (!transfer.CanDelete || !_recovery.Dismiss(transfer.Id)) return;
         await _database.DeleteTransferAsync(transfer.Id.ToString("N"));
         foreach (var values in _sessionTransfers.Values) values.Remove(transfer.Id);
         Transfers.Remove(transfer);
@@ -829,8 +913,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
         });
 
+    private readonly SessionTransferLedger _transferProjection = new();
     private void OnSessionTransfer(SessionSnapshot snapshot, TransferItem transfer) => Application.Current.Dispatcher.Invoke(() =>
     {
+        if (transfer.AttemptId is not null && _transferProjection.Record(transfer) is null) return;
         if (transfer.Status == TransferStatus.Completed && transfer.Role != AttachmentRole.ImagePreview && _notifiedTransfers.Add(transfer.Id) && Settings.TransferNotifications)
             SystemNotificationRequested?.Invoke(Localization.Strings.Get(transfer.Outgoing ? "文件发送完成" : "文件接收完成"), transfer.Name);
         transfer.PeerId = snapshot.PeerId;
@@ -864,13 +950,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 PreviewPath = transfer.LocalPath ?? value.PreviewPath,
                 State = value.State
-            } : value.TransferId == transfer.Id ? value with
-            {
-                LocalPath = transfer.LocalPath ?? value.LocalPath,
-                State = transfer.Status.ToString(),
-                CompletedBytes = transfer.CompletedBytes,
-                BytesPerSecond = transfer.BytesPerSecond
-            } : value).ToArray();
+            } : value.WithTransfer(transfer)).ToArray();
         messages[index] = current with { Attachments = attachments };
         if (_activeSessionId == sessionId)
         {
@@ -927,16 +1007,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Outgoing = value.Outgoing, CompletedBytes = value.CompletedBytes, Status = value.Status,
                 MessageId = value.MessageId, AttachmentId = value.AttachmentId, MimeType = value.MimeType,
                 LocalPath = value.LocalPath, FailureDetail = value.FailureDetail, PeerId = value.PeerId,
-                Role = value.Role });
+                SourceSha256 = value.SourceSha256, AttemptId = value.AttemptId, AttemptSequence = value.AttemptSequence,
+                Role = value.Role, RecoveryPending = value.RecoveryPending });
         }
         else
         {
+            current.RecoveryPending = value.RecoveryPending;
             current.CompletedBytes = value.CompletedBytes; current.Status = value.Status;
             current.MessageId = value.MessageId ?? current.MessageId;
             current.AttachmentId = value.AttachmentId ?? current.AttachmentId;
             current.MimeType = value.MimeType;
             current.Role = value.Role;
             current.LocalPath = value.LocalPath ?? current.LocalPath;
+            current.SourceSha256 = value.SourceSha256 ?? current.SourceSha256;
+            current.AttemptId = value.AttemptId ?? current.AttemptId;
+            current.AttemptSequence = Math.Max(current.AttemptSequence, value.AttemptSequence);
             current.FailureDetail = value.FailureDetail;
             current.PeerId = value.PeerId ?? current.PeerId;
         }
@@ -977,7 +1062,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             _storedPeers[peerId] = peer;
             var conversation = _storedConversations.GetValueOrDefault(peerId) ??
                 new StoredConversation(ConversationId(peerId), peerId, now, 0);
-            await _database.UpsertConversationAsync(conversation);
+            await _database.UpsertConversationMetadataAsync(conversation);
             _storedConversations[peerId] = conversation;
             _reconnectAfter.Remove(snapshot.TransportAddress);
             await _database.UpsertSessionRecordAsync(new(snapshot.SessionId.ToString("N"), peerId,
@@ -986,7 +1071,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             finally { _trustMutationGate.Release(); }
             await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
             await LoadHistoryAsync(peerId, snapshot.SessionId);
-            await FlushQueuedMessagesAsync(snapshot);
         }
         else if (snapshot.Phase == ConnectionPhase.Disconnected)
         {
@@ -1016,7 +1100,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (!_storedConversations.ContainsKey(peerId))
         {
             var conversation = new StoredConversation(ConversationId(peerId), peerId, activityAt, 0);
-            await _database.UpsertConversationAsync(conversation);
+            await _database.UpsertConversationMetadataAsync(conversation);
             _storedConversations[peerId] = conversation;
         }
         }
@@ -1045,7 +1129,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var current = _storedConversations[peerId];
         current = current with { LastActivityAt = Math.Max(current.LastActivityAt, createdAt),
             UnreadCount = current.UnreadCount + (unread && !IsConversationVisible(peerId) ? 1 : 0) };
-        await _database.UpsertConversationAsync(current);
+        await _database.UpsertConversationMetadataAsync(current);
         _storedConversations[peerId] = current;
         await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
         }
@@ -1072,10 +1156,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task PersistTransferAsync(SessionSnapshot snapshot, TransferItem transfer)
     {
-        transfer.PeerName = snapshot.PeerName;
-        transfer.PeerId = snapshot.PeerId;
         if (!Settings.SaveTransferHistory || snapshot.PeerId is not { } peerId || _identity.IsRetired(peerId)) return;
+        // Capture this event before waiting; history writes must never mutate a live UI snapshot.
+        transfer = transfer.Snapshot();
+        transfer.PeerName = snapshot.PeerName;
         transfer.PeerId = peerId;
+        await _transferPersistenceGate.WaitAsync();
+        try
+        {
+        if (_identity.IsRetired(peerId)) return;
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await EnsureConversationAsync(snapshot, now);
         var previous = (await _database.LoadTransfersAsync(peerId)).FirstOrDefault(value =>
@@ -1084,7 +1173,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             transfer.MessageId?.ToString("N") ?? previous?.MessageId,
             transfer.Outgoing ? "Outgoing" : "Incoming", transfer.Status.ToString(), transfer.Name,
             transfer.MimeType, transfer.TotalBytes, transfer.CompletedBytes, transfer.LocalPath ?? previous?.LocalPath,
-            previous?.SnapshotPath, previous?.Sha256, transfer.Status == TransferStatus.Failed ? "TRANSFER_FAILED" : null,
+            previous?.SnapshotPath, transfer.SourceSha256 is { } hash ? Convert.FromHexString(hash) : previous?.Sha256, transfer.Status == TransferStatus.Failed ? "TRANSFER_FAILED" : null,
             transfer.FailureDetail, previous?.CreatedAt ?? now, now));
         if (transfer.AttachmentId is { } attachmentId)
         {
@@ -1101,17 +1190,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     ? attachment.State : transfer.Status.ToString()
             });
         }
-        await Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            var existing = AllTransfers.FirstOrDefault(value => value.Id == transfer.Id);
-            if (existing is null) AllTransfers.Insert(0, transfer);
-            else
-            {
-                existing.CompletedBytes = transfer.CompletedBytes; existing.Status = transfer.Status;
-                existing.LocalPath = transfer.LocalPath ?? existing.LocalPath;
-                existing.FailureDetail = transfer.FailureDetail; existing.PeerId = peerId;
-            }
-        });
+        }
+        finally { _transferPersistenceGate.Release(); }
     }
 
     private async Task PersistPreviewAsync(SessionSnapshot snapshot, TransferItem transfer)
@@ -1157,47 +1237,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         finally { _historyGate.Release(); }
     }
 
-    private async Task FlushQueuedMessagesAsync(SessionSnapshot snapshot)
-    {
-        if (snapshot.PeerId is null || snapshot.Phase != ConnectionPhase.Connected) return;
-        if (!_sessionMessages.TryGetValue(snapshot.SessionId, out var messages)) return;
-        if (!_queueFlushes.Add(snapshot.SessionId)) return;
-        try
-        {
-        foreach (var queued in messages.Where(value => value.Outgoing && value.Status == MessageStatus.LocalQueued).ToArray())
-        {
-            if (_resettingIdentity || !IsCurrentTrustedSession(snapshot)) break;
-            try
-            {
-                await _sessions.SendChatAsync(snapshot.SessionId, queued.Text, queued.Id);
-                var sent = queued with { Status = MessageStatus.Sent };
-                ReplaceSessionMessage(snapshot.SessionId, sent);
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    if (_activeSessionId == snapshot.SessionId) ReplaceMessage(sent);
-                });
-                await PersistMessageAsync(snapshot, sent, unread: false);
-            }
-            catch
-            {
-                // Keep LOCAL_QUEUED; the next successfully restored session will retry it.
-                break;
-            }
-        }
-        }
-        finally { _queueFlushes.Remove(snapshot.SessionId); }
-    }
-
-    private async Task<List<ChatItem>> LoadStoredMessagesAsync(string peerId)
+    private async Task<List<ChatItem>> LoadStoredMessagesAsync(string peerId, string? anchorId = null, bool around = false, bool all = false)
     {
         var result = new List<ChatItem>();
-        foreach (var value in await _database.LoadMessagesAsync(ConversationId(peerId)))
+        var page = all ? null : await _database.LoadHistoryPageAsync(ConversationId(peerId), anchorId, around);
+        var stored = page?.Messages ?? await _database.LoadMessagesAsync(ConversationId(peerId));
+        var attachmentLookup = (page?.Attachments ?? await _database.LoadConversationAttachmentsAsync(ConversationId(peerId))).ToLookup(item => item.MessageId);
+        var transferLookup = AllTransfers.Where(item => string.Equals(item.PeerId, peerId, StringComparison.OrdinalIgnoreCase)).ToDictionary(item => item.Id.ToString("N"), item => item.Snapshot(), StringComparer.OrdinalIgnoreCase);
+        return await Task.Run(() =>
         {
-            var attachments = (await _database.LoadAttachmentsAsync(value.MessageId)).Select(item =>
+        foreach (var value in stored)
+        {
+            var attachments = attachmentLookup[value.MessageId].Select(item =>
                 new ChatAttachment(Guid.ParseExact(item.AttachmentId, "N"),
                     item.TransferId is null ? Guid.Empty : Guid.ParseExact(item.TransferId, "N"),
-                    item.FileName, item.MimeType, item.Size, item.LocalPath, RestoredAttachmentState(item.TransferId, item.State), item.PreviewPath,
-                    item.State == "Completed" ? item.Size : AllTransfers.FirstOrDefault(t => t.Id.ToString("N") == item.TransferId)?.CompletedBytes ?? 0)).ToArray();
+                    item.FileName, item.MimeType, item.Size, item.LocalPath, RestoredAttachmentState(item.TransferId, item.State, transferLookup), item.PreviewPath,
+                    item.State == "Completed" ? item.Size : 0).WithTransfer(transferLookup.GetValueOrDefault(item.TransferId ?? ""))).ToArray();
             _ = Enum.TryParse<MessageStatus>(value.Status, true, out var status);
             result.Add(new(Guid.ParseExact(value.MessageId, "N"), value.Content,
                 value.Direction == StoredMessageDirection.Outgoing, DateTimeOffset.FromUnixTimeMilliseconds(value.CreatedAt),
@@ -1206,18 +1261,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     _ => ChatItemKind.Text }, attachments));
         }
         return result;
+        });
     }
 
-    private string RestoredAttachmentState(string? transferId, string state)
+    private static string RestoredAttachmentState(string? transferId, string state, IReadOnlyDictionary<string, TransferItem> transfers)
     {
-        var current = AllTransfers.FirstOrDefault(value => value.Id.ToString("N") == transferId);
-        if (current is not null) return current.Status.ToString();
+        if (transfers.TryGetValue(transferId ?? "", out var current)) return current.Status.ToString();
         return state is "Offered" or "Queued" or "Transferring" or "Paused" or "RemotePaused" or "Resuming" or "Verifying" or "Committing"
             ? "Failed" : state;
     }
 
     private async Task<List<TransferItem>> LoadStoredTransfersAsync(string? peerId) =>
-        (await _database.LoadTransfersAsync(peerId)).Select(value => new TransferItem
+        _recovery.MergeHistory((await _database.LoadTransfersAsync(peerId)).Select(value => new TransferItem
         {
             Id = Guid.ParseExact(value.TransferId, "N"), Name = value.FileName, TotalBytes = value.TotalBytes,
             Outgoing = value.Direction.Equals("Outgoing", StringComparison.OrdinalIgnoreCase),
@@ -1225,14 +1280,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Status = Enum.TryParse<TransferStatus>(value.Status, true, out var status) ? status : TransferStatus.Failed,
             MessageId = value.MessageId is null ? null : Guid.ParseExact(value.MessageId, "N"),
             MimeType = value.MimeType, LocalPath = value.LocalPath, FailureDetail = value.FailureDetail,
+            SourceSha256 = value.Sha256 is { } hash ? Convert.ToHexString(hash) : null,
             PeerId = value.PeerId, CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(value.CreatedAt),
             PeerName = _storedPeers.GetValueOrDefault(value.PeerId)?.DisplayName ?? Localization.Strings.Get("对端")
-        }).Select(value =>
+        }), peerId).Concat(AllTransfers.Where(x => peerId is null || string.Equals(peerId, x.PeerId, StringComparison.OrdinalIgnoreCase)))
+        .DistinctBy(x => x.Id).Select(value =>
         {
             // A retry retains its transfer ID across sessions. The global projection holds
             // the latest attempt; an older session cache may still contain its failure.
             var live = AllTransfers.FirstOrDefault(item => item.Id == value.Id);
-            if (live is not null) return live;
+            if (live is not null && string.Equals(live.PeerId, value.PeerId, StringComparison.OrdinalIgnoreCase)) return live;
             if (value.IsActive)
             {
                 value.Status = TransferStatus.Failed;
@@ -1256,16 +1313,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Devices.Any(device => device.Address.Equals(peer.TransportAddress, StringComparison.OrdinalIgnoreCase) ||
                     MatchesPeer(device, peer.PeerId)) ? DeviceAvailability.Connectable : DeviceAvailability.Offline;
             var conversation = _storedConversations.GetValueOrDefault(peer.PeerId);
+            var preference = PeerPreferences.Get(peer.PeerId);
             return new ConversationSummary(peer.PeerId, string.IsNullOrWhiteSpace(peer.DisplayName) ? Localization.Strings.Get("已信任设备") : peer.DisplayName,
                 Enum.TryParse<PeerPlatform>(peer.Platform, true, out var platform) ? platform : PeerPlatform.Unknown,
                 availability, session?.SessionId, peer.TransportAddress, conversation?.UnreadCount ?? 0,
                 DateTimeOffset.FromUnixTimeMilliseconds(conversation?.LastActivityAt ?? peer.LastSeenAt),
                 peer.LastConnectedAt is { } connectedAt ? DateTimeOffset.FromUnixTimeMilliseconds(connectedAt) : null)
-                { UsbReady = UsbSessionPolicy.IsReady(Settings.UsbEnabled, peer.PeerId, Sessions) };
-        }).OrderBy(value => value.Availability switch
-        {
-            DeviceAvailability.Connected => 0, DeviceAvailability.Offline => 1, _ => 2
-        }).ThenByDescending(value => value.LastActivityAt).ToList();
+                { UsbReady = UsbSessionPolicy.IsReady(Settings.UsbEnabled, peer.PeerId, Sessions), LocalNote = preference.Note, IsPinned = preference.Pinned };
+        }).OrderBy(value => value.IsConnected ? 0 : 1).ThenByDescending(value => value.IsPinned).ThenByDescending(value => value.LastActivityAt).ToList();
         Conversations.Clear(); foreach (var value in values) Conversations.Add(value);
         TrustedDevices.Clear();
         foreach (var trusted in _identity.TrustedIdentities)
@@ -1396,7 +1451,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
         if (!_storedConversations.TryGetValue(peerId, out var conversation) || conversation.UnreadCount == 0) return;
         conversation = conversation with { UnreadCount = 0 };
-        await _database.UpsertConversationAsync(conversation);
+        await _database.UpsertConversationMetadataAsync(conversation);
         _storedConversations[peerId] = conversation;
         await Application.Current.Dispatcher.InvokeAsync(RefreshConversations);
         }
@@ -1415,6 +1470,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void RaiseActiveConversationState()
     {
+        Raise(nameof(DraftText)); Raise(nameof(CanEditDraft));
         Raise(nameof(HasActiveConversation));
         Raise(nameof(ShowConversationPlaceholder));
         Raise(nameof(IsOfflineConversation));
@@ -1434,6 +1490,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposeStarted, 1) != 0) return;
+        _draftDelay?.Cancel();
+        await FlushDraftsAsync();
+        _draftDelay?.Dispose();
         _lifetime.Cancel();
         StopObservingHomeTransfers();
         Updates.Dispose();

@@ -25,8 +25,14 @@
     <StartMenuComponentCondition Condition="'$(StartMenuComponentCondition)' == ''">1</StartMenuComponentCondition>
     <MajorUpgradeSchedule Condition="'$(MajorUpgradeSchedule)' == ''">afterInstallExecute</MajorUpgradeSchedule>
     <AllowSameVersionUpgrades Condition="'$(AllowSameVersionUpgrades)' == ''">no</AllowSameVersionUpgrades>
-    <DefineConstants>MajorUpgradeSchedule=$(MajorUpgradeSchedule);AllowSameVersionUpgrades=$(AllowSameVersionUpgrades);ProductVersion=$(ProductVersion);LauncherExe=$(LauncherExe);LauncherConfig=$(LauncherConfig);UninstallExe=$(UninstallExe);UninstallConfig=$(UninstallConfig);ManifestPath=$(ManifestPath);ProductName=$(ProductName);ProductCode=$(ProductCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleUpgradeCode=$(BundleUpgradeCode);BundleProviderKey=$(BundleProviderKey);ApplicationComponentGuid=$(ApplicationComponentGuid);UninstallerComponentGuid=$(UninstallerComponentGuid);ManifestComponentGuid=$(ManifestComponentGuid);DownloadComponentGuid=$(DownloadComponentGuid);StartMenuComponentGuid=$(StartMenuComponentGuid);DesktopComponentGuid=$(DesktopComponentGuid);AutoStartComponentGuid=$(AutoStartComponentGuid);ProductRegistryKey=$(ProductRegistryKey);StartMenuComponentCondition=$(StartMenuComponentCondition)</DefineConstants>
+    <Cultures>zh-CN</Cultures>
+    <BundledDesktopRuntime Condition="'$(BundledDesktopRuntime)' == ''">0</BundledDesktopRuntime>
+    <DefineConstants>NativeMsiUi=yes;BundledDesktopRuntime=$(BundledDesktopRuntime);MajorUpgradeSchedule=$(MajorUpgradeSchedule);AllowSameVersionUpgrades=$(AllowSameVersionUpgrades);ProductVersion=$(ProductVersion);LauncherExe=$(LauncherExe);LauncherConfig=$(LauncherConfig);UninstallExe=$(UninstallExe);UninstallConfig=$(UninstallConfig);ManifestPath=$(ManifestPath);ProductName=$(ProductName);ProductCode=$(ProductCode);PackageUpgradeCode=$(PackageUpgradeCode);BundleUpgradeCode=$(BundleUpgradeCode);BundleProviderKey=$(BundleProviderKey);ApplicationComponentGuid=$(ApplicationComponentGuid);UninstallerComponentGuid=$(UninstallerComponentGuid);ManifestComponentGuid=$(ManifestComponentGuid);DownloadComponentGuid=$(DownloadComponentGuid);StartMenuComponentGuid=$(StartMenuComponentGuid);DesktopComponentGuid=$(DesktopComponentGuid);AutoStartComponentGuid=$(AutoStartComponentGuid);ProductRegistryKey=$(ProductRegistryKey);StartMenuComponentCondition=$(StartMenuComponentCondition)</DefineConstants>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.6" />
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="4.0.6" />
+  </ItemGroup>
   <ItemGroup Condition="'$(GeneratedPayloadPath)' != ''">
     <Compile Remove="Package.Generated.wxs" />
     <Compile Include="$(GeneratedPayloadPath)" />

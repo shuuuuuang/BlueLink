@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="text_preview_title">File preview</string>
+    <string name="text_preview_binary">This file is not recognizable text. Open it in another app.</string>
+    <string name="text_preview_unreadable">Unable to preview this file. Try Source or another app.</string>
+    <string name="text_preview_rendered">Preview</string>
+    <string name="text_preview_source">Source</string>
+    <string name="text_preview_copy">Copy content</string>
+    <string name="text_preview_truncated">Showing the first 256 KiB. Copy includes only the preview.</string>
+    <string name="text_preview_empty">Empty text file</string>
+    <string name="text_preview_contents">Contents</string>
+    <string name="text_preview_no_headings">This document has no headings</string>
+    <string name="text_preview_untitled_heading">Untitled heading</string>
+    <string name="text_preview_limit_info">Preview limits</string>
+</resources>

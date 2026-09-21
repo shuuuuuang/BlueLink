@@ -34,7 +34,7 @@ class AcceptanceActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         readScene(intent)
-        val image = File(cacheDir, "acceptance/bluelink-preview.png")
+        val image = File(cacheDir, "shared/acceptance/bluelink-preview.png")
         image.parentFile?.mkdirs()
         if (!image.exists()) assets.open("bluelink-final-logo.png").use { input -> image.outputStream().use(input::copyTo) }
         setContent {
@@ -53,7 +53,23 @@ class AcceptanceActivity : ComponentActivity() {
 
 @Composable
 private fun Scenes(scene: String, image: File, close: () -> Unit) {
+    if (scene == "search-multiselect") { SearchMultiSelectAcceptance(image, close); return }
+    if (scene == "file-batch-layout") { FileBatchLayoutAcceptance(close); return }
+    if (scene == "message-share-groups") { MessageBatchAcceptance(image, close, groupedHistory = true); return }
+    if (scene == "message-batch-range") { MessageBatchAcceptance(image, close, longHistory = true); return }
+    if (scene == "message-batch") { MessageBatchAcceptance(image, close); return }
+    if (scene == "recovery") { RecoveryAcceptance(close); return }
+    if (scene.startsWith("text-preview-")) { TextPreviewAcceptance(scene.removePrefix("text-preview-"), close); return }
+    if (scene == "share-review") { ShareReviewAcceptance(close); return }
+    if (scene == "share-navigation") { ShareNavigationAcceptance(close); return }
+    if (scene == "share-inbox") { ShareInboxAcceptance(close); return }
+    if (scene == "file-share-multiple") { MultiFileShareAcceptance(close); return }
+    if (scene.startsWith("product-")) { ProductAcceptance(scene,image,close); return }
+    if (scene == "search-actions") { SearchActionsAcceptance(image, close); return }
+    if (scene.startsWith("file-share-")) { FileShareAcceptance(scene, close); return }
+    if (scene.startsWith("github-update-")) { GitHubUpdateAcceptance(scene, close); return }
     if (scene.startsWith("thumbnail-geometry-")) { ThumbnailGeometryAcceptance(scene.removePrefix("thumbnail-geometry-"), close); return }
+    if (scene == "image-navigation") { ImageNavigationAcceptance(close); return }
     if (scene == "image-preview-original") { ImagePreviewOriginalAcceptance(close); return }
     if (scene == "conversation-scroll") { ConversationScrollAcceptance(image, close); return }
     if (scene == "thumbnail-transfer") { ThumbnailTransferAcceptance(image, close); return }
@@ -67,7 +83,7 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
         }) }
         Scaffold(topBar = { SettingsHeader(page) { if (page == 3) close() else page = 3 } }) { padding ->
             when (page) {
-                3 -> AboutSettings(Modifier.padding(padding), { page = it }, {})
+                3 -> AboutSettings(Modifier.padding(padding), { page = it })
                 SETTINGS_LICENSES -> LicensesScreen(Modifier.padding(padding))
                 SETTINGS_HELP -> HelpFeedbackScreen(Modifier.padding(padding), emptyList(), { page = it })
                 else -> SupportArticle(Modifier.padding(padding), page) { page = SETTINGS_HELP }
@@ -89,6 +105,7 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
         }
         return
     }
+    if (scene == "composer") { ComposerAcceptance(close); return }
     if (scene == "identity-association") { IdentityAssociationAcceptance(close); return }
     if (scene.startsWith("security-")) {
         var visible by remember { mutableStateOf(true) }
@@ -175,7 +192,7 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
         androidx.activity.compose.BackHandler { if (page == SETTINGS_HELP || page == 3) close() else page = settingsParent(page) }
         Scaffold(topBar = { SettingsHeader(page) { if (page == SETTINGS_HELP || page == 3) close() else page = settingsParent(page) } }) { padding ->
             when (page) {
-                3 -> AboutSettings(Modifier.padding(padding), { page = it }, {})
+                3 -> AboutSettings(Modifier.padding(padding), { page = it })
                 SETTINGS_HELP -> HelpFeedbackScreen(Modifier.padding(padding), listOf(DiagnosticEntry(sequence = 1, level = DiagnosticLevel.INFO, component = "Acceptance", message = "Only a debug event")), { page = it }, packageDirectory = blocked)
                 SETTINGS_LICENSES -> LicensesScreen(Modifier.padding(padding))
                 else -> SupportArticle(Modifier.padding(padding), page) { page = SETTINGS_HELP }
@@ -187,7 +204,7 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
     val rows = remember {
         TransferStatus.entries.mapIndexed { i, status ->
             TransferItem(UUID.nameUUIDFromBytes("qa-$i".toByteArray()),
-                if (status == TransferStatus.COMPLETED) image.name else "BlueLink-QA-${status.name}.pdf",
+                if (scene.startsWith("files-product-p1")) "报告👩‍💻".repeat(30) + "Needle-needle" + "后续".repeat(30) + ".pdf" else if (scene.startsWith("files-search-highlight")) "Needle-needle.pdf" else if (status == TransferStatus.COMPLETED) image.name else "BlueLink-QA-${status.name}.pdf",
                 if (status == TransferStatus.COMPLETED) image.length() else 1024 * 1024,
                 completedBytes = if (status == TransferStatus.COMPLETED) image.length() else 512 * 1024,
                 outgoing = i % 2 == 0, status = status, peerId = "qa-peer",
@@ -226,6 +243,33 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
         ChatItem(text = "", outgoing = false, status = MessageStatus.RECEIVED, kind = ChatItemKind.IMAGE, attachments = listOf(photo)),
         ChatItem(text = "", outgoing = true, status = MessageStatus.SENT, kind = ChatItemKind.FILE,
             attachments = listOf(rows.first().attachment()), timestamp = now.minusSeconds(86400))) }
+    val stageMessages = remember(scene) {
+        listOf("VERIFYING", "COMMITTING").flatMapIndexed { index, stage ->
+            listOf(false, true).map { image ->
+                val attachment = photo.copy(attachmentId = UUID.randomUUID(), transferId = UUID.randomUUID(),
+                    fileName = "QA-$stage.${if (image) "png" else "pdf"}",
+                    mimeType = if (image) "image/png" else "application/pdf", state = stage,
+                    completedBytes = photo.sizeBytes, previewUri = if (image) photo.localUri else null)
+                ChatItem(text = "", outgoing = index == 0, status = if (index == 0) MessageStatus.SENT else MessageStatus.RECEIVED,
+                    kind = if (image) ChatItemKind.IMAGE else ChatItemKind.FILE, attachments = listOf(attachment))
+            }
+        }
+    }
+    val bubbleMessages = remember(scene) {
+        val images = scene in setOf("conversation-bubbles-images", "conversation-bubbles-no-thumbnails")
+        val active = scene == "conversation-bubbles-active"
+        val files = listOf(false, true).map { outgoing ->
+            val attachment = photo.copy(attachmentId = UUID.randomUUID(), transferId = UUID.randomUUID(),
+                fileName = if (images) "QA-image-${if (outgoing) "out" else "in"}.png" else "QA-file-${if (outgoing) "out" else "in"}.pdf",
+                mimeType = if (images) "image/png" else "application/pdf",
+                state = if (!active) "COMPLETED" else if (outgoing) "FAILED" else "TRANSFERRING")
+            ChatItem(text = "", outgoing = outgoing, status = if (outgoing) MessageStatus.SENT else MessageStatus.RECEIVED,
+                kind = if (images) ChatItemKind.IMAGE else ChatItemKind.FILE, attachments = listOf(attachment))
+        }
+        if (images) files else listOf(
+            ChatItem(text = "对端消息：左下角使用较小圆角。", outgoing = false, status = MessageStatus.RECEIVED),
+            ChatItem(text = "本机消息：右下角使用较小圆角。", outgoing = true, status = MessageStatus.DELIVERED)) + files
+    }
     var historyMessages by remember { mutableStateOf(List(40) { i -> ChatItem(text = "QA history ${i + 1}",
         outgoing = false, status = MessageStatus.RECEIVED, timestamp = now.plusSeconds(i.toLong())) }) }
     val statusMessages = remember { listOf(MessageStatus.LOCAL_QUEUED, MessageStatus.SENDING, MessageStatus.SENT,
@@ -272,14 +316,24 @@ private fun Scenes(scene: String, image: File, close: () -> Unit) {
                 rows, ConnectionState(ConnectionPhase.CONNECTED), DiscoveryState(), access, null, null,
                 {}, {}, {}, {}, {}, {})
         } else if (scene.startsWith("conversation")) ConversationScreen(Modifier.weight(1f), peer.peerId,
-            when (scene) { "conversation-empty" -> emptyList(); "conversation-receipts" -> receiptMessages; "conversation-live" -> historyMessages; "conversation-statuses" -> statusMessages; "conversation-selection" -> selectionMessages; else -> messages },
+            when (scene) { "conversation-stages" -> stageMessages; "conversation-empty" -> emptyList(); "conversation-receipts" -> receiptMessages; "conversation-live" -> historyMessages; "conversation-statuses" -> statusMessages; "conversation-selection" -> selectionMessages; "conversation-bubbles", "conversation-bubbles-active", "conversation-bubbles-images", "conversation-bubbles-no-thumbnails" -> bubbleMessages; else -> messages },
             ConnectionState(if (scene == "conversation-offline") ConnectionPhase.DISCONNECTED else ConnectionPhase.CONNECTED),
-            listOf(if (scene == "conversation-offline") peer.copy(availability = DeviceAvailability.OFFLINE) else peer), rows, true,
+            listOf(if (scene == "conversation-offline") peer.copy(availability = DeviceAvailability.OFFLINE) else peer), rows, scene != "conversation-bubbles-no-thumbnails",
             "downloads://BlueLink", close, {}, {}, {}, {}, {}, {}, { preview = true }, { selected = it }, { selected = it })
         else if (scene.startsWith("search")) MessageSearchScreen(if (scene == "search-empty") emptyList() else messages, peer.peerName, true, close, {}, Modifier.weight(1f))
-        else FilesScreen(Modifier.weight(1f), when (scene) { "files-empty", "files-global-empty" -> emptyList(); "files-history" -> historyRows; else -> rows },
-            listOf(peer, peer.copy(peerId = "qa-other", peerName = "BlueLink QA Phone", platform = PeerPlatform.ANDROID)),
-            scopePeerId = if (scene == "files-empty") peer.peerId else null, receiveDirectory = "downloads://BlueLink",
+        else FilesScreen(Modifier.weight(1f), when (scene) {
+            "files-empty", "files-global-empty" -> emptyList()
+            "files-history" -> historyRows
+            "files-compact" -> List(30) { index -> rows.first { it.status == TransferStatus.COMPLETED }.copy(
+                id = UUID.nameUUIDFromBytes("compact-file-$index".toByteArray()),
+                name = if(index % 2 == 0) "Screenshot_2026-09-19-11-02-32-625_com.bluelink.android_$index.jpg" else "BlueLink-QA-file-$index.pdf",
+                mimeType = if(index % 2 == 0) "image/jpeg" else "application/pdf",
+                outgoing = index % 2 == 0, startedAtEpochMs = now.minusSeconds(index * 60L).toEpochMilli()) }
+            else -> rows },
+            if(scene == "files-filter-many") listOf(peer) + (1..12).map {
+                peer.copy(peerId = "qa-filter-$it", peerName = "QA Device ${it.toString().padStart(2, '0')}")
+            } else listOf(peer, peer.copy(peerId = "qa-other", peerName = "BlueLink QA Phone", platform = PeerPlatform.ANDROID)),
+            scopePeerId = if (scene in setOf("files-empty", "files-search-highlight-conversation", "files-product-p1-conversation")) peer.peerId else null, receiveDirectory = "downloads://BlueLink",
             openSettings = { feedback = "此验收页面不修改接收目录" },
             open = { if (it.status == TransferStatus.COMPLETED) preview = true else selected = it }, more = { selected = it })
     }

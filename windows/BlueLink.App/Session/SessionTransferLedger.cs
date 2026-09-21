@@ -8,9 +8,26 @@ internal sealed class SessionTransferLedger
 {
     private readonly Dictionary<Guid, TransferItem> _active = [];
     private bool _closed;
+    private readonly Dictionary<Guid, TransferItem> _attempts = [];
+    private readonly HashSet<Guid> _retiredAttempts = [];
     public TransferItem? Record(TransferItem value)
     {
         if (_closed) return null;
+        if (value.AttemptId is { } attemptId)
+        {
+            if (_retiredAttempts.Contains(attemptId)) return null;
+            if (_attempts.TryGetValue(value.Id, out var previous))
+            {
+                if (previous.AttemptId == attemptId && !previous.IsActive) return null;
+                if (previous.AttemptId != attemptId)
+                {
+                    if (value.AttemptSequence <= previous.AttemptSequence) return null;
+                    if (previous.Status == TransferStatus.Completed || value.Status is not (TransferStatus.Queued or TransferStatus.Offered)) return null;
+                    if (previous.AttemptId is { } retired) _retiredAttempts.Add(retired);
+                }
+            }
+            _attempts[value.Id] = Copy(value);
+        }
         var snapshot = Copy(value);
         if (value.IsActive) _active[value.Id] = snapshot; else _active.Remove(value.Id);
         return snapshot;

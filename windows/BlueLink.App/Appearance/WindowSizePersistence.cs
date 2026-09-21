@@ -16,7 +16,7 @@ internal sealed class WindowSizePersistence
     private readonly DispatcherTimer _saveTimer;
     private WindowPreferencesStore? _store;
     private WindowSizePreference _latest;
-    private bool _tracking, _adjusting, _closed;
+    private bool _tracking, _adjusting, _closed, _suspended;
     private HwndSource? _source;
 
     public WindowSizePersistence(Window window, string key, string? dataDirectory = null)
@@ -86,7 +86,7 @@ internal sealed class WindowSizePersistence
     }
     private void QueueWorkAreaAdjustment() => _window.Dispatcher.BeginInvoke(new Action(() =>
     {
-        if (_closed || !_tracking || _window.WindowState != WindowState.Normal) return;
+        if (_closed || _suspended || !_tracking || _window.WindowState != WindowState.Normal) return;
         _adjusting = true;
         try
         {
@@ -98,6 +98,19 @@ internal sealed class WindowSizePersistence
         ScheduleSave();
     }));
 
+    internal void Suspend()
+    {
+        Flush();
+        _suspended = true;
+        _saveTimer.Stop();
+    }
+
+    internal void Resume()
+    {
+        _suspended = false;
+        ScheduleSave();
+    }
+
     private void Capture()
     {
         var bounds = _window.RestoreBounds;
@@ -106,17 +119,17 @@ internal sealed class WindowSizePersistence
     }
     private void ScheduleSave()
     {
-        if (!_tracking || _adjusting || _closed) return;
+        if (!_tracking || _adjusting || _closed || _suspended) return;
         Capture(); _saveTimer.Stop(); _saveTimer.Start();
     }
     private async void SaveTimer_Tick(object? sender, EventArgs args)
     {
         _saveTimer.Stop();
-        if (!_closed) { Capture(); await Store.SaveAsync(_latest); }
+        if (!_closed && !_suspended) { Capture(); await Store.SaveAsync(_latest); }
     }
     private void Flush()
     {
-        if (!_tracking || _closed) return;
+        if (!_tracking || _closed || _suspended) return;
         _saveTimer.Stop(); Capture(); Store.Save(_latest);
     }
     private void Closed(object? sender, EventArgs args)

@@ -21,7 +21,7 @@ import com.bluelink.android.ui.components.BlueLinkLogo
 import com.bluelink.android.ui.devices.*
 
 @Composable
-internal fun AboutSettings(modifier: Modifier, select: (Int) -> Unit, localUpdate: () -> Unit) = DeviceScreenTheme {
+internal fun AboutSettings(modifier: Modifier, select: (Int) -> Unit) = DeviceScreenTheme {
     Column(modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp, 28.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -31,12 +31,12 @@ internal fun AboutSettings(modifier: Modifier, select: (Int) -> Unit, localUpdat
                     Spacer(Modifier.height(10.dp))
                     Text("蓝联 BlueLink", fontSize = 20.sp, lineHeight = 28.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(stringResource(R.string.support_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                    Text(stringResource(R.string.support_version, BuildConfig.RELEASE_TAG.removePrefix("v"), BuildConfig.VERSION_CODE),
                         fontSize = 12.sp, lineHeight = 18.sp, color = DeviceColors.Secondary)
                 }
             }
             SettingsGroup(stringResource(R.string.support_update_support)) {
-                SettingsValueRow(stringResource(R.string.support_local_update), "", onClick = localUpdate)
+                GitHubUpdateRow()
                 SettingsDivider()
                 SettingsValueRow(stringResource(R.string.support_help_feedback), "") { select(SETTINGS_HELP) }
                 SettingsDivider()

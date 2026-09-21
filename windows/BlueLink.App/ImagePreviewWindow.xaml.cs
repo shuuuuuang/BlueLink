@@ -1,3 +1,4 @@
+using BlueLink.Files;
 using System;
 using System.IO;
 using System.Windows;
@@ -14,7 +15,7 @@ public partial class ImagePreviewWindow : FluentWindow
     private const double MinimumScale = 0.05;
     private const double MaximumScale = 8;
     private const double FitPadding = 28;
-    private readonly BitmapSource _bitmap;
+    private BitmapSource _bitmap = null!;
     private bool _fitMode = true;
     private bool _panning;
     private Point _panStart;
@@ -29,29 +30,53 @@ public partial class ImagePreviewWindow : FluentWindow
         if (PreviewTools is not null) PreviewTools.Tag = args.NewSize.Width < 900;
     }
 
+    internal static (ImagePreviewWindow? Window, string? Error) TryCreate(
+        string path, string title, string? preferencesDirectory = null)
+    {
+        try { return (new ImagePreviewWindow(path, title, preferencesDirectory), null); }
+        catch (Exception failure) { return (null, failure.Message); }
+    }
+
     public ImagePreviewWindow(string path, string title) : this(path, title, null) { }
 
     internal ImagePreviewWindow(string path, string title, string? preferencesDirectory)
     {
         InitializeComponent();
-        _ = new Appearance.WindowSizePersistence(this, "preview", preferencesDirectory);
-        var fullPath = Path.GetFullPath(path);
-        _bitmap = LoadImage(fullPath);
-        var fileName = string.IsNullOrWhiteSpace(title) ? Path.GetFileName(fullPath) : title;
-        Title = $"{fileName} · {Localization.Strings.Get("图片预览")}";
-        TitleBarFileName.Text = fileName;
-        TitleBarFileName.ToolTip = fileName;
-        var fileBytes = new FileInfo(fullPath).Length;
-        var displaySize = fileBytes < 1024 ? $"{fileBytes} B" : fileBytes < 1048576
-            ? $"{fileBytes / 1024d:0.#} KiB" : $"{fileBytes / 1048576d:0.##} MiB";
-        ImageInfoText.Text = $"{_bitmap.PixelWidth} × {_bitmap.PixelHeight} · {Path.GetExtension(fullPath).TrimStart('.').ToUpperInvariant()} · {displaySize}";
-        PreviewImage.Source = _bitmap;
-        NavigatorImage.Source = _bitmap;
+        _windowSizing = new Appearance.WindowSizePersistence(this, "preview", preferencesDirectory);
+        UpdateFullScreenButton();
+        Closed += (_, _) => PreviewToasts.Dispose();
+        LoadEntry(Path.GetFullPath(path), title);
         Loaded += (_, _) =>
         {
             ConfigureActualPixelSize();
             FitImage();
         };
+    }
+
+    private void LoadEntry(string fullPath, string title)
+    {
+        var bitmap = LoadImage(fullPath);
+        var fileName = string.IsNullOrWhiteSpace(title) ? Path.GetFileName(fullPath) : title;
+        var fileBytes = new FileInfo(fullPath).Length;
+        var displaySize = fileBytes < 1024 ? $"{fileBytes} B" : fileBytes < 1048576
+            ? $"{fileBytes / 1024d:0.#} KiB" : $"{fileBytes / 1048576d:0.##} MiB";
+        var originalSize = WebpBitmapDecoder.IsWebp(fullPath) ? WebpBitmapDecoder.ReadDimensions(fullPath) : (bitmap.PixelWidth, bitmap.PixelHeight);
+        Title = $"{fileName} · {Localization.Strings.Get("图片预览")}";
+        TitleBarFileName.Text = fileName;
+        TitleBarFileName.ToolTip = fileName;
+        ImageInfoText.Text = $"{originalSize.Item1} × {originalSize.Item2} · {Path.GetExtension(fullPath).TrimStart('.').ToUpperInvariant()} · {displaySize}";
+        _bitmap = bitmap;
+        _currentPath = fullPath;
+        PreviewImage.ContextMenu.IsOpen = false;
+        PreviewImage.ContextMenu.DataContext = new BlueLink.Domain.ChatAttachment(
+            Guid.Empty, Guid.Empty, fileName, "image/" + Path.GetExtension(fullPath).TrimStart('.'), fileBytes, fullPath, "Completed");
+        PreviewImage.Source = _bitmap;
+        NavigatorImage.Source = _bitmap;
+        EndPan();
+        _angle = 0;
+        _offset = new Point();
+        ConfigureActualPixelSize();
+        FitImage();
     }
 
     private void ConfigureActualPixelSize()
@@ -65,8 +90,6 @@ public partial class ImagePreviewWindow : FluentWindow
             _bitmap.PixelWidth, _bitmap.PixelHeight, dpi);
         PreviewImage.Width = _imageSize.Width;
         PreviewImage.Height = _imageSize.Height;
-        PreviewImageBounds.Width = _imageSize.Width;
-        PreviewImageBounds.Height = _imageSize.Height;
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
@@ -169,7 +192,6 @@ public partial class ImagePreviewWindow : FluentWindow
         ImageTransform.Matrix = ImagePreviewViewportMath.CreateImageMatrix(
             _imageSize, _angle, _scale, ViewportSize, _offset);
         ZoomText.Text = $"{_scale * 100:0}%";
-        PreviewImageBounds.BorderThickness = new Thickness(.75 / _scale);
         FitButton.Tag = _fitMode;
         ActualSizeButton.Tag = !_fitMode && Math.Abs(_scale - 1) < .0001;
         UpdateNavigator();
@@ -298,8 +320,9 @@ public partial class ImagePreviewWindow : FluentWindow
         UpdateLayout();
     }
 
-    private static BitmapImage LoadImage(string path)
+    private static BitmapSource LoadImage(string path)
     {
+        if (WebpBitmapDecoder.IsWebp(path)) return WebpBitmapDecoder.Load(path, 4096).Bitmap;
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.CacheOption = BitmapCacheOption.OnLoad;

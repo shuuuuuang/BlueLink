@@ -61,6 +61,11 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
         ThemeBox.ItemsSource = new[] { new PreferenceChoice(Localization.Strings.Get("跟随系统"), "system"), new PreferenceChoice(Localization.Strings.Get("浅色"), "light"), new PreferenceChoice(Localization.Strings.Get("深色"), "dark") };
         LanguageBox.ItemsSource = new[] { new PreferenceChoice("简体中文", "zh-CN"), new PreferenceChoice("繁體中文", "zh-TW"), new PreferenceChoice("English", "en-US") };
 
+        SendShortcutBox.ItemsSource = new[] {
+            new PreferenceChoice(Localization.Strings.Get("Enter 发送"), ComposerShortcuts.Enter),
+            new PreferenceChoice(Localization.Strings.Get("Ctrl+Enter 发送"), ComposerShortcuts.ControlEnter)
+        };
+
         CloseBehaviorBox.ItemsSource = CloseBehaviorChoices;
         CloseBehaviorBox.DisplayMemberPath = nameof(CloseBehaviorChoice.Name);
         CloseBehaviorBox.SelectedValuePath = nameof(CloseBehaviorChoice.KeepBackgroundSessions);
@@ -83,7 +88,7 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
     private void PopulateRuntimeInformation()
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        ProductVersionText.Text = Localization.Strings.Format($"版本 {DisplayVersion(version)}");
+        ProductVersionText.Text = Localization.Strings.Format($"版本 {Updates.UpdateService.CurrentRelease.Tag.TrimStart('v')}");
         RuntimeVersionText.Text = $"Microsoft.WindowsDesktop.App {Environment.Version.Major}.{Environment.Version.Minor}.{Environment.Version.Build}";
         RuntimeArchitectureText.Text = RuntimeInformation.ProcessArchitecture switch
         {
@@ -107,6 +112,7 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
     {
         ThemeBox.SelectedValue = Appearance.AppearancePreferences.NormalizeTheme(value.Theme);
         LanguageBox.SelectedValue = Appearance.AppearancePreferences.NormalizeLanguage(value.Language);
+        SendShortcutBox.SelectedValue = ComposerShortcuts.Normalize(value.SendShortcut);
         ConnectionUsbToggle.IsChecked = value.UsbEnabled;
         ScanStartupToggle.IsChecked = value.ScanOnStartup;
         CloseBehaviorBox.SelectedValue = value.KeepBackgroundSessions;
@@ -181,6 +187,7 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
         {
             Theme = ThemeBox.SelectedValue as string ?? "system",
             Language = LanguageBox.SelectedValue as string ?? "zh-CN",
+            SendShortcut = ComposerShortcuts.Normalize(SendShortcutBox.SelectedValue as string),
             UsbEnabled = ConnectionUsbToggle.IsChecked == true,
             AutoConnectTrustedDevices = AutoConnectToggle.IsChecked == true,
             ScanOnStartup = ScanStartupToggle.IsChecked == true,
@@ -326,14 +333,15 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
                 var result = await Task.Run(() =>
                 {
                     var drive = new DriveInfo(RequireNonEmpty(Path.GetPathRoot(path)));
-                    return (Free: drive.AvailableFreeSpace, Data: StorageUsage.Measure(_model.DataDirectory, token),
-                        Cache: StorageUsage.Measure(_model.CacheDirectory, token), Received: StorageUsage.Measure(path, token));
+                    return (Free: drive.AvailableFreeSpace, Inventory: _model.MeasureStorage(path, token));
                 }, token);
                 token.ThrowIfCancellationRequested();
                 StorageSpaceText.Text = Localization.Strings.Format($"可用空间：{FormatBytes(result.Free)}");
-                StorageUsageText.Text = Localization.Strings.Format($"占用估算：数据库 {FormatBytes(result.Data.Bytes)}  ·  ") +
-                    Localization.Strings.Format($"缓存 {FormatBytes(result.Cache.Bytes)}  ·  接收文件 {FormatBytes(result.Received.Bytes)}") +
-                    (result.Data.Partial || result.Cache.Partial || result.Received.Partial ? Localization.Strings.Get("（部分目录未统计）") : "");
+                StorageUsageText.Text = string.Join("  ·  ", result.Inventory.Bytes.Select(pair =>
+                    Localization.Strings.Get(pair.Key switch { StorageCategory.Received => "接收文件", StorageCategory.Thumbnails => "缩略图",
+                        StorageCategory.Updates => "更新包", StorageCategory.Snapshots => "发送快照", StorageCategory.UsbStaging => "USB 中转",
+                        StorageCategory.Drafts => "草稿附件", _ => "其他应用数据" }) + " " + FormatBytes(pair.Value))) +
+                    (result.Inventory.Partial ? Localization.Strings.Get("（部分目录未统计）") : "");
             }
             finally { _storageGate.Release(); }
         }
@@ -368,13 +376,24 @@ public partial class SettingsPage : System.Windows.Controls.UserControl, IDispos
         }
     }
 
-    private void ClearCache_Click(object sender, RoutedEventArgs e)
+    private async void ClearCache_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            BlueLink.Files.DisplayThumbnailCache.Clear(Path.Combine(_model.CacheDirectory, "Thumbnails"));
+            var preview = await Task.Run(() => _model.CollectTemporaryFiles(preview: true));
+            var thumbnails = await Task.Run(() => StorageUsage.Measure(Path.Combine(_model.CacheDirectory, "Thumbnails")));
+            if (!ConfirmationWindow.Show(HostWindow, new ConfirmationDocument(Localization.Strings.Get("清理临时文件"),
+                Localization.Strings.Get("预计可回收") + " " + FormatBytes(preview.Bytes + thumbnails.Bytes),
+                Localization.Strings.Get("仅清理可再生成的缩略图和无引用的自有发送缓存；待恢复任务、草稿、更新包与用户文件保留。"),
+                Localization.Strings.Get("清理")))) return;
+            var result = await Task.Run(() => {
+                BlueLink.Files.DisplayThumbnailCache.Clear(Path.Combine(_model.CacheDirectory, "Thumbnails"));
+                return _model.CollectTemporaryFiles(preview: false);
+            });
             UpdateStorageSpace();
-            SetStatus(InfoBarSeverity.Success, Localization.Strings.Get("缩略图缓存已清理"), Localization.Strings.Get("聊天记录、接收文件和原始图片均未删除。"));
+            SetStatus(result.Errors == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
+                Localization.Strings.Get(result.Errors == 0 ? "临时文件已清理" : "部分临时文件未能清理"),
+                Localization.Strings.Get("聊天记录、接收文件和原始图片均未删除。"));
         }
         catch (Exception failure)
         {

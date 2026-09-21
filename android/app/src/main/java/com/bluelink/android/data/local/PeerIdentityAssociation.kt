@@ -20,6 +20,7 @@ suspend fun BlueLinkRepository.findIdentityCandidate(peerId: String, hint: Strin
 suspend fun BlueLinkRepository.applyIdentityAssociations(identity: IdentityStore) = database.withTransaction {
     val associations = identity.identityAssociations()
     val trust = identity.trustedEntries()
+    val merged = if (associations.isNotEmpty()) associateComposerDrafts?.invoke(loadDrafts()) else null
     associations.forEach { (oldId, initialTarget) ->
         var target = initialTarget
         val visited = mutableSetOf(oldId)
@@ -29,6 +30,7 @@ suspend fun BlueLinkRepository.applyIdentityAssociations(identity: IdentityStore
         }
         movePeerHistory(oldId, target, trust[target])
     }
+    merged?.forEach { (peer, text) -> database.conversations().updateDraft(peer, text) }
 }
 
 internal suspend fun BlueLinkRepository.movePeerHistory(oldId: String, newId: String, newKey: ByteArray?) = database.withTransaction {

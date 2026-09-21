@@ -32,7 +32,7 @@ class DeviceActionsTest {
     }
 
     @Test fun offlineOrMismatchedPeerCannotControlATransfer() {
-        val expected = listOf(DeviceAction.OPEN, DeviceAction.INFO, DeviceAction.CLEAR, DeviceAction.REMOVE_TRUST)
+        val expected = listOf(DeviceAction.OPEN, DeviceAction.PIN, DeviceAction.NOTE, DeviceAction.INFO, DeviceAction.CLEAR, DeviceAction.REMOVE_TRUST)
         assertEquals(expected, DeviceActions.available(peer.copy(availability = DeviceAvailability.OFFLINE), task(TransferStatus.PAUSED), false))
         assertEquals(expected, DeviceActions.available(peer, task(TransferStatus.TRANSFERRING, "other"), false))
         assertFalse(DeviceAction.REMOVE_TRUST in DeviceActions.available(peer.copy(isTrusted = false), null, false))

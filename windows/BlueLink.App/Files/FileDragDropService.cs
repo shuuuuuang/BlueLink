@@ -5,6 +5,10 @@ namespace BlueLink.Files;
 
 public static class FileDragDropService
 {
+    internal const string OutboundDragFormat = "BlueLink.OutboundFileDrag";
+
+    internal static bool IsOutboundDrag(System.Windows.IDataObject data) => data.GetDataPresent(OutboundDragFormat, autoConvert: false);
+
     private const string PreferredDropEffectFormat = "Preferred DropEffect";
 
     public static IReadOnlyList<string> NormalizeFilePaths(IEnumerable<string>? paths)
@@ -54,13 +58,15 @@ public static class FileDragDropService
             return System.Windows.DragDropEffects.None;
 
         var data = CreateCopyDataObject(attachment.LocalPath);
+        data.SetData(OutboundDragFormat, "BlueLink");
         return System.Windows.DragDrop.DoDragDrop(source, data, System.Windows.DragDropEffects.Copy);
     }
 
-    public static System.Windows.DataObject CreateCopyDataObject(string path)
+    public static System.Windows.DataObject CreateCopyDataObject(string path) => CreateCopyDataObject(new[] { path });
+    public static System.Windows.DataObject CreateCopyDataObject(IEnumerable<string> paths)
     {
         var data = new System.Windows.DataObject();
-        data.SetData(System.Windows.DataFormats.FileDrop, new[] { path });
+        data.SetData(System.Windows.DataFormats.FileDrop, paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
         data.SetData(PreferredDropEffectFormat,
             new MemoryStream(BitConverter.GetBytes((int)System.Windows.DragDropEffects.Copy)));
         return data;

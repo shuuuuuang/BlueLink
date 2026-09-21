@@ -288,6 +288,7 @@ namespace BlueLink.SetupUI
                         break;
                     case "progress": this.ShowInstalling("正在安装新版程序文件…"); this.SetProgress(56, "正在安装新版程序文件…"); break;
                     case "complete": this.ShowCompleted(false, this.InstallFolder); break;
+                    case "failure": this.ShowFailure("安装引擎没有计划执行蓝联程序文件包，已停止本次操作，避免出现安装成功但文件未更新。"); break;
                     case "uninstall": this.ShowUninstall(); break;
                     case "runtime": this.ShowRuntimeRequired("8.0.30", "55.0 MB"); break;
                     default: this.ShowInstallPage(0); break;

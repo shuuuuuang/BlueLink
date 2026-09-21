@@ -1,15 +1,20 @@
 package com.bluelink.android.domain
 
-enum class DeviceAction { OPEN, CONNECT, INFO, TRANSFERS, PAUSE, RESUME, DISCONNECT, CLEAR, REMOVE_TRUST }
+enum class DeviceAction { PIN, NOTE, OPEN, CONNECT, INFO, TRANSFERS, PAUSE, RESUME, DISCONNECT, CLEAR, REMOVE_TRUST }
 
 /** The card and its menu must refer to the same task, including while it is paused. */
 object DeviceActions {
     fun transfer(peerId: String, items: Collection<TransferItem>): TransferItem? = items
-        .filter { it.peerId == peerId && it.status in HistoryQuery.activeStatuses }
+        .filter { it.peerId == peerId && it.status in HistoryQuery.activeStatuses && it.role != com.bluelink.core.AttachmentRole.IMAGE_PREVIEW }
         .minWithOrNull(compareBy<TransferItem> { it.startedAtEpochMs }.thenBy { it.id.toString() })
+
+    fun transferCount(peerId: String, items: Collection<TransferItem>): Int = items.count {
+        it.peerId == peerId && it.status in HistoryQuery.activeStatuses && it.role != com.bluelink.core.AttachmentRole.IMAGE_PREVIEW
+    }
 
     fun available(peer: ConversationSummary, transfer: TransferItem?, canConnect: Boolean): List<DeviceAction> = buildList {
         add(DeviceAction.OPEN)
+        if (!peer.isRemoved) { add(DeviceAction.PIN); add(DeviceAction.NOTE) }
         val active = transfer?.takeIf { it.peerId == peer.peerId && it.status in HistoryQuery.activeStatuses }
         if (peer.availability == DeviceAvailability.CONNECTED && active != null) {
             add(DeviceAction.TRANSFERS)

@@ -33,8 +33,6 @@
     <string name="content_expand">展开 %1$s</string>
     <string name="content_collapse">收起 %1$s</string>
     <string name="content_unknown_device">未知设备</string>
-    <string name="content_receive_folder">接收目录：%1$s</string>
-    <string name="content_change">更改</string>
     <string name="content_outgoing_route">本机 → %1$s</string>
     <string name="content_incoming_route">%1$s → 本机</string>
     <string name="content_image_details">图片详情</string>
@@ -59,7 +57,6 @@
     <string name="content_retry_hint">检查连接与存储空间后，请由发送方重新发起传输。</string>
     <string name="content_preview_image">预览图片</string>
     <string name="content_open">打开</string>
-    <string name="content_copy_file">复制文件</string>
     <string name="content_save_as">另存为</string>
     <string name="content_view_details">查看文件详情</string>
     <string name="content_pause_sending">暂停传输</string>
@@ -73,7 +70,7 @@
     <string name="content_transfer_offline">设备离线，重新连接后可继续操作传输。</string>
     <string name="content_conversation">会话</string>
     <string name="content_back_devices">返回设备与会话</string>
-    <string name="content_connected_protocol">已连接 · BTX/1.1</string>
+    <string name="content_connected_protocol">已连接 · 端到端加密</string>
     <string name="content_offline_history">设备离线 · 可查看历史</string>
     <string name="content_search_messages">搜索消息记录</string>
     <string name="content_conversation_actions">会话更多操作</string>
@@ -86,7 +83,7 @@
     </plurals>
     <string name="content_choose_file">选择文件</string>
     <string name="content_type_message">输入消息</string>
-    <string name="content_offline_composer">设备离线，暂不可发送</string>
+    <string name="content_offline_composer">可编辑草稿，连接后手动发送</string>
     <string name="content_send_message">发送消息</string>
     <string name="content_waiting_send">等待发送</string>
     <string name="content_sending">发送中…</string>
@@ -99,7 +96,6 @@
     <string name="content_text">文本</string>
     <string name="content_images">图片</string>
     <string name="content_date">日期</string>
-    <string name="content_all_dates">全部日期</string>
     <string name="content_no_message_results">未找到相关消息</string>
     <string name="content_message_search_hint">请尝试其他关键词或切换消息类型</string>
     <string name="content_this_device">本机</string>
@@ -144,13 +140,10 @@
     <string name="content_delete_file_message_body">只删除这条文件消息的本机记录，已接收文件不会被删除。</string>
     <string name="content_delete">删除</string>
     <string name="content_open_failed">无法打开文件</string>
-    <string name="content_file_copied">文件已复制</string>
-    <string name="content_copy_failed">无法复制文件</string>
     <string name="content_file_management">文件管理</string>
     <string name="content_devices_conversations">设备与会话</string>
     <plurals name="content_result_count"><item quantity="other">%d 个结果</item></plurals>
     <string name="content_open_settings_failed">无法打开系统设置</string>
-    <string name="content_open_package_failed">无法打开安装包</string>
     <string name="content_stop_sending">停止传输“%1$s”？</string>
     <string name="content_stop_receiving">停止接收“%1$s”？</string>
     <string name="content_keep_files">已接收的完整文件会保留。</string>
@@ -172,10 +165,7 @@
     <string name="content_permission_off">权限已关闭</string>
     <plurals name="content_connected_count"><item quantity="other">%d 台设备已连接</item></plurals>
     <string name="content_no_files_global_body">各设备发送和接收的文件将显示在这里</string>
-    <string name="content_show_folder">在文件夹中显示</string>
     <string name="content_delete_local_message">删除本机消息</string>
-    <string name="content_folder_unavailable">无法打开文件所在目录，请使用“另存为”选择可访问的位置。</string>
-    <string name="content_folder_private">该文件位于蓝联内部存储，请使用“另存为”将文件保存到可访问的位置。</string>
     <string name="content_waiting_receive">等待接收</string>
     <string name="content_paused_sending">已暂停传输</string>
     <string name="content_paused_receiving">已暂停接收</string>
@@ -185,4 +175,23 @@
     <string name="content_view_transfers">查看传输任务</string>
     <string name="content_retry_transfer">重试</string>
     <string name="content_search_chat_history">搜索聊天记录</string>
+    <string name="content_share_failed">无法分享文件，请确认文件仍可读取。</string>
+    <string name="content_result_actions">搜索结果操作</string>
+    <string name="content_locate_message">定位原消息</string>
+    <string name="content_copy_filename">复制文件名</string>
+    <string name="content_incomplete_group">未完成</string>
+    <string name="content_protocol">通信协议</string>
+    <string name="content_draft_save_failed">草稿尚未保存，请检查存储空间后重试。</string>
+    <string name="content_date_start">开始日期</string>
+    <string name="content_date_end">结束日期</string>
+    <string name="content_clear_filters">清除条件</string>
+    <string name="content_sort_time">时间</string>
+    <string name="content_sort_name">名称</string>
+    <string name="content_sort_size">大小</string>
+    <string name="content_descending">降序</string>
+    <string name="content_ascending">升序</string>
+    <string name="content_load_more">加载更多</string>
+    <string name="content_searching">正在查询…</string>
+    <string name="content_load_earlier">加载更早消息</string>
+    <string name="content_history_load_failed">读取消息失败，请重试</string>
 </resources>

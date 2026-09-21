@@ -23,6 +23,11 @@ internal data class TransferHistoryIndex(
         return copy(stored = snapshot, pending = unacknowledged)
     }
 
+    // Called only for a fresh offer admitted by the live session ledger and operational journal.
+    fun admit(item: TransferItem): TransferHistoryIndex =
+        if (item.status == TransferStatus.OFFERED || item.status == TransferStatus.QUEUED)
+            copy(removed = removed - item.id).receive(item) else receive(item)
+
     fun receive(item: TransferItem): TransferHistoryIndex {
         if (!accepts(item.id) || item.role == AttachmentRole.IMAGE_PREVIEW) return this
         if ((items[item.id]?.updatedAtEpochMs ?: Long.MIN_VALUE) > item.updatedAtEpochMs) return this
@@ -33,5 +38,5 @@ internal data class TransferHistoryIndex(
         stored = stored - ids, pending = pending - ids, removed = removed + ids)
     fun clear(): TransferHistoryIndex = forget(items.keys)
     fun retainSince(cutoff: Long): TransferHistoryIndex = forget(items.values
-        .filter { it.updatedAtEpochMs < cutoff }.map { it.id }.toSet())
+        .filter { it.updatedAtEpochMs < cutoff && !it.recoveryPending && it.status !in HistoryQuery.activeStatuses }.map { it.id }.toSet())
 }

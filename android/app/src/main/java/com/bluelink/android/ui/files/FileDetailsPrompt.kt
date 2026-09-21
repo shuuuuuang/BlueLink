@@ -59,21 +59,23 @@ internal fun FileDetailsPrompt(attachment: ChatAttachment, transfer: TransferIte
 @Composable
 internal fun TransferFailurePrompt(transfer: TransferItem, dismiss: () -> Unit) {
     val context = LocalContext.current
-    BlueLinkPrompt(context.getString(R.string.content_failed), dismiss) {
+    BlueLinkPrompt(if (transfer.recoveryPending) contentStatus(transfer, context) else context.getString(R.string.content_failed), dismiss) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(52.dp).background(DeviceColors.Selected, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center) {
-                FigmaIcon(R.drawable.figma_dialog_warning, size = 24.dp, tint = DeviceColors.Error)
+                FigmaIcon(if (transfer.recoveryPending) R.drawable.figma_action_info else R.drawable.figma_dialog_warning, size = 24.dp, tint = if (transfer.recoveryPending) DeviceColors.Blue else DeviceColors.Error)
             }
             Column(Modifier.weight(1f).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PromptField(context.getString(R.string.content_file_name), transfer.name)
-                PromptField(context.getString(R.string.content_failure_reason), transfer.failureDetail?.takeIf { it.isNotBlank() }
-                    ?: contentStatus(transfer.status, context), valueColor = DeviceColors.Error)
+                PromptField(context.getString(if (transfer.recoveryPending) R.string.transfer_recovery_details else R.string.content_failure_reason),
+                    if (transfer.recoveryPending) context.getString(if (transfer.outgoing) R.string.transfer_recovery_sender_hint else R.string.transfer_recovery_receiver_hint)
+                    else transfer.failureDetail?.takeIf { it.isNotBlank() } ?: contentStatus(transfer, context),
+                    valueColor = if (transfer.recoveryPending) DeviceColors.Secondary else DeviceColors.Error)
                 PromptField(context.getString(R.string.content_occurred_at), Instant.ofEpochMilli(transfer.updatedAtEpochMs).let { "${contentDay(it, context)} ${contentTime(it)}" })
-                PromptField(context.getString(R.string.content_error_code), context.getString(R.string.content_not_provided), divider = false)
+                if (!transfer.recoveryPending) PromptField(context.getString(R.string.content_error_code), context.getString(R.string.content_not_provided), divider = false)
             }
         }
-        Text(context.getString(R.string.content_retry_hint),
+        if (!transfer.recoveryPending) Text(context.getString(R.string.content_retry_hint),
             Modifier.fillMaxWidth().background(DeviceColors.Error.copy(alpha = .07f), RoundedCornerShape(12.dp))
                 .padding(14.dp), color = DeviceColors.Error, fontSize = 13.sp, lineHeight = 20.sp)
     }

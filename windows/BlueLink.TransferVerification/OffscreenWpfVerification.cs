@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Windows;
@@ -18,7 +18,7 @@ internal sealed partial class OffscreenWpfVerification
     private readonly List<string> _passedChecks = [];
     private readonly List<string> _geometryFailures = [];
 
-    public void Run(string outputDirectory, bool fileAvailabilityOnly = false, bool imagePreviewOnly = false, bool interactionsOnly = false, bool usbOnly = false, bool identityOnly = false, bool workspaceOnly = false, bool settingsOnly = false, bool nearbyOnly = false)
+    public void Run(string outputDirectory, bool fileAvailabilityOnly = false, bool imagePreviewOnly = false, bool interactionsOnly = false, bool usbOnly = false, bool identityOnly = false, bool workspaceOnly = false, bool settingsOnly = false, bool nearbyOnly = false, bool searchActionsOnly = false, bool bubbleShapesOnly = false, bool productSearchOnly = false, bool draftsOnly = false, bool queryOnly = false, bool batchOnly = false, bool fileShowcaseOnly = false, bool recoveryOnly = false, bool messageBatchOnly = false, bool messageHistoryOnly = false, bool dateFiltersOnly = false, bool messageMenusOnly = false, bool searchInteractionOnly = false)
     {
         var output = Path.GetFullPath(outputDirectory);
         Directory.CreateDirectory(output);
@@ -36,6 +36,26 @@ internal sealed partial class OffscreenWpfVerification
                 app = App.CreateResourceOnlyHost();
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 app.DispatcherUnhandledException += (_, args) => { failure ??= args.Exception; args.Handled = true; };
+                if (searchInteractionOnly) { VerifySearchClickSelection(dataRoot, output); return; }
+                if (messageMenusOnly) { VerifyFileContextMenus(dataRoot, output); VerifySearchActionMenus(dataRoot, output, menusOnly: true); VerifyImagePreviewDesign(dataRoot, output); return; }
+                if (dateFiltersOnly) { VerifyDateFilters(dataRoot, output); return; }
+                if (messageHistoryOnly) { VerifyAutomaticMessageHistory(dataRoot, output); return; }
+                if (messageBatchOnly) { VerifyMessageBatch(dataRoot, output); VerifySearchBatch(dataRoot, output); VerifySearchBubbles(dataRoot, output); VerifySelectionGestures(dataRoot, output); return; }
+                if (recoveryOnly) { VerifyRecovery(dataRoot, output); return; }
+                if (fileShowcaseOnly) { CaptureFileShowcase(dataRoot, output); return; }
+                if (batchOnly) { VerifyFileBatch(dataRoot, output); return; }
+                if (queryOnly) { VerifyQueryUi(dataRoot, output); return; }
+                if (draftsOnly) { VerifyDrafts(dataRoot, output); return; }
+                if (productSearchOnly) { VerifyProductSearch(dataRoot, output); return; }
+                if (bubbleShapesOnly) { VerifyBubbleShapes(dataRoot, output); return; }
+                if (searchActionsOnly)
+                {
+                    VerifyMessageSearchScenes(dataRoot, output);
+                    VerifyFileContextMenus(dataRoot, output);
+                    VerifySearchActionMenus(dataRoot, output);
+                    VerifyImagePreviewDesign(dataRoot, output);
+                    return;
+                }
                 if (nearbyOnly)
                 {
                     VerifyControlInteractions(dataRoot, output);
@@ -389,7 +409,7 @@ internal sealed partial class OffscreenWpfVerification
                 var sidebar = (Border)window.FindName("DevicesSidebar");
                 sidebar.ContextMenu.PlacementTarget = sidebar;
                 var scan = (MenuItem)sidebar.ContextMenu.Items[0];
-                var input = (Wpf.Ui.Controls.TextBox)window.FindName("MessageInput");
+                var input = (Wpf.Ui.Controls.RichTextBox)window.FindName("MessageInput");
                 Layout(root, 1000, 600);
                 Check((string)scan.Header == (previousLanguage == "zh-CN" ? "扫描附近设备" : "Scan nearby devices"),
                     "scan binding is evaluated before loading persisted language: " + language);
@@ -406,25 +426,25 @@ internal sealed partial class OffscreenWpfVerification
                     WaitForUiTask(model.SaveSettingsAsync(model.Settings with { Language = selectedLanguage }));
                     Layout(root, 1000, 600);
                     Check((string)scan.Header == (selectedLanguage == "zh-CN" ? "扫描附近设备" : "Scan nearby devices") &&
-                        input.PlaceholderText == model.ComposerPlaceholder,
+                        ((TextBlock)window.FindName("ComposerPlaceholder")).Text == model.ComposerPlaceholder,
                         "live language switch refreshes scan and composer together: " + language + " to " + selectedLanguage);
                 }
                 // Set only the WPF trigger state; never request keyboard focus or create an HWND.
                 var focusKey = (DependencyPropertyKey)typeof(UIElement).GetField("IsFocusedPropertyKey",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-                input.Text = language == "zh-CN" ? "第一行消息\n第二行消息" : "First message line\nSecond message line";
+                input.Document = new System.Windows.Documents.FlowDocument(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run(language == "zh-CN" ? "第一行消息\n第二行消息" : "First message line\nSecond message line")));
                 try
                 {
                     input.SetValue(focusKey, true);
                     Capture(root, output, "composer-focused-" + language, 1000, 600);
-                    Check(input.IsFocused && input.Text.Contains('\n') && input.AcceptsReturn && input.TextWrapping == TextWrapping.Wrap,
+                    Check(input.IsFocused && window.ReadComposer().Any(p => p.Text?.Contains('\n') == true) && input.AcceptsReturn,
                         "composer retains multiline editing in the simulated focus state: " + language);
                 }
                 finally { input.SetValue(focusKey, false); }
                 input.IsEnabled = false;
-                input.Clear();
+                input.Document.Blocks.Clear();
                 Capture(root, output, "composer-disabled-" + language, 1000, 600);
-                var frame = (Border)((Border)window.FindName("MessageComposer")).Child;
+                var frame = ((Grid)((Border)window.FindName("MessageComposer")).Child).Children.OfType<Border>().Single(b => Grid.GetRow(b) == 1);
                 Check(frame.BorderThickness == new Thickness(1) && frame.CornerRadius == new CornerRadius(14),
                     "removing the input underline retains the outer composer frame: " + language);
             }
@@ -742,7 +762,7 @@ internal sealed partial class OffscreenWpfVerification
             Check(window.ViewModel.HasWorkspaceUnread && window.ViewModel.WorkspaceUnreadText == "3" &&
                 ((FrameworkElement)window.FindName("MessageSearchButton")).Visibility == Visibility.Collapsed,
                 "file workspace displays real unread count and hides message search");
-            Check(((ComboBox)window.FindName("FileDeviceFilter")).Items[0].ToString() == "当前设备",
+            Check(window.CreateFileColumnEditor("Route").Choices.Keys.First() == "peer:@current",
                 "current-device option precedes all devices when a conversation exists");
             window.ViewModel.ShowFiles = false;
             ((RadioButton)window.FindName("MessagesViewButton")).IsChecked = true;
@@ -815,10 +835,8 @@ internal sealed partial class OffscreenWpfVerification
             Check(Descendants<Button>(list).All(button => button.BorderThickness == new Thickness(0)),
                 "all file actions render without borders: " + name);
             var search = (FrameworkElement)window.FindName("FileSearchHost");
-            var tabs = (FrameworkElement)window.FindName(((FrameworkElement)window.FindName("FileStatusFilter")).Visibility == Visibility.Visible ? "FileStatusFilter" : "FileStatusFilters");
-            Check(Math.Abs(search.TranslatePoint(new Point(0, search.ActualHeight / 2), root).Y -
-                           tabs.TranslatePoint(new Point(0, tabs.ActualHeight / 2), root).Y) < 1 && search.ActualWidth >= 180,
-                "file search shares the status row and remains usable: " + name);
+            Check(window.FindName("FileActionsButton") is null && search.ActualWidth >= 180,
+                "file toolbar reserves its width for search without redundant overflow: " + name);
             var footerElements = new[] { "ReceiveDirectoryLabel", "ReceiveDirectoryPath", "ChangeReceiveDirectoryButton", "FileCountText" }
                 .Select(key => (FrameworkElement)window.FindName(key)).ToArray();
             var centers = footerElements.Select(element => element.TranslatePoint(new Point(0, element.ActualHeight / 2), root).Y).ToArray();
@@ -858,48 +876,21 @@ internal sealed partial class OffscreenWpfVerification
     private void VerifyResponsiveFileStatus(MainWindow window, FrameworkElement root, string output)
     {
         var list = (ListBox)window.FindName("TransferList");
-        var tabs = (StackPanel)window.FindName("FileStatusFilters");
-        var selector = (ComboBox)window.FindName("FileStatusFilter");
         var search = (Wpf.Ui.Controls.TextBox)window.FindName("FileSearchInput");
-        Layout(root, 1180, 720);
-        Check(tabs.Visibility == Visibility.Visible && selector.Visibility == Visibility.Collapsed,
-            "file status tabs appear when all filters fit");
-        tabs.Children.OfType<RadioButton>().Single(button => Equals(button.Tag, "Completed")).IsChecked = true;
-        search.Text = "产品";
-        Capture(root, output, "file-filter-wide-completed", 1180, 720);
-        Check(list.Items.Count == 1 && Equals(selector.SelectedValue, "Completed"),
-            "status tabs and compact selector share the selected status and keyword");
-        Capture(root, output, "file-filter-compact-completed", 1000, 600);
-        Check(tabs.Visibility == Visibility.Collapsed && selector.Visibility == Visibility.Visible &&
-              Equals(selector.SelectedValue, "Completed") && list.Items.Count == 1 && search.Text == "产品",
-            "narrowing replaces tabs with a dropdown without resetting filters");
-        selector.SelectedValue = "Failed";
-        Capture(root, output, "file-filter-compact-failed", 1000, 600);
-        Check(list.Items.Count == 1 && list.Items.Cast<BlueLink.Domain.TransferItem>().All(item => item.IsFailed) &&
-              tabs.Children.OfType<RadioButton>().Single(button => Equals(button.Tag, "Failed")).IsChecked == true,
-            "compact dropdown changes actual results and the hidden status tabs");
-        Capture(root, output, "file-filter-wide-restored", 1180, 720);
-        Check(tabs.Visibility == Visibility.Visible && selector.Visibility == Visibility.Collapsed &&
-              tabs.Children.OfType<RadioButton>().Single(button => Equals(button.Tag, "Failed")).IsChecked == true,
-            "widening restores the status tabs with the dropdown selection preserved");
-        foreach (var width in new[] { 1000, 1180, 1050, 1600, 1000 })
+        SetFileColumn(window,"Status","Completed"); search.Text = "产品";
+        Capture(root,output,"file-filter-column-completed",1000,600);
+        Check(list.Items.Count==1,"column status and search combine against actual files");
+        SetFileColumn(window,"Status","Failed");
+        Check(list.Items.Count==1 && list.Items.Cast<BlueLink.Domain.TransferItem>().All(item=>item.IsFailed),"column status changes actual results");
+        foreach(var width in new[] {1000,1180,1050,1600,1000})
         {
-            Layout(root, width, 720);
-            var toolbar = (Grid)window.FindName("FileToolbar");
-            var controls = new FrameworkElement[] { selector.Visibility == Visibility.Visible ? selector : tabs,
-                (FrameworkElement)window.FindName("FileSearchHost"), (FrameworkElement)window.FindName("FileDeviceFilter"),
-                (FrameworkElement)window.FindName("FileDirectionFilter") };
-            var bounds = controls.Select(control => control.TransformToAncestor(toolbar).TransformBounds(new Rect(control.RenderSize))).ToArray();
-            Check(bounds.All(rect => rect.Left >= 0 && rect.Right <= toolbar.ActualWidth + 1) &&
-                  bounds.Zip(bounds.Skip(1)).All(pair => pair.First.Right <= pair.Second.Left + 1 &&
-                      Math.Abs(pair.First.Top + pair.First.Height / 2 - pair.Second.Top - pair.Second.Height / 2) < 1),
-                $"all file filters stay on one row without overlap at width {width}");
+            Layout(root,width,720);
+            var panel=(FrameworkElement)window.FindName("FullTransferContent");
+            Check(panel.ActualHeight<=60 && panel.TranslatePoint(new Point(panel.ActualWidth,0),root).X<=width,"column filters need no extra toolbar row at width "+width);
+            Check(window.CreateFileColumnEditor("Status").Selected.Contains("Failed") && search.Text=="产品","resizing preserves active filters and search");
         }
-        search.Text = "";
-        selector.SelectedValue = "All";
-        Check(list.Items.Count == 6 && selector.Items.OfType<ComboBoxItem>().First().Content as string == "全部状态" &&
-              tabs.Children.OfType<RadioButton>().First().Content as string == "全部状态",
-            "all-status label is explicit and resetting restores every record");
+        search.Text=""; ResetFileColumn(window,"Status");
+        Check(list.Items.Count==6,"clearing the status and search restores all files");
     }
 
     private void VerifyFileTableEdgeCases(MainWindow window, FrameworkElement root, string output)
@@ -944,21 +935,12 @@ internal sealed partial class OffscreenWpfVerification
                     Descendants<TextBlock>(row).Any(text => Equals(text.ToolTip, ((BlueLink.Domain.TransferItem)row.DataContext).Name) &&
                         text.TextTrimming == TextTrimming.CharacterEllipsis)), "long file names keep readable columns and full tooltips: " + theme);
                 var search = (FrameworkElement)window.FindName("FileSearchHost");
-                var tabs = (FrameworkElement)window.FindName(((FrameworkElement)window.FindName("FileStatusFilter")).Visibility == Visibility.Visible ? "FileStatusFilter" : "FileStatusFilters");
-                Check(search.ActualWidth >= 180 && Math.Abs(search.TranslatePoint(new Point(0, search.ActualHeight / 2), root).Y -
-                      tabs.TranslatePoint(new Point(0, tabs.ActualHeight / 2), root).Y) < 1, "localized file toolbar stays on one search row: " + theme);
+                Check(window.FindName("FileActionsButton") is null && search.ActualWidth >= 180,
+                    "localized file toolbar retains a full-width search field: " + theme);
                 Check(scroll.ScrollableHeight > 0 && Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) < 1,
                     "long file list scrolls fully while footer remains visible: " + theme);
-                foreach (var name in new[] { "FileStatusFilter", "FileDeviceFilter", "FileDirectionFilter" })
-                {
-                    var combo = (ComboBox)window.FindName(name);
-                    var caption = Descendants<TextBlock>(combo).FirstOrDefault(text => text.Text == combo.Text);
-                    Check(caption is not null, "selected filter caption is rendered: " + name + "/" + theme);
-                    var textSize = new FormattedText(caption!.Text, BlueLink.Localization.Strings.Culture,
-                        caption.FlowDirection, new Typeface(caption.FontFamily, caption.FontStyle, caption.FontWeight, caption.FontStretch),
-                        caption.FontSize, caption.Foreground, 1);
-                    Check(textSize.Width <= caption.ActualWidth + 1, "localized filter caption fits without clipping: " + name + "/" + theme);
-                }
+                CaptureFileColumnEditors(window,output,"column-captions-"+theme+"-"+model.Settings.Language);
+
             }
         }
         finally
@@ -1011,7 +993,7 @@ internal sealed partial class OffscreenWpfVerification
                 Capture(root, output, "search-kind-" + kind, 860, 640);
                 Check(list.Items.Count == count, "message type filter preserves the expected matching records: " + kind);
                 if (kind == BlueLink.Domain.HistoryKind.Images)
-                    Check(Descendants<TextBlock>(root).Any(label => label.Text.Contains("240 × 144")),
+                    Check(Descendants<TextBlock>(root).Any(label => label.ToolTip is string tip && tip.Contains("240 × 144")),
                         "image search shows dimensions read from the actual file instead of the downscaled thumbnail");
             }
             search.ApplyFilter("需求文档", BlueLink.Domain.HistoryKind.All);
@@ -1024,10 +1006,12 @@ internal sealed partial class OffscreenWpfVerification
             search.ApplyFilter("", BlueLink.Domain.HistoryKind.Date, DateTime.Today);
             Capture(root, output, "search-calendar-minimum", 620, 480);
             Check(list.Items.Count == 10 && search.MatchingDates.Contains(DateTime.Today), "calendar marks dates with real matching records");
-            var calendar = (FrameworkElement)search.FindName("CalendarPane");
-            Check(calendar.Visibility == Visibility.Visible && calendar.ActualWidth >= 230 && list.ActualWidth >= 270,
-                "calendar and search results remain visible together at minimum size");
-            var viewport = (Viewbox)search.FindName("CalendarViewport");
+            var picker = (RecordDatePicker)search.FindName("DateInput");
+            Check(search.FindName("CalendarPane") is null && list.ActualWidth >= 580,
+                "date filtering retains the full width of search results");
+            picker.CalendarPopup.Child=null;
+            var viewport = (Viewbox)picker.Calendar.Parent;
+            Capture(picker.CalendarPanel,output,"search-calendar-popup",306,350);
             var dayButtons = Descendants<CalendarDayButton>(viewport).Where(day => day.Visibility == Visibility.Visible).ToArray();
             var todayButton = dayButtons.Single(day => day.DataContext is DateTime date && date == DateTime.Today);
             var todayMarker = Descendants<System.Windows.Shapes.Ellipse>(todayButton).Single(marker => marker.Name == "RecordDateMarker");
@@ -1042,11 +1026,11 @@ internal sealed partial class OffscreenWpfVerification
             search.ApplyFilter("", BlueLink.Domain.HistoryKind.Date, DateTime.Today.AddDays(-1));
             Check(list.Items.Count == 0 && search.MatchingDates.Contains(DateTime.Today),
                 "choosing an empty date retains markers for dates containing matches");
-            Layout(root, 620, 480);
+            Layout(picker.CalendarPanel,306,350);
             Check(todayMarker.Visibility == Visibility.Visible && todayMarker.Fill is SolidColorBrush unselectedBrush &&
                 unselectedBrush.Color == Colors.White, "today's marker stays visible when another day is selected");
             search.ApplyFilter("no-matching-QA-record", BlueLink.Domain.HistoryKind.Date, DateTime.Today);
-            Layout(root, 620, 480);
+            Layout(picker.CalendarPanel,306,350);
             Check(todayMarker.Visibility == Visibility.Collapsed, "changing the query removes stale date markers");
             Check(new WindowInteropHelper(search).Handle == IntPtr.Zero, "message search verification creates no native window");
         }
@@ -1416,11 +1400,13 @@ internal sealed partial class OffscreenWpfVerification
                     "Offered" => new[] { "查看文件详情", "取消" + suffix },
                     "Transferring" => new[] { "查看文件详情", "暂停" + suffix, "取消" + suffix },
                     "Paused" => new[] { "查看文件详情", "继续" + suffix, "取消" + suffix },
-                    "Failed" => new[] { "查看文件信息", "查看失败原因", "删除本机记录" },
-                    "Completed" => new[] { fixture.Image ? "图片预览" : "打开", "复制文件", "在文件夹中显示", "另存为",
-                        "查看文件详情", attachmentScene ? "删除本机消息" : "删除本机记录" },
+                    "Failed" => fixture.Outgoing ? new[] { "查看文件详情", "重试", "查看失败原因", "删除本机消息" }
+                        : new[] { "查看文件详情", "查看失败原因", "删除本机消息" },
+                    "Completed" => new[] { fixture.Image ? "图片预览" : "打开", "复制文件", "复制文件名", "多选", "在文件夹中显示", "另存为",
+                        "查看文件详情", "删除本机消息" },
                     _ => throw new InvalidOperationException("Unexpected menu fixture state.")
                 };
+                if (fixture.State != "Completed") expected = new[] { "复制文件名", "多选" }.Concat(expected).ToArray();
                 menu.Visibility = Visibility.Visible;
                 // The official WPF UI popup includes 30 DIP of shadow on each side.
                 // Include it in the offscreen canvas and verify every action remains in bounds.
@@ -1826,12 +1812,11 @@ internal sealed partial class OffscreenWpfVerification
                 AuditGeometry(gap >= -1, $"scrollbar outside content: {scene}/{label}/{bar.Orientation} (gap {gap:F2} DIP)");
             }
         }
-        foreach (var input in Descendants<Wpf.Ui.Controls.TextBox>(root).Where(value => value.Name == "MessageInput" && Displayed(value, root)))
+        foreach (var input in Descendants<Wpf.Ui.Controls.RichTextBox>(root).Where(value => value.Name == "MessageInput" && Displayed(value, root)))
         {
-            var content = (Border)input.Template.FindName("ContentBorder", input);
-            var accent = (Border)input.Template.FindName("AccentBorder", input);
-            AuditGeometry(content.BorderThickness == new Thickness(0) && content.Background is SolidColorBrush { Color.A: 0 } &&
-                accent.BorderBrush is SolidColorBrush { Color.A: 0 },
+            var borders = Descendants<Border>(input).Where(b => ReferenceEquals(b.TemplatedParent, input)).ToArray();
+            AuditGeometry(borders.Length > 0 && borders.All(b => (b.BorderThickness == new Thickness(0) || b.BorderBrush is null or SolidColorBrush { Color.A: 0 }) &&
+                b.Background is null or SolidColorBrush { Color.A: 0 }),
                 $"composer input has no rendered inner border, underline or background: {scene}/enabled={input.IsEnabled}/focused={input.IsFocused}");
         }
         foreach (var card in Descendants<Border>(root).Where(value => value.Name == "ConversationCard" && Displayed(value, root)))

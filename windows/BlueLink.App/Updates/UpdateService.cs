@@ -5,7 +5,14 @@ using System.Text.Json;
 
 namespace BlueLink.Updates;
 
-public sealed record UpdateRelease(Version Version, string Notes, string FileName, Uri DownloadUrl, long Size, string Sha256);
+public sealed record UpdateRelease(Version Version, string Notes, string FileName, Uri DownloadUrl, long Size, string Sha256)
+{
+    public string Tag { get; init; } = "v" + Version;
+    public bool IsPortable => FileName.EndsWith("-Portable.zip", StringComparison.Ordinal);
+    public bool IsUnsignedPreview => Tag.Contains("-preview.", StringComparison.Ordinal) && FileName.StartsWith("BlueLink-Review-", StringComparison.Ordinal);
+    public string DisplayVersion => Tag.TrimStart('v');
+    public Uri ReleaseUrl => new($"https://github.com/{UpdateService.Repository}/releases/tag/{Uri.EscapeDataString(Tag)}");
+}
 public sealed record DownloadProgress(long Received, long Total);
 public sealed record UpdatePackage(UpdateRelease Release, string Path);
 public interface IUpdatePackageVerifier { void Verify(string path, Version version); }
@@ -14,7 +21,17 @@ public interface IUpdatePackageVerifier { void Verify(string path, Version versi
 public sealed class UpdateService : IDisposable
 {
     public const string Repository = "shuuuuuang/BlueLink";
-    public static readonly Uri Feed = new($"https://api.github.com/repos/{Repository}/releases/latest");
+    public static readonly Uri Feed = new($"https://api.github.com/repos/{Repository}/releases?per_page=100");
+    public static ReleaseVersion CurrentRelease
+    {
+        get
+        {
+            var tag = typeof(UpdateService).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+                .Cast<System.Reflection.AssemblyMetadataAttribute>().FirstOrDefault(value => value.Key == "ReleaseTag")?.Value;
+            var identity = ReleaseVersion.Parse(tag);
+            return identity?.Version == CurrentVersion ? identity : new(CurrentVersion, null);
+        }
+    }
     public static string RuntimeIdentifier => GetRuntimeIdentifier(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
     public static string GetRuntimeIdentifier(System.Runtime.InteropServices.Architecture architecture) => architecture switch
     {
@@ -23,7 +40,7 @@ public sealed class UpdateService : IDisposable
         System.Runtime.InteropServices.Architecture.Arm64 => "win-arm64",
         _ => throw new PlatformNotSupportedException("Unsupported Windows architecture.")
     };
-    public const string PortableUpdateNotice = "免安装版本请下载对应架构的 Portable ZIP，退出程序后解压更新并保留 Data 和 Download 文件夹。";
+    public const string PortableUpdateNotice = "免安装更新包已在应用内下载；退出程序后解压替换程序文件，并保留 Data 和 Download 文件夹。";
     public const long MaximumPackageBytes = 512L * 1024 * 1024;
     private readonly HttpClient _client;
     private readonly string _directory;
@@ -45,49 +62,74 @@ public sealed class UpdateService : IDisposable
 
     public async Task<UpdateRelease?> CheckAsync(Version current, CancellationToken token)
     {
-        if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(PortableUpdateNotice);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(25));
         using var response = await GetAsync(Feed, deadline.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
             throw new InvalidDataException("暂时无法取得公开发布信息，请稍后重试。");
         response.EnsureSuccessStatusCode();
-        var bytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(deadline.Token), 256 * 1024, deadline.Token);
-        return ParseRelease(bytes, current);
+        var bytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(deadline.Token), 2 * 1024 * 1024, deadline.Token);
+        var identity = current == CurrentVersion ? CurrentRelease : new ReleaseVersion(current, null);
+        var release = ParseFeed(bytes, identity);
+        return release;
     }
 
-    public static UpdateRelease? ParseRelease(byte[] json, Version current)
+    public static UpdateRelease? ParseRelease(byte[] json, Version current) =>
+        ParseFeed(json, new(current, null), includePrereleases: false);
+
+    public static UpdateRelease? ParseFeed(byte[] json, ReleaseVersion current, bool includePrereleases = true,
+        string? runtimeIdentifier = null, bool? portable = null)
     {
         using var document = JsonDocument.Parse(json, new() { MaxDepth = 16 });
         var root = document.RootElement;
-        if (root.GetProperty("draft").GetBoolean() || root.GetProperty("prerelease").GetBoolean())
-            throw new InvalidDataException("发布信息不是正式版本。");
-        var tag = root.GetProperty("tag_name").GetString() ?? "";
-        var rawVersion = tag.TrimStart('v', 'V');
-        if (!Version.TryParse(rawVersion, out var parsed) || parsed.Build < 0 || parsed.Revision > 0 || rawVersion.Any(c => !char.IsAsciiDigit(c) && c != '.'))
-            throw new InvalidDataException("发布版本格式无效。");
-        var version = new Version(parsed.Major, parsed.Minor, parsed.Build);
-        if (version <= new Version(current.Major, current.Minor, Math.Max(0, current.Build))) return null;
-        var name = $"BlueLink-Setup-{version}-{RuntimeIdentifier}.exe";
-        var assets = root.GetProperty("assets").EnumerateArray().Where(x => x.GetProperty("name").GetString() == name).ToArray();
-        if (assets.Length != 1) throw new InvalidDataException("此版本尚未提供当前架构的 Windows 安装包。");
-        var asset = assets[0];
+        var releases = root.ValueKind == JsonValueKind.Array ? root.EnumerateArray().ToArray() : [root];
+        if (releases.Length > 100) throw new InvalidDataException("发布信息超过允许大小。");
+        var candidates = new List<(JsonElement Json, ReleaseVersion Identity)>();
+        foreach (var item in releases)
+        {
+            if (item.GetProperty("draft").GetBoolean()) continue;
+            var identity = ReleaseVersion.Parse(item.GetProperty("tag_name").GetString());
+            if (identity is null) continue;
+            var preview = item.GetProperty("prerelease").GetBoolean();
+            if (preview != identity.Preview.HasValue || (preview && !includePrereleases)) continue;
+            candidates.Add((item, identity));
+        }
+        var selected = candidates.OrderByDescending(value => value.Identity).FirstOrDefault();
+        if (selected.Identity is null || selected.Identity.CompareTo(current) <= 0) return null;
+        var release = selected.Json;
+        var tag = release.GetProperty("tag_name").GetString()!;
+        var version = selected.Identity.Version;
+        var rid = runtimeIdentifier ?? RuntimeIdentifier;
+        if (rid is not ("win-x86" or "win-x64" or "win-arm64")) throw new InvalidDataException("不支持的更新架构。");
+        var isPortable = portable ?? Storage.AppStoragePaths.IsPortable;
+        var names = isPortable ? new[] { $"BlueLink-{version}-{rid}-Portable.zip" }
+            : new[] { $"BlueLink-Setup-{version}-{rid}.exe", $"BlueLink-Review-{version}-{rid}-Setup.exe" };
+        var assets = release.GetProperty("assets").EnumerateArray().ToArray();
+        JsonElement? selectedAsset = null;
+        foreach (var name in names)
+        {
+            var matches = assets.Where(asset => asset.GetProperty("name").GetString() == name).ToArray();
+            if (matches.Length > 1) throw new InvalidDataException("发布包名称重复。");
+            if (matches.Length == 1) { selectedAsset = matches[0]; break; }
+        }
+        if (selectedAsset is not { } asset) throw new InvalidDataException("此版本尚未提供当前架构的 Windows 安装包。");
+        var fileName = asset.GetProperty("name").GetString()!;
         var size = asset.GetProperty("size").GetInt64();
         var digest = asset.TryGetProperty("digest", out var d) ? d.GetString() : null;
         if (size is <= 0 or > MaximumPackageBytes || digest is null || !digest.StartsWith("sha256:", StringComparison.Ordinal) ||
             digest.Length != 71 || digest[7..].Any(c => !Uri.IsHexDigit(c))) throw new InvalidDataException("发布包缺少有效的大小或 SHA-256 校验信息。");
-        var url = new Uri(asset.GetProperty("browser_download_url").GetString() ?? "");
-        var expected = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/{name}";
-        if (!url.AbsoluteUri.Equals(expected, StringComparison.Ordinal)) throw new InvalidDataException("安装包地址不属于已配置的发布源。");
-        var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
+        var expected = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/{fileName}";
+        if (asset.GetProperty("browser_download_url").GetString() != expected)
+            throw new InvalidDataException("安装包地址不属于已配置的发布源。");
+        var notes = release.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String ? body.GetString()! : "";
         notes = notes.Replace("\0", "");
-        return new(version, notes.Length > 4000 ? notes[..4000] : notes, name, url, size, digest[7..].ToUpperInvariant());
+        return new(version, notes.Length > 4000 ? notes[..4000] : notes, fileName, new(expected), size, digest[7..].ToUpperInvariant())
+        { Tag = tag };
     }
 
     public async Task<UpdatePackage> DownloadAsync(UpdateRelease release, IProgress<DownloadProgress>? progress, CancellationToken token)
     {
         ValidateRelease(release);
-        if (Storage.AppStoragePaths.IsPortable) throw new InvalidOperationException(PortableUpdateNotice);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromMinutes(10));
         var ct = deadline.Token;
@@ -129,7 +171,7 @@ public sealed class UpdateService : IDisposable
                 await output.FlushAsync(ct);
             }
             ct.ThrowIfCancellationRequested();
-            await Task.Run(() => _verifier.Verify(partial, release.Version), ct).ConfigureAwait(false);
+            await Task.Run(() => VerifyPackage(partial, release, installing: false), ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             File.Move(partial, complete);
             return new(release, complete);
@@ -156,18 +198,37 @@ public sealed class UpdateService : IDisposable
         {
             if (lease.Length != package.Release.Size || !CryptographicOperations.FixedTimeEquals(await SHA256.HashDataAsync(lease, token), Convert.FromHexString(package.Release.Sha256)))
                 throw new InvalidDataException("本地安装包已变化，请重新下载。");
-            await Task.Run(() => _verifier.Verify(path, package.Release.Version), token).ConfigureAwait(false);
+            await Task.Run(() => VerifyPackage(path, package.Release, installing: true), token).ConfigureAwait(false);
             return lease; // Keep writes/deletion blocked until the installer process has opened the package.
         }
         catch { await lease.DisposeAsync(); throw; }
     }
 
+    // User-approved preview policy: only exact repository preview assets may use integrity/product checks instead of Authenticode.
+    public const bool AllowUnsignedPreviewInstallation = true;
+    private void VerifyPackage(string path, UpdateRelease release, bool installing)
+    {
+        if (release.IsPortable)
+        {
+            if (installing) throw new InvalidOperationException(PortableUpdateNotice);
+            return; // Exact repository URL, byte count and SHA-256 were already checked.
+        }
+        if (release.IsUnsignedPreview && _verifier is SignedUpdateVerifier)
+        {
+            SignedUpdateVerifier.VerifyProduct(path, release.Version);
+            if (!installing || AllowUnsignedPreviewInstallation) return;
+        }
+        _verifier.Verify(path, release.Version);
+    }
+
     private static void ValidateRelease(UpdateRelease value)
     {
-        var prefix = $"https://github.com/{Repository}/releases/download/";
-        if (value.Size is <= 0 or > MaximumPackageBytes || value.FileName != $"BlueLink-Setup-{value.Version}-{RuntimeIdentifier}.exe" ||
-            value.Sha256.Length != 64 || value.Sha256.Any(c => !Uri.IsHexDigit(c)) || !value.DownloadUrl.AbsoluteUri.StartsWith(prefix, StringComparison.Ordinal) ||
-            !value.DownloadUrl.AbsoluteUri.EndsWith("/" + value.FileName, StringComparison.Ordinal)) throw new InvalidDataException("更新包元数据无效。");
+        var identity = ReleaseVersion.Parse(value.Tag);
+        var names = new[] { $"BlueLink-Setup-{value.Version}-{RuntimeIdentifier}.exe", $"BlueLink-Review-{value.Version}-{RuntimeIdentifier}-Setup.exe", $"BlueLink-{value.Version}-{RuntimeIdentifier}-Portable.zip" };
+        var expected = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(value.Tag)}/{value.FileName}";
+        if (identity?.Version != value.Version || value.Size is <= 0 or > MaximumPackageBytes || !names.Contains(value.FileName, StringComparer.Ordinal) ||
+            value.Sha256.Length != 64 || value.Sha256.Any(c => !Uri.IsHexDigit(c)) || value.DownloadUrl.AbsoluteUri != expected)
+            throw new InvalidDataException("更新包元数据无效。");
     }
 
     private async Task<HttpResponseMessage> GetAsync(Uri uri, CancellationToken token)

@@ -1,0 +1,9 @@
+<resources>
+    <string name="transfer_recovery_pending">待恢复</string>
+    <string name="transfer_recovery_wait_sender">等待发送方恢复</string>
+    <string name="transfer_recovery_action">恢复传输</string>
+    <string name="transfer_recovery_details">恢复说明</string>
+    <string name="transfer_recovery_sender_hint">应用中断后保留的任务。请确认设备连接后手动恢复；不会自动发送。</string>
+    <string name="transfer_recovery_receiver_hint">应用中断后保留的接收任务。请等待发送方重试。</string>
+    <string name="transfer_recovery_write_failed">无法保存任务恢复记录，请检查存储空间后重试</string>
+</resources>

@@ -16,6 +16,16 @@ public sealed partial class MainViewModel
 
     private async Task ApplyIdentityAssociationsAsync()
     {
+        await _draftSaveGate.WaitAsync();
+        _draftsReady = false;
+        await Application.Current.Dispatcher.InvokeAsync(() => Raise(nameof(CanEditDraft)));
+        if (!await PersistDraftsAsync())
+        {
+            _draftsReady = true;
+            await Application.Current.Dispatcher.InvokeAsync(() => Raise(nameof(CanEditDraft)));
+            _draftSaveGate.Release();
+            throw new System.IO.IOException("Drafts could not be persisted before identity association.");
+        }
         // Drain old writes in the same order used by message persistence.
         await _conversationPersistenceGate.WaitAsync();
         try
@@ -33,6 +43,7 @@ public sealed partial class MainViewModel
                     foreach (var peer in peers) _storedPeers[peer.PeerId] = peer;
                     _storedConversations.Clear();
                     foreach (var conversation in conversations) _storedConversations[conversation.PeerId] = conversation;
+                    LoadDrafts();
                     var aliases = _identity.IdentityAssociations;
                     while (_activePeerId is { } id && aliases.TryGetValue(id, out var next)) _activePeerId = next;
                     foreach (var transfer in AllTransfers.Where(value => aliases.ContainsKey(value.PeerId ?? "")).ToArray()) AllTransfers.Remove(transfer);
@@ -45,6 +56,12 @@ public sealed partial class MainViewModel
             }
             finally { _trustMutationGate.Release(); }
         }
-        finally { _conversationPersistenceGate.Release(); }
+        finally
+        {
+            _conversationPersistenceGate.Release();
+            _draftSaveGate.Release();
+            _draftsReady = true;
+            await Application.Current.Dispatcher.InvokeAsync(() => { Raise(nameof(CanEditDraft)); Raise(nameof(DraftText)); });
+        }
     }
 }

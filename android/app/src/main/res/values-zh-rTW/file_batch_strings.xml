@@ -1,0 +1,4 @@
+<resources>
+    <string name="file_batch_retry_action">重試</string>
+    <string name="file_batch_cancel_action">取消傳輸</string>
+</resources>

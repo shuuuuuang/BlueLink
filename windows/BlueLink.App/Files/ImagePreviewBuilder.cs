@@ -17,8 +17,9 @@ public static class ImagePreviewBuilder
         var directory = Path.Combine(Path.GetTempPath(), "BlueLink", "previews");
         Directory.CreateDirectory(directory);
         using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var decoder = BitmapDecoder.Create(source, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        var frame = decoder.Frames[0];
+        BitmapSource frame = WebpBitmapDecoder.IsWebp(sourcePath)
+            ? WebpBitmapDecoder.Load(sourcePath, 1280).Bitmap
+            : BitmapDecoder.Create(source, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0];
         var preserveAlpha = HasAlphaPixelFormat(frame.Format);
         var extension = preserveAlpha ? ".png" : ".jpg";
         var mimeType = preserveAlpha ? "image/png" : "image/jpeg";

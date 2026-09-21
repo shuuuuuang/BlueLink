@@ -33,8 +33,6 @@
     <string name="content_expand">Expand %1$s</string>
     <string name="content_collapse">Collapse %1$s</string>
     <string name="content_unknown_device">Unknown device</string>
-    <string name="content_receive_folder">Receive folder: %1$s</string>
-    <string name="content_change">Change</string>
     <string name="content_outgoing_route">This device → %1$s</string>
     <string name="content_incoming_route">%1$s → This device</string>
     <string name="content_image_details">Image details</string>
@@ -59,7 +57,6 @@
     <string name="content_retry_hint">Check the connection and available storage, then ask the sender to start a new transfer.</string>
     <string name="content_preview_image">Preview image</string>
     <string name="content_open">Open</string>
-    <string name="content_copy_file">Copy file</string>
     <string name="content_save_as">Save as</string>
     <string name="content_view_details">View file details</string>
     <string name="content_pause_sending">Pause transfer</string>
@@ -73,7 +70,7 @@
     <string name="content_transfer_offline">Device offline. Reconnect to control this transfer.</string>
     <string name="content_conversation">Conversation</string>
     <string name="content_back_devices">Back to devices and conversations</string>
-    <string name="content_connected_protocol">Connected · BTX/1.1</string>
+    <string name="content_connected_protocol">Connected · End-to-end encrypted</string>
     <string name="content_offline_history">Offline · History available</string>
     <string name="content_search_messages">Search message history</string>
     <string name="content_conversation_actions">Conversation actions</string>
@@ -86,7 +83,7 @@
     </plurals>
     <string name="content_choose_file">Choose a file</string>
     <string name="content_type_message">Type a message</string>
-    <string name="content_offline_composer">Device offline. Sending unavailable.</string>
+    <string name="content_offline_composer">Write a draft; send manually after connecting</string>
     <string name="content_send_message">Send message</string>
     <string name="content_waiting_send">Waiting to send</string>
     <string name="content_sending">Sending…</string>
@@ -99,7 +96,6 @@
     <string name="content_text">Text</string>
     <string name="content_images">Images</string>
     <string name="content_date">Date</string>
-    <string name="content_all_dates">All dates</string>
     <string name="content_no_message_results">No matching messages</string>
     <string name="content_message_search_hint">Try another keyword or message type.</string>
     <string name="content_this_device">This device</string>
@@ -144,13 +140,10 @@
     <string name="content_delete_file_message_body">Delete this file message record from this device only. Received files will be kept.</string>
     <string name="content_delete">Delete</string>
     <string name="content_open_failed">Unable to open file</string>
-    <string name="content_file_copied">File copied</string>
-    <string name="content_copy_failed">Unable to copy file</string>
     <string name="content_file_management">File management</string>
     <string name="content_devices_conversations">Devices &amp; chats</string>
     <plurals name="content_result_count"><item quantity="one">%d result</item><item quantity="other">%d results</item></plurals>
     <string name="content_open_settings_failed">Unable to open system settings</string>
-    <string name="content_open_package_failed">Unable to open the installation package</string>
     <string name="content_stop_sending">Stop transferring %1$s?</string>
     <string name="content_stop_receiving">Stop receiving %1$s?</string>
     <string name="content_keep_files">Completed received files will be kept.</string>
@@ -172,10 +165,7 @@
     <string name="content_permission_off">Permission off</string>
     <plurals name="content_connected_count"><item quantity="one">%d connected</item><item quantity="other">%d connected</item></plurals>
     <string name="content_no_files_global_body">Files sent and received across your devices will appear here.</string>
-    <string name="content_show_folder">Show in folder</string>
     <string name="content_delete_local_message">Delete local message</string>
-    <string name="content_folder_unavailable">The containing folder cannot be opened. Use Save as to choose an accessible location.</string>
-    <string name="content_folder_private">This file is in BlueLink internal storage. Use Save as to save it to an accessible location.</string>
     <string name="content_waiting_receive">Waiting to receive</string>
     <string name="content_paused_sending">Sending paused</string>
     <string name="content_paused_receiving">Receiving paused</string>
@@ -185,4 +175,23 @@
     <string name="content_view_transfers">View transfers</string>
     <string name="content_retry_transfer">Retry</string>
     <string name="content_search_chat_history">Search chat history</string>
+    <string name="content_share_failed">Unable to share this file. Check that it is still readable.</string>
+    <string name="content_result_actions">Search result actions</string>
+    <string name="content_locate_message">Go to original message</string>
+    <string name="content_copy_filename">Copy file name</string>
+    <string name="content_incomplete_group">Incomplete</string>
+    <string name="content_protocol">Protocol</string>
+    <string name="content_draft_save_failed">Draft not saved yet. Check storage space and try again.</string>
+    <string name="content_date_start">Start date</string>
+    <string name="content_date_end">End date</string>
+    <string name="content_clear_filters">Clear filters</string>
+    <string name="content_sort_time">Time</string>
+    <string name="content_sort_name">Name</string>
+    <string name="content_sort_size">Size</string>
+    <string name="content_descending">Descending</string>
+    <string name="content_ascending">Ascending</string>
+    <string name="content_load_more">Load more</string>
+    <string name="content_searching">Searching…</string>
+    <string name="content_load_earlier">Load earlier messages</string>
+    <string name="content_history_load_failed">Could not load messages. Try again.</string>
 </resources>

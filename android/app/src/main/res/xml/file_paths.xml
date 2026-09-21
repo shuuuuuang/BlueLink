@@ -2,6 +2,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="received" path="received/" />
     <files-path name="attachments" path="attachments/" />
+    <files-path name="composer_attachments" path="composer/files/" />
     <external-files-path name="external" path="." />
     <cache-path name="shared_diagnostics" path="shared/" />
+    <cache-path name="verified_updates" path="updates/" />
 </paths>

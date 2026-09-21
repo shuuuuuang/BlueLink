@@ -1,8 +1,9 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
 using BlueLink.Domain;
+using BlueLink.Protocol;
 using Windows.Devices.Radios;
 
 namespace BlueLink;
@@ -87,7 +88,7 @@ public sealed partial class MainViewModel
     public bool ShowOfflineHistoryNotice => IsOfflineConversation && !IsBluetoothUnavailable && !IsConnecting;
     public bool ShowOfflineSend => !IsConnected && !IsBluetoothUnavailable;
     public string ComposerHint => IsConnected || !IsBluetoothUnavailable
-        ? Localization.Strings.Get("Enter 发送 · Shift+Enter 换行")
+        ? Localization.Strings.Get(ComposerShortcuts.HintKey(Settings.SendShortcut))
         : Localization.Strings.Get("打开蓝牙后即可继续发送");
     public bool HasConnectedDevices => ActiveSessionCount > 0;
 
@@ -98,7 +99,6 @@ public sealed partial class MainViewModel
         _scanFailed = false;
         ScanFeedback = "";
         _connectionAttempts[NormalizeAddress(address)] = (phase, detail);
-        if (phase == ConnectionPhase.Connected) _automaticFailureNotices.Remove(NormalizeAddress(address));
         RefreshNearbyNewDevices();
     }
 
@@ -133,7 +133,7 @@ public sealed partial class MainViewModel
         var query = DeviceQuery.Trim();
         return value switch
         {
-            ConversationSummary peer => HomeDeviceSearch.Matches(query, peer.PeerName, peer.PlatformText, peer.TransportAddress),
+            ConversationSummary peer => HomeDeviceSearch.Matches(query, peer.PeerName + " " + peer.LocalNote, peer.PlatformText, peer.TransportAddress),
             NearbyDevice device => HomeDeviceSearch.Matches(query, device.Name, device.Platform.ToString(), device.Address),
             _ => false
         };
@@ -169,11 +169,14 @@ public sealed partial class MainViewModel
     {
         if (_disposeStarted != 0) return;
         foreach (var peer in ConnectedConversations.Concat(OfflineConversations))
-            peer.ActiveTransfer = peer.IsConnected ? AllTransfers
+        {
+            var active = peer.IsConnected ? AllTransfers
                 .Where(transfer => string.Equals(transfer.PeerId, peer.PeerId, StringComparison.OrdinalIgnoreCase) &&
-                    transfer.Status is TransferStatus.Transferring or TransferStatus.Resuming or TransferStatus.Paused or TransferStatus.RemotePaused or
-                        TransferStatus.Verifying or TransferStatus.Committing)
-                .OrderByDescending(transfer => transfer.CreatedAt).FirstOrDefault() : null;
+                    transfer.IsActive && transfer.Role != AttachmentRole.ImagePreview)
+                .OrderBy(transfer => transfer.CreatedAt).ThenBy(transfer => transfer.Id).ToArray() : [];
+            peer.ActiveTransferCount = active.Length;
+            peer.ActiveTransfer = active.FirstOrDefault();
+        }
     }
 
     private void StopObservingHomeTransfers()
@@ -195,7 +198,7 @@ public sealed partial class MainViewModel
         Raise(nameof(WorkspaceTitle));
         Raise(nameof(ActiveUsbReady)); RaiseUsbNotice(); Raise(nameof(ShowPeerIdentity));
         Raise(nameof(HighlightedPeerId));
-        Raise(nameof(ActivePeerId));
+        Raise(nameof(ActivePeerId)); Raise(nameof(DraftText)); Raise(nameof(CanEditDraft));
         Raise(nameof(ActivePeerIcon)); Raise(nameof(IsConversationEmpty));
         Raise(nameof(EmptyConversationHint));
         Raise(nameof(HasWorkspaceUnread)); Raise(nameof(WorkspaceUnreadText));

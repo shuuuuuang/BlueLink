@@ -40,6 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,9 +50,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -118,6 +122,60 @@ class BlueLinkRuntime(
             CrashReporter.recordNonFatal(context, "RuntimeScope", failure)
             recordDiagnostic(DiagnosticLevel.ERROR, "Runtime", "后台任务失败：${failure.javaClass.simpleName}: ${failure.message ?: "无详情"}")
         })
+    private val peerPreferences by lazy { com.bluelink.android.data.local.PeerPreferences(java.io.File(context.filesDir,"peer-preferences.json")) }
+    fun savePeerPreference(peer: String,note: String?=null,pinned: Boolean?=null) { scope.launch {
+        try { peerPreferences.update(peer,note,pinned) } catch (_: Exception) { _operationFailed.value=true }
+    } }
+    private val draftLedger = com.bluelink.android.domain.DraftLedger()
+    private val draftSaveMutex = Mutex()
+    val composer by lazy { com.bluelink.android.composer.ComposerController(context) { peer, part -> sendComposerPart(peer, part) } }
+    private val draftScheduleLock = Any()
+    private var draftDelay: Job? = null
+    private val sendingDrafts = mutableSetOf<com.bluelink.android.domain.DraftSnapshot>()
+    private val _drafts = MutableStateFlow<Map<String, String>?>(null)
+    val drafts = _drafts.asStateFlow()
+    private val _draftSaveFailed = MutableStateFlow(false)
+    val draftSaveFailed = _draftSaveFailed.asStateFlow()
+
+    fun editDraft(peerId: String, text: String) {
+        synchronized(draftLedger) {
+            if (_drafts.value == null) return
+            draftLedger.edit(peerId, text)
+            _drafts.value = draftLedger.texts()
+        }
+        synchronized(draftScheduleLock) {
+            draftDelay?.cancel()
+            draftDelay = scope.launch {
+                delay(250)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { flushDrafts() }
+            }
+        }
+    }
+    fun requestDraftFlush() { scope.launch { flushDrafts() } }
+    private suspend fun flushDrafts(): Boolean = draftSaveMutex.withLock { persistDrafts() }
+    private suspend fun persistDrafts(): Boolean {
+        return try {
+            messagePersistence.run {
+                draftLedger.pending().forEach { draft ->
+                    check(repository.saveDraft(draft.peerId, draft.text)) { "Draft conversation unavailable" }
+                    draftLedger.acknowledge(draft)
+                }
+            }
+            _draftSaveFailed.value = false
+            true
+        } catch (canceled: CancellationException) { throw canceled }
+        catch (_: Exception) { _draftSaveFailed.value = true; false }
+    }
+    private suspend fun clearDrafts(peerId: String? = null) = draftSaveMutex.withLock {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) { composer.clear(peerId) }
+        synchronized(draftLedger) { draftLedger.clear(peerId); _drafts.value = draftLedger.texts() }
+        check(persistDrafts()) { "Draft could not be cleared from storage" }
+    }
+    private suspend fun loadDrafts() {
+        val stored = repository.loadDrafts()
+        synchronized(draftLedger) { draftLedger.load(stored); _drafts.value = draftLedger.texts() }
+    }
+
     @Volatile private var appForeground = false
     private val started = AtomicBoolean()
     private val startupDiscovery = com.bluelink.android.bluetooth.StartupDiscovery()
@@ -141,6 +199,57 @@ class BlueLinkRuntime(
     val connection: StateFlow<ConnectionState> = _connection.asStateFlow()
     private val _messages = MutableStateFlow<List<ChatItem>>(emptyList())
     val messages: StateFlow<List<ChatItem>> = _messages.asStateFlow()
+    private val _historyRevision = MutableStateFlow(0L)
+    val historyRevision = _historyRevision.asStateFlow()
+    private val historySelectionVersion = java.util.concurrent.atomic.AtomicLong(0)
+
+    private suspend fun loadProjectedHistory(peerId: String, before: UUID? = null, around: UUID? = null,
+                                             all: Boolean = false): List<ChatItem> {
+        val messages = repository.loadHistory(peerId, before, around, all)
+        val transfers = recovery.mergeHistory(emptyList()).associateBy { it.id } + transferIndex.value.items
+        return messages.map { message -> message.copy(attachments = message.attachments.map { attachment ->
+            val task = transfers[attachment.transferId]?.takeIf { it.peerId.equals(peerId, true) }
+            when {
+                task != null -> attachment.withTransfer(task)
+                attachment.isTransferActive && liveTransferOwners[attachment.transferId] == null -> attachment.copy(state = TransferStatus.FAILED.name)
+                else -> attachment
+            }
+        }) }
+    }
+
+    suspend fun loadSearchHistory(peerId: String): List<ChatItem> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val stored = loadProjectedHistory(peerId, all = true)
+        val current = if(activePeerId.equals(peerId,true)) _messages.value else emptyList()
+        (stored + current).associateBy { it.id }.values.toList()
+    }
+
+    suspend fun loadHistoryContext(peerId: String, id: UUID): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val version = historySelectionVersion.get()
+        val page = loadProjectedHistory(peerId, around = id)
+        if(version != historySelectionVersion.get() || !activePeerId.equals(peerId,true)) return@withContext false
+        if(page.none { it.id == id }) return@withContext _messages.value.any { it.id == id }
+        mergeHistoryPage(page, peerId, version)
+        version == historySelectionVersion.get() && activePeerId.equals(peerId,true)
+    }
+
+    suspend fun loadEarlierHistory(peerId: String): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val version = historySelectionVersion.get()
+        val first = _messages.value.firstOrNull() ?: return@withContext false
+        val page = loadProjectedHistory(peerId, before = first.id)
+        if(version != historySelectionVersion.get() || !activePeerId.equals(peerId,true)) return@withContext false
+        mergeHistoryPage(page, peerId, version)
+        page.isNotEmpty() && version == historySelectionVersion.get() && activePeerId.equals(peerId,true)
+    }
+
+    private fun mergeHistoryPage(page: List<ChatItem>, peerId: String, version: Long) {
+        activeSessionId?.let { session -> messagesBySession.compute(contentId(session)) { _, current ->
+            (page + current.orEmpty()).associateBy { it.id }.values.sortedWith(compareBy<ChatItem> { it.timestamp }.thenBy { it.id.toString() })
+        } }
+        _messages.update { current ->
+            if(version != historySelectionVersion.get() || !activePeerId.equals(peerId,true)) current
+            else (page + current).associateBy { it.id }.values.sortedWith(compareBy<ChatItem> { it.timestamp }.thenBy { it.id.toString() })
+        }
+    }
     private val _transfers = MutableStateFlow<Map<UUID, TransferItem>>(emptyMap())
     val transfers: StateFlow<Map<UUID, TransferItem>> = _transfers.asStateFlow()
     private val transferIndex = MutableStateFlow(com.bluelink.android.domain.TransferHistoryIndex())
@@ -163,7 +272,6 @@ class BlueLinkRuntime(
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
     private val contentScopes = com.bluelink.android.domain.PeerContentScope()
-    private val queueLocks = ConcurrentHashMap<String, Mutex>()
     private fun contentId(id: UUID) = contentScopes.key(id)
     private fun isSelectedContent(id: UUID) = activeSessionId?.let { contentId(it) == contentId(id) } == true
     private val messagePersistence = com.bluelink.android.data.local.MessagePersistenceQueue(scope)
@@ -171,6 +279,7 @@ class BlueLinkRuntime(
         messagePersistence.enqueue { repository.markConversationRead(peerId) }
     }
     private val messagesBySession = ConcurrentHashMap<UUID, List<ChatItem>>()
+    private val recovery = com.bluelink.android.data.local.TransferRecoveryStore(java.io.File(context.filesDir, "Recovery"))
     private val sessionSupervisor = SessionSupervisor(
         context = context,
         identityStore = identityStore,
@@ -191,6 +300,9 @@ class BlueLinkRuntime(
         onStateChanged = ::handleSessionState,
         onDiagnostic = ::recordDiagnostic,
     )
+    init {
+        sessionSupervisor.persistRecovery = { session, item -> recovery.record(session.sessionId, session.startedAtEpochMs, session.transport.name, item) }
+    }
     val sessions: StateFlow<List<ManagedSessionState>> = sessionSupervisor.states
     private val liveTransferOwners = ConcurrentHashMap<UUID, UUID>()
     private val usb = com.bluelink.android.usb.MtpDirectoryController(context, { sessions.value },
@@ -202,15 +314,34 @@ class BlueLinkRuntime(
         recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "启动 BlueLink Android 运行时")
         if (!started.compareAndSet(false, true)) return
         CrashReporter.drain(context).forEach { recordDiagnostic(DiagnosticLevel.ERROR, "Crash", it) }
+        scope.launch(Dispatchers.IO) {
+            runCatching { com.bluelink.android.files.OwnedTemporaryFiles.collect(java.io.File(context.cacheDir,"outgoing"),
+                recovery::referencesTemporary, preview = false, minimumAgeMs = 86_400_000) }
+                .onFailure { recordDiagnostic(DiagnosticLevel.WARNING,"Storage","暂未清理旧发送缓存") }
+            runCatching { com.bluelink.android.usb.MtpOwnedStorage.collect(context,false,recovery::referencesTemporary) }
+                .onFailure { recordDiagnostic(DiagnosticLevel.WARNING,"Storage","暂未清理旧 USB 中转缓存") }
+        }
         scope.launch { sessions.collect { updateSelectedConnection(it); usb.observe() } }
-        scope.launch { repository.transferHistory.collect { stored -> transferIndex.update { index -> index.restore(stored.map { value ->
+        scope.launch { repository.transferHistory.collect { stored -> transferIndex.update { index -> index.restore(recovery.mergeHistory(stored).map { value ->
             if (value.status in com.bluelink.android.domain.HistoryQuery.activeStatuses && liveTransferOwners[value.id] == null)
                 value.copy(status = TransferStatus.FAILED, failureDetail = "设备通道已断开，请由发送方重试传输") else value
         }) } } }
         scope.launch { allTransfers.collect { _transfers.value = selectedTransfers() } }
 
         scope.launch {
+            repository.associateComposerDrafts = { legacy ->
+                recovery.associate(identityStore.identityAssociations())
+                kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { composer.associate(identityStore.identityAssociations(), legacy) }
+            }
             repository.initialize(identityStore)
+            runCatching {
+                val references = (repository.referencedFiles() + recovery.mergeHistory(emptyList()).mapNotNull { it.localUri }).mapNotNull { raw ->
+                    if (raw.startsWith("file:")) java.io.File(java.net.URI(raw)).absolutePath
+                    else raw.takeIf { it.startsWith("/") }
+                }.toSet()
+                withContext(Dispatchers.IO) { composer.collectStartupOrphans(references) }
+            }.onFailure { recordDiagnostic(DiagnosticLevel.WARNING,"Storage","草稿缓存仍保留，稍后重试清理") }
+            loadDrafts()
             repository.settings.collect { settings ->
                 appSettings = settings
                 settingsLoaded = true
@@ -274,6 +405,11 @@ class BlueLinkRuntime(
                 }.sortedWith(compareBy<ConversationSummary> { when (it.availability) {
                     DeviceAvailability.CONNECTED -> 0; DeviceAvailability.OFFLINE -> 1; DeviceAvailability.CONNECTABLE -> 2
                 } }.thenByDescending { it.lastActivityAt })
+            }.combine(peerPreferences.state) { peers, preferences -> peers.map { peer ->
+                val value=preferences[peer.peerId.lowercase(java.util.Locale.ROOT)]
+                peer.copy(localNote=value?.note.orEmpty(),isPinned=value?.pinned ?: false)
+            }.sortedWith(compareBy<ConversationSummary> { if(it.availability==DeviceAvailability.CONNECTED) 0 else 1 }
+                .thenByDescending { it.isPinned }.thenByDescending { it.lastActivityAt })
             }.collect { _conversations.value = it }
         }
         scope.launch {
@@ -366,18 +502,93 @@ class BlueLinkRuntime(
         }
     }
 
-    fun sendChat(text: String) {
+    fun sendChat(text: String, fromDraft: Boolean = false) {
         val value = text.trim()
         if (value.isEmpty()) return
         val state = com.bluelink.android.domain.SessionRoute.preferred(sessions.value, activePeerId, appSettings.usbTransferEnabled) ?: return
+        val draft = if (fromDraft) state.peerId?.let(draftLedger::get) else null
+        if (fromDraft && (draft == null || draft.text != text || _drafts.value == null)) return
+        if (draft != null && !synchronized(sendingDrafts) { sendingDrafts.add(draft) }) return
         val sessionId = state.sessionId
         val item = ChatItem(text = value, outgoing = true, status = MessageStatus.SENDING)
         messagesBySession.compute(contentId(sessionId)) { _, items -> (items ?: emptyList()) + item }
         _messages.value = messagesBySession[contentId(sessionId)].orEmpty()
         if (appSettings.saveChatHistory) messagePersistence.enqueue { repository.saveChat(state, item) }
-        sessionSupervisor.sendChat(sessionId, value, item.id) { sent ->
-            handleMessageStatus(state, item.id, if (sent) MessageStatus.SENT else MessageStatus.LOCAL_QUEUED)
+        val completed = AtomicBoolean()
+        val onSent: (Boolean) -> Unit = { sent ->
+            if (completed.compareAndSet(false, true)) {
+                handleMessageStatus(state, item.id, if (sent) MessageStatus.SENT else MessageStatus.FAILED)
+                if (draft != null) scope.launch {
+                    try {
+                        if (sent) {
+                            if (appSettings.saveChatHistory) messagePersistence.run {
+                                repository.saveChat(state, item.copy(status = MessageStatus.SENT))
+                            }
+                            synchronized(draftLedger) {
+                                if (_drafts.value != null && draftLedger.clearAfterSend(draft)) _drafts.value = draftLedger.texts()
+                            }
+                            flushDrafts()
+                        }
+                    } catch (canceled: CancellationException) { throw canceled }
+                    catch (_: Exception) { _draftSaveFailed.value = true }
+                    finally { synchronized(sendingDrafts) { sendingDrafts.remove(draft) } }
+                }
+            }
         }
+        try { sessionSupervisor.sendChat(sessionId, value, item.id, onSent) }
+        catch (_: Exception) { onSent(false) }
+    }
+
+    /** Explicit incoming-share confirmation only. Failed shared text is never auto-queued. */
+    suspend fun sendSharedText(peerId: String, id: UUID, text: String): Boolean {
+        if(!identityStore.trustedEntries().containsKey(peerId.lowercase(java.util.Locale.ROOT))) return false
+        val state=com.bluelink.android.domain.SessionRoute.preferred(sessions.value,peerId,appSettings.usbTransferEnabled) ?: return false
+        val item=ChatItem(id,text,true,java.time.Instant.now(),MessageStatus.SENDING)
+        if(appSettings.saveChatHistory && messagePersistence.run {repository.prepareSharedText(state,item)}) return true
+        withContext(Dispatchers.Main) {
+            messagesBySession.compute(contentId(state.sessionId)) { _,items ->
+                val previous=items.orEmpty().firstOrNull {it.id==id}
+                items.orEmpty().filterNot {it.id==id} + if(previous?.status in setOf(MessageStatus.DELIVERED,MessageStatus.READ)) previous!! else item
+            }
+            if(isSelectedContent(state.sessionId)) _messages.value=messagesBySession[contentId(state.sessionId)].orEmpty()
+            _historyRevision.update {it+1}
+        }
+        val sent=CompletableDeferred<Boolean>()
+        val success=try {sessionSupervisor.sendSharedChat(state.sessionId,text,id) {sent.complete(it)};sent.await()}
+            catch(error:Exception) {if(error is CancellationException)throw error;false}
+        val status=if(success) MessageStatus.SENT else MessageStatus.FAILED
+        withContext(Dispatchers.Main) {handleMessageStatus(state,id,status)}
+        if(appSettings.saveChatHistory) messagePersistence.run {repository.updateMessageStatus(id.toString(),peerId,status)}
+        return success
+    }
+
+    suspend fun sendSharedFile(peerId: String,id: UUID,uri: Uri,name: String,size: Long): Boolean {
+        if(!identityStore.trustedEntries().containsKey(peerId.lowercase(java.util.Locale.ROOT))) return false
+        val state=com.bluelink.android.domain.SessionRoute.preferred(sessions.value,peerId,appSettings.usbTransferEnabled) ?: return false
+        transferIndex.value.items[id]?.let { existing ->
+            if(!existing.peerId.equals(peerId,true)) return false
+            if(existing.status==TransferStatus.COMPLETED || existing.status in com.bluelink.android.domain.HistoryQuery.activeStatuses) return true
+            val original=existing.localUri ?: return false
+            if(!withContext(Dispatchers.IO) { com.bluelink.android.files.FileInteraction.readable(context,original) }) return false
+            return sessionSupervisor.retryFile(state.sessionId,Uri.parse(original),existing)
+        }
+        val prepared=CompletableDeferred<Boolean>()
+        sessionSupervisor.sendFile(state.sessionId,uri,name,size,id,
+            beforeQueue = { item -> transferHistoryMutex.withLock { repository.prepareSharedTransfer(state,item) } },
+            onPrepared = { item -> prepared.complete(item != null) })
+        return prepared.await()
+    }
+
+    suspend fun sendComposerPart(peerId: String, part: com.bluelink.android.composer.ComposerPart): Boolean {
+        val file = part.file ?: return sendSharedText(peerId, part.id, part.text.orEmpty())
+        if (!identityStore.trustedEntries().containsKey(peerId.lowercase(java.util.Locale.ROOT))) return false
+        val state = com.bluelink.android.domain.SessionRoute.preferred(sessions.value, peerId, appSettings.usbTransferEnabled) ?: return false
+        if (file.size < 0 || !withContext(Dispatchers.IO) { java.io.File(file.path).let { it.isFile && it.length() == file.size } }) return false
+        val announced = CompletableDeferred<Boolean>()
+        sessionSupervisor.sendFile(state.sessionId, Uri.fromFile(java.io.File(file.path)), file.name, file.size, UUID.randomUUID(),
+            beforeQueue = { item -> transferHistoryMutex.withLock { repository.prepareSharedTransfer(state, item) } },
+            onPrepared = { if (it == null) announced.complete(false) }, onAnnounced = { announced.complete(it) })
+        return announced.await()
     }
 
     fun sendFile(uri: Uri, name: String, size: Long) {
@@ -385,9 +596,75 @@ class BlueLinkRuntime(
             ?.let { sessionSupervisor.sendFile(it.sessionId, uri, name, size) }
     }
 
+    private val fileBatchMutex = Mutex()
+    val fileBatch: com.bluelink.android.domain.FileBatchOperations = object : com.bluelink.android.domain.FileBatchOperations {
+        override suspend fun check(ids: List<UUID>, action: com.bluelink.android.domain.FileBatchAction) = withContext(Dispatchers.IO) {
+            require(ids.distinct().size <= com.bluelink.android.domain.FileBatchPolicy.MAXIMUM_SELECTION)
+            ids.distinct().map { id ->
+                val item = transferIndex.value.items[id]
+                com.bluelink.android.domain.FileBatchPolicy.check(id, item, action,
+                    item?.let { resolveTransferSession(it) != null } == true,
+                    action !in setOf(com.bluelink.android.domain.FileBatchAction.RETRY, com.bluelink.android.domain.FileBatchAction.SHARE) ||
+                        com.bluelink.android.files.FileInteraction.readable(context, item?.localUri))
+            }
+        }
+        override suspend fun run(ids: List<UUID>, action: com.bluelink.android.domain.FileBatchAction) = fileBatchMutex.withLock {
+            val shares = mutableListOf<com.bluelink.android.domain.ChatAttachment>()
+            val results = com.bluelink.android.domain.FileBatchRunner.run(ids, { check(listOf(it),action).single() }) { id ->
+                val item = transferIndex.value.items[id] ?: error("Missing transfer")
+                when(action) {
+                    com.bluelink.android.domain.FileBatchAction.RETRY -> check(sessionSupervisor.retryFile(
+                        resolveTransferSession(item) ?: error("Offline"), Uri.parse(item.localUri), item))
+                    com.bluelink.android.domain.FileBatchAction.CANCEL -> check(sessionSupervisor.cancelTransfer(
+                        resolveTransferSession(item) ?: error("Offline"), id))
+                    com.bluelink.android.domain.FileBatchAction.DELETE_RECORDS -> transferHistoryMutex.withLock {
+                        val latest = transferIndex.value.items[id] ?: error("Missing transfer")
+                        check(latest.status !in com.bluelink.android.domain.HistoryQuery.activeStatuses)
+                        check(recovery.dismiss(id))
+                        repository.deleteTransfer(id)
+                        transferIndex.update { it.forget(setOf(id)) }
+                        _transfers.value = selectedTransfers()
+                    }
+                    com.bluelink.android.domain.FileBatchAction.SHARE -> shares.add(com.bluelink.android.domain.ChatAttachment(
+                        item.attachmentId ?: item.id, item.id, item.name, item.mimeType, item.totalBytes,
+                        item.localUri, item.status.name, completedBytes = item.completedBytes))
+                }
+            }
+            if(shares.isEmpty()) results else try {
+                val intent = withContext(Dispatchers.IO) { com.bluelink.android.files.FileInteraction.multiShareIntent(context, shares) }
+                withContext(Dispatchers.Main) { context.startActivity(android.content.Intent.createChooser(intent,null).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                results
+            } catch(error: Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                results.map { if(it.outcome == com.bluelink.android.domain.FileBatchOutcome.SUBMITTED)
+                    it.copy(outcome = com.bluelink.android.domain.FileBatchOutcome.FAILED, reason = com.bluelink.android.domain.FileBatchReason.FAILED) else it }
+            }
+        }
+    }
+
     fun retryTransfer(value: TransferItem) {
         val uri = value.localUri?.let(Uri::parse) ?: return
         if (value.outgoing) resolveTransferSession(value)?.let { sessionSupervisor.retryFile(it, uri, value) }
+    }
+
+    internal fun collectTemporaryFiles(preview: Boolean): com.bluelink.android.files.TemporaryCleanup {
+        val local=com.bluelink.android.files.OwnedTemporaryFiles.collect(java.io.File(context.cacheDir,"outgoing"),recovery::referencesTemporary,preview)
+        val usb=com.bluelink.android.usb.MtpOwnedStorage.collect(context,preview,recovery::referencesTemporary)
+        return com.bluelink.android.files.TemporaryCleanup(local.bytes+usb.bytes,local.files+usb.files,local.retained+usb.retained,local.errors+usb.errors)
+    }
+
+    fun switchQueuedToBluetooth(value: TransferItem): Boolean {
+        val current=transferIndex.value.items[value.id] ?: return false
+        val session=resolveTransferSession(current) ?: return false
+        return sessionSupervisor.switchQueuedToBluetooth(session,current)
+    }
+
+    fun retryTransferFrom(value: TransferItem, uri: Uri): Boolean {
+        val current = transferIndex.value.items[value.id] ?: return false
+        if (current.peerId != value.peerId || com.bluelink.android.domain.TransferAction.RESELECT !in
+            com.bluelink.android.domain.TransferActions.available(current)) return false
+        val session = resolveTransferSession(current) ?: return false
+        return sessionSupervisor.retryFile(session, uri, current)
     }
 
     fun pauseTransfer(value: TransferItem) {
@@ -430,6 +707,8 @@ class BlueLinkRuntime(
     }
 
     fun selectSession(sessionId: UUID) {
+        historySelectionVersion.incrementAndGet()
+        requestDraftFlush()
         activeSessionId = sessionId
         val state = sessions.value.firstOrNull { it.sessionId == sessionId }
         activePeerId = state?.peerId
@@ -448,6 +727,8 @@ class BlueLinkRuntime(
     fun setMessagePageResumed(resumed: Boolean) = conversationReads.setResumed(resumed)
 
     fun selectPeer(peerId: String) {
+        val selectionVersion = historySelectionVersion.incrementAndGet()
+        requestDraftFlush()
         activePeerId = peerId
         val connected = com.bluelink.android.domain.SessionRoute.preferred(sessions.value, peerId)
         if (connected != null) selectSession(connected.sessionId) else {
@@ -457,9 +738,9 @@ class BlueLinkRuntime(
             val summary = conversations.value.firstOrNull { it.peerId == peerId }
             _connection.value = ConnectionState(ConnectionPhase.OFFLINE, summary?.peerName, "设备离线 · 可查看历史记录")
             scope.launch {
-                val history = repository.loadHistory(peerId)
+                val history = loadProjectedHistory(peerId)
                 // A slower previous selection must not replace the newly selected conversation.
-                if (activeSessionId != null || !activePeerId.equals(peerId, true)) return@launch
+                if (selectionVersion != historySelectionVersion.get() || activeSessionId != null || !activePeerId.equals(peerId, true)) return@launch
                 _messages.value = history
                 _transfers.value = selectedTransfers()
             }
@@ -482,6 +763,7 @@ class BlueLinkRuntime(
     fun keepBackgroundSessionsEnabled(): Boolean = appSettings.keepBackgroundSessions
 
     fun onAppBackgrounded() {
+        requestDraftFlush()
         appForeground = false
         if (appSettings.keepBackgroundSessions) return
         recordDiagnostic(DiagnosticLevel.INFO, "Runtime", "后台会话已关闭，应用离开前台后停止蓝牙端点")
@@ -491,6 +773,7 @@ class BlueLinkRuntime(
     }
 
     fun onAppForegrounded() {
+        requestDraftFlush()
         appForeground = true
         // History/settings must load on a cold start even without Bluetooth access.
         if (!started.get()) {
@@ -532,7 +815,8 @@ class BlueLinkRuntime(
         kotlinx.coroutines.withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
             when (action) {
                 com.bluelink.android.domain.PrivacyAction.CLEAR_MESSAGES -> {
-                    messagePersistence.run { repository.clearChatHistory() }
+                    clearDrafts()
+                    messagePersistence.run { repository.clearChatHistory(); _historyRevision.value += 1 }
                     messagesBySession.clear(); _messages.value = emptyList()
                 }
                 com.bluelink.android.domain.PrivacyAction.CLEAR_TRANSFERS -> {
@@ -568,13 +852,28 @@ class BlueLinkRuntime(
 
     fun clearChatHistory() {
         messagesBySession.clear(); _messages.value = emptyList()
-        messagePersistence.enqueue { repository.clearChatHistory() }
+        scope.launch { clearDrafts(); messagePersistence.run { repository.clearChatHistory(); _historyRevision.value += 1 } }
     }
+
+    suspend fun deleteSelectedMessages(peerId: String, selection: List<UUID>): List<com.bluelink.android.domain.MessageBatchResult> =
+        messagePersistence.run {
+            com.bluelink.android.domain.MessageBatch.delete(selection,
+                lookup = { id -> if (activePeerId == peerId) _messages.value.firstOrNull { it.id == id } else null },
+                activeTransfer = { current -> current.attachments.any { attachment ->
+                    transferIndex.value.items[attachment.transferId]?.let {
+                        it.status in com.bluelink.android.domain.HistoryQuery.activeStatuses || it.recoveryPending } == true
+                } }, remove = { id ->
+                    repository.deleteMessage(id)
+                    messagesBySession.replaceAll { _, items -> items.filterNot { it.id == id } }
+                    _messages.value = _messages.value.filterNot { it.id == id }
+                    _historyRevision.value += 1
+                })
+        }
 
     fun deleteMessage(messageId: UUID) {
         messagesBySession.replaceAll { _, items -> items.filterNot { it.id == messageId } }
         _messages.value = _messages.value.filterNot { it.id == messageId }
-        messagePersistence.enqueue { repository.deleteMessage(messageId) }
+        messagePersistence.enqueue { repository.deleteMessage(messageId); _historyRevision.value += 1 }
     }
 
     fun clearConversation(peerId: String) {
@@ -582,11 +881,13 @@ class BlueLinkRuntime(
             messagesBySession[contentId(state.sessionId)] = emptyList()
         }
         if (activePeerId.equals(peerId, true)) _messages.value = emptyList()
-        messagePersistence.enqueue { repository.clearConversation(peerId) }
+        scope.launch { clearDrafts(peerId); messagePersistence.run { repository.clearConversation(peerId); _historyRevision.value += 1 } }
     }
 
     private suspend fun clearTransferRecords() = transferHistoryMutex.withLock {
-        val removedIds = transferIndex.value.items.keys
+        val removedIds = transferIndex.value.items.values.filter {
+            it.status !in com.bluelink.android.domain.HistoryQuery.activeStatuses && !it.recoveryPending
+        }.map { it.id }.filter { recovery.dismiss(it) }.toSet()
         repository.clearTransferHistory()
         transferIndex.update { it.forget(removedIds) }
         _transfers.value = selectedTransfers()
@@ -596,6 +897,8 @@ class BlueLinkRuntime(
 
     fun deleteTransfer(transferId: UUID) { scope.launch {
         transferHistoryMutex.withLock {
+            val current = transferIndex.value.items[transferId] ?: return@withLock
+            if (current.status in com.bluelink.android.domain.HistoryQuery.activeStatuses || !recovery.dismiss(transferId)) return@withLock
             repository.deleteTransfer(transferId)
             transferIndex.update { it.forget(setOf(transferId)) }
             _transfers.value = selectedTransfers()
@@ -656,7 +959,11 @@ class BlueLinkRuntime(
         }
     }
 
+    private val transferProjectionGate = Any()
+    private val transferProjection = com.bluelink.android.session.SessionTransferLedger()
     private fun handleTransfer(session: ManagedSessionState, transfer: TransferItem) {
+        synchronized(transferProjectionGate) {
+        if (transfer.attemptId != null && transferProjection.record(transfer) == null) return
         if (transfer.status in setOf(TransferStatus.OFFERED, TransferStatus.QUEUED, TransferStatus.TRANSFERRING,
                 TransferStatus.PAUSED, TransferStatus.REMOTE_PAUSED, TransferStatus.RESUMING, TransferStatus.VERIFYING, TransferStatus.COMMITTING))
             liveTransferOwners[transfer.id] = session.sessionId
@@ -682,15 +989,13 @@ class BlueLinkRuntime(
         })
         val scoped = transfer.copy(peerId = session.peerId, startedAtEpochMs = sample.startedAt,
             updatedAtEpochMs = sample.updatedAt, bytesPerSecond = sample.speed)
-        transferIndex.update { it.receive(scoped) }
+        transferIndex.update { it.admit(scoped) }
         scoped.messageId?.let { messageId -> messagesBySession.computeIfPresent(contentId(session.sessionId)) { _, items ->
             items.map { message -> if (message.id != messageId) message else message.copy(
                 attachments = message.attachments.map { attachment ->
                     if (scoped.role == AttachmentRole.IMAGE_PREVIEW && attachment.isImage) attachment.copy(
                         previewUri = scoped.localUri ?: attachment.previewUri)
-                    else if (attachment.transferId != scoped.id) attachment else attachment.copy(
-                        localUri = scoped.localUri ?: attachment.localUri, state = scoped.status.name,
-                        completedBytes = scoped.completedBytes, bytesPerSecond = scoped.bytesPerSecond)
+                    else attachment.withTransfer(scoped)
                 })
             }
         } }
@@ -700,6 +1005,7 @@ class BlueLinkRuntime(
             transferHistoryMutex.withLock {
                 if (transferIndex.value.accepts(scoped.id)) repository.saveTransfer(session, scoped)
             }
+        }
         }
     }
 
@@ -758,12 +1064,19 @@ class BlueLinkRuntime(
         }
     }
 
-    private suspend fun applyIdentityAssociation() = transferHistoryMutex.withLock {
-        messagePersistence.run {
-            repository.applyIdentityAssociations(identityStore)
-            val associations = identityStore.identityAssociations()
-            while (activePeerId?.let { associations[it] } != null) activePeerId = associations[activePeerId]
-        }
+    private suspend fun applyIdentityAssociation() = draftSaveMutex.withLock {
+        synchronized(draftLedger) { _drafts.value = null }
+        try {
+            check(persistDrafts()) { "Drafts unavailable for identity association" }
+            transferHistoryMutex.withLock {
+                messagePersistence.run {
+                    repository.applyIdentityAssociations(identityStore)
+                    val associations = identityStore.identityAssociations()
+                    while (activePeerId?.let { associations[it] } != null) activePeerId = associations[activePeerId]
+                    loadDrafts()
+                }
+            }
+        } finally { synchronized(draftLedger) { _drafts.value = draftLedger.texts() } }
     }
 
     private fun handleSessionState(state: ManagedSessionState) {
@@ -783,7 +1096,6 @@ class BlueLinkRuntime(
                     repository.recordConnectedSession(state, identityStore)
                     state.peerId?.let {
                         loadHistory(it, state.sessionId)
-                        flushQueuedMessages(state, it)
                     }
                 }
             }
@@ -801,30 +1113,12 @@ class BlueLinkRuntime(
 
     private fun loadHistory(peerId: String, sessionId: UUID) {
         scope.launch {
-            val persisted = repository.loadHistory(peerId).map { message -> message.copy(attachments = message.attachments.map { attachment ->
-                if (attachment.isTransferActive && liveTransferOwners[attachment.transferId] == null)
-                    attachment.copy(state = TransferStatus.FAILED.name) else attachment
-            }) }
+            val persisted = loadProjectedHistory(peerId)
             messagesBySession.compute(contentId(sessionId)) { _, current ->
                 (persisted + current.orEmpty()).associateBy { it.id }.values.sortedBy { it.timestamp }
             }
             if (isSelectedContent(sessionId)) _messages.value = messagesBySession[contentId(sessionId)].orEmpty()
             if (isSelectedContent(sessionId)) _transfers.value = selectedTransfers()
-        }
-    }
-
-    private suspend fun flushQueuedMessages(state: ManagedSessionState, peerId: String): Unit =
-        queueLocks.computeIfAbsent(peerId.lowercase(java.util.Locale.ROOT)) { Mutex() }.withLock {
-        if (com.bluelink.android.domain.SessionRoute.preferred(sessions.value, peerId)?.sessionId != state.sessionId) return@withLock
-        val persisted = repository.loadHistory(peerId)
-        val merged = messagesBySession.compute(contentId(state.sessionId)) { _, current ->
-            (persisted + current.orEmpty()).associateBy { it.id }.values.sortedBy { it.timestamp }
-        }.orEmpty()
-        for (queued in merged.filter { it.outgoing && it.status == MessageStatus.LOCAL_QUEUED }) {
-            val sent = CompletableDeferred<Boolean>()
-            sessionSupervisor.sendChat(state.sessionId, queued.text, queued.id) { sent.complete(it) }
-            if (!sent.await()) break
-            handleMessageStatus(state, queued.id, MessageStatus.SENT)
         }
     }
 

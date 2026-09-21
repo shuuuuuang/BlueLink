@@ -13,6 +13,7 @@ public enum BtxCapability : uint
     TransferControl = 1 << 3,
     ResumeState = 1 << 4,
     MtpFiles = 1 << 5,
+    TransferAttemptStreams = 1 << 6,
 }
 
 public sealed record ProtocolGreeting(byte Major, byte Minor, BtxCapability Capabilities)
@@ -21,7 +22,7 @@ public sealed record ProtocolGreeting(byte Major, byte Minor, BtxCapability Capa
     public const byte CurrentMinor = 1;
     public const BtxCapability CurrentCapabilities = BtxCapability.StructuredMessages |
         BtxCapability.MessageReceipts | BtxCapability.AttachmentMetadata |
-        BtxCapability.TransferControl | BtxCapability.ResumeState | BtxCapability.MtpFiles;
+        BtxCapability.TransferControl | BtxCapability.ResumeState | BtxCapability.MtpFiles | BtxCapability.TransferAttemptStreams;
 
     public static ProtocolGreeting Current { get; } = new(CurrentMajor, CurrentMinor, CurrentCapabilities);
     public static ProtocolGreeting Legacy { get; } = new(1, 0, BtxCapability.None);

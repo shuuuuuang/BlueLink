@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -301,7 +301,7 @@ internal static partial class BackgroundConversationVerification
                 check(Clipboard.GetText() == message.Text, "right-click copy after outside press copies the full message, never the stale range: " + theme);
                 context.IsOpen = false; Drain();
                 range.Select(); Drain();
-                var composer = (TextBox)window.FindName("MessageInput");
+                var composer = (Wpf.Ui.Controls.RichTextBox)window.FindName("MessageInput");
                 composer.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, Environment.TickCount, text, composer)
                     { RoutedEvent = Keyboard.PreviewGotKeyboardFocusEvent }); Drain();
                 check(text.SelectionLength == 0, "moving keyboard focus to the composer clears the old range: " + theme);

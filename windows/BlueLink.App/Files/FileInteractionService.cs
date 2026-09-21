@@ -10,16 +10,35 @@ namespace BlueLink.Files;
 
 public static class FileInteractionService
 {
-    public static void Open(Window owner, ChatAttachment attachment)
+    internal static void CopyFileName(string fileName, ToastHost toasts)
+    {
+        try { Clipboard.SetText(fileName); toasts.Show("已复制文件名", ToastLevel.Success); }
+        catch (Exception) { toasts.Show("复制失败，请稍后重试", ToastLevel.Error); }
+    }
+
+    public static void Open(Window owner, ChatAttachment attachment, IEnumerable<ChatAttachment>? images = null)
     {
         if (!TryGetLocalPath(owner, attachment, out var path)) return;
-        if (attachment.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            using var overlay = BlueLinkDialog.DimOwner(owner, "#3D0F172A", owner is MainWindow ? 52 : 0);
-            new ImagePreviewWindow(path, attachment.FileName) { Owner = owner }.ShowDialog();
-            return;
+            if (attachment.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var preview = ImagePreviewWindow.TryCreate(path, attachment.FileName);
+                if (preview.Window is null)
+                {
+                    BlueLinkDialog.Show(owner, "无法打开文件", preview.Error ?? string.Empty, BlueLinkDialogTone.Error);
+                    return;
+                }
+                preview.Window.SetGallery((images ?? [attachment]).Where(item => item.IsImage && item.CanOpen && File.Exists(item.LocalPath))
+                    .Select(item => new ImagePreviewEntry(item.LocalPath!, item.FileName)));
+                // Only dim after loading succeeds; failed decodes leave the chat usable.
+                using var overlay = BlueLinkDialog.DimOwner(owner, "#3D0F172A", owner is MainWindow ? 52 : 0);
+                preview.Window.Owner = owner;
+                preview.Window.ShowDialog();
+                return;
+            }
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception failure) { BlueLinkDialog.Show(owner, "无法打开文件", failure.Message, BlueLinkDialogTone.Error); }
     }
 
@@ -79,6 +98,7 @@ public static class FileInteractionService
         {
             return DisplayThumbnailCache.Load(ThumbnailDirectory, attachment.DisplayPath, decodeWidth, () =>
             {
+            if (WebpBitmapDecoder.IsWebp(attachment.DisplayPath)) return WebpBitmapDecoder.Load(attachment.DisplayPath, decodeWidth).Bitmap;
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
@@ -98,6 +118,7 @@ public static class FileInteractionService
         if (!attachment.IsImage || !attachment.CanOpen) return null;
         try
         {
+            if (WebpBitmapDecoder.IsWebp(attachment.LocalPath!)) return WebpBitmapDecoder.ReadDimensions(attachment.LocalPath!);
             using var source = File.OpenRead(attachment.LocalPath!);
             var decoder = BitmapDecoder.Create(source, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
             var frame = decoder.Frames[0];

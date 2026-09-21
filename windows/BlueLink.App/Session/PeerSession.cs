@@ -37,8 +37,10 @@ public sealed partial class PeerSession : IAsyncDisposable
     private readonly PriorityQueue<Outbound, (int Priority, long Order)> _outbound = new();
     private readonly SemaphoreSlim _outboundSignal = new(0);
     private readonly object _outboundLock = new();
+    private readonly TransferStreamFence _transferStreams = new();
     private readonly ConcurrentDictionary<Guid, OutgoingTransfer> _outgoing = new();
     private readonly SemaphoreSlim _filePreparation = new(1, 1);
+    internal TransferAttemptRegistry Attempts { get; set; } = new();
     private readonly ConcurrentDictionary<Guid, IncomingTransfer> _incoming = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _offerDecisions = new();
     private readonly object _receiveDecisionLock = new();
@@ -69,7 +71,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         _expectedTrustedPeerId = expectedTrustedPeerId;
         _identityAssociation = identityAssociation;
         _onMessage = onMessage;
-        _onTransfer = onTransfer;
+        _onTransfer = item => onTransfer(_transferStreams.Stamp(item));
         _onReady = onReady;
         _onClosed = onClosed;
         _onEnvelope = onEnvelope;
@@ -174,28 +176,29 @@ public sealed partial class PeerSession : IAsyncDisposable
         await Enqueue(WireMessageType.Chat, 1, payload);
     }
 
-    public async Task SendFileAsync(string path)
+    public async Task SendFileAsync(string path, string? displayName = null, Action? onAnnounced = null)
     {
         using var preparation = await FilePreparationLease.EnterAsync(_filePreparation, _cancellation.Token);
-        var name = Path.GetFileName(path);
+        var name = displayName ?? Path.GetFileName(path);
         var mimeType = MimeTypeFor(name);
+        var originalId = Guid.NewGuid();
+        using var attempt = Attempts.Begin(originalId);
         var snapshotId = Guid.NewGuid();
         var snapshotRoot = OutgoingDirectory;
-        var snapshotPath = await OutgoingSnapshot.CreateAsync(path, snapshotRoot, snapshotId, _cancellation.Token);
+        var snapshotPath = await OutgoingSnapshot.CreateAsync(path, snapshotRoot, snapshotId, _cancellation.Token, originalId);
         SessionLog.Write("Transfer", $"已创建不可变发送快照，source={name}，snapshot={Path.GetFileName(snapshotPath)}");
         try
         {
         var structured = _negotiation.Supports(BtxCapability.StructuredMessages | BtxCapability.AttachmentMetadata);
         if (!structured)
         {
-            var legacyId = Guid.NewGuid();
+            var legacyId = originalId;
             var legacy = await DescribeAsync(snapshotPath, legacyId, name, mimeType, AttachmentRole.File, null, null);
-            await SendPreparedTransferAsync(snapshotPath, legacy, path);
+            await SendPreparedTransferAsync(snapshotPath, legacy, path, attempt: attempt);
             return;
         }
 
         var messageId = Guid.NewGuid();
-        var originalId = Guid.NewGuid();
         var originalAttachmentId = Guid.NewGuid();
         var originalRole = mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
             ? AttachmentRole.ImageOriginal : AttachmentRole.File;
@@ -212,9 +215,10 @@ public sealed partial class PeerSession : IAsyncDisposable
             LocalPath = path,
             MessageId = messageId,
             AttachmentId = originalAttachmentId,
-            Role = originalRole
+            Role = originalRole,
+            SourceSha256 = Convert.ToHexString(original.Hash)
         };
-        _onTransfer(originalTransfer);
+        attempt.Publish(originalTransfer, _onTransfer);
         ImagePreviewBuilder.PreviewAsset? previewAsset = null;
         PreparedTransfer? preview = null;
         try
@@ -244,6 +248,7 @@ public sealed partial class PeerSession : IAsyncDisposable
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "", descriptors);
             await Enqueue(WireMessageType.Chat, 1, MessageWire.Encode(envelope));
             _onEnvelope?.Invoke(envelope, true);
+            onAnnounced?.Invoke();
             if (preview is not null && previewAsset is not null)
             {
                 try { await SendPreparedTransferAsync(previewAsset.Path, preview, previewAsset.Path); }
@@ -253,7 +258,7 @@ public sealed partial class PeerSession : IAsyncDisposable
                     SessionLog.Write("Transfer", $"图片预览发送失败，继续发送原图，id={preview.Id:N}", failure);
                 }
             }
-            await SendPreparedTransferAsync(snapshotPath, original, path, originalTransfer, preparation.Dispose);
+            await SendPreparedTransferAsync(snapshotPath, original, path, originalTransfer, preparation.Dispose, attempt);
         }
         catch (Exception failure)
         {
@@ -262,7 +267,7 @@ public sealed partial class PeerSession : IAsyncDisposable
                 originalTransfer.Status = failure is OperationCanceledException
                     ? TransferStatus.Canceled : TransferStatus.Failed;
                 originalTransfer.FailureDetail = failure.Message;
-                _onTransfer(originalTransfer);
+                attempt.Publish(originalTransfer, _onTransfer);
             }
             throw;
         }
@@ -276,27 +281,31 @@ public sealed partial class PeerSession : IAsyncDisposable
         {
             try { File.Delete(snapshotPath); }
             catch (Exception failure) { SessionLog.Write("Transfer", "清理发送快照失败，将由缓存清理器处理", failure); }
+            finally { Storage.OwnedTemporaryFiles.Release(snapshotPath); }
         }
     }
 
-    public async Task RetryFileAsync(string path, TransferItem template)
+    public async Task RetryFileAsync(string path, TransferItem template, bool forceBluetooth = false)
     {
         if (!template.Outgoing || template.Id == Guid.Empty)
             throw new InvalidOperationException("仅可重试有效的发送任务");
+        using var attempt = Attempts.Begin(template.Id);
         var snapshotRoot = OutgoingDirectory;
-        var snapshotPath = await OutgoingSnapshot.CreateAsync(path, snapshotRoot, template.Id, _cancellation.Token);
+        var snapshotPath = await OutgoingSnapshot.CreateAsync(path, snapshotRoot, Guid.NewGuid(), _cancellation.Token, template.Id);
         try
         {
             var prepared = await DescribeAsync(snapshotPath, template.Id, template.Name, template.MimeType,
                 template.Role, template.MessageId, template.AttachmentId);
+            TransferSourceIdentity.Validate(template, prepared.Size, prepared.Hash);
             var retry = SessionTransferLedger.Copy(template);
             retry.FailureDetail = null;
-            await SendPreparedTransferAsync(snapshotPath, prepared, path, retry);
+            await SendPreparedTransferAsync(snapshotPath, prepared, path, retry, attempt: attempt, forceBluetooth: forceBluetooth);
         }
         finally
         {
             try { File.Delete(snapshotPath); }
             catch (Exception failure) { SessionLog.Write("Transfer", "清理重试快照失败，将由缓存清理器处理", failure); }
+            finally { Storage.OwnedTemporaryFiles.Release(snapshotPath); }
         }
     }
 
@@ -313,22 +322,27 @@ public sealed partial class PeerSession : IAsyncDisposable
     }
 
     private async Task SendPreparedTransferAsync(string path, PreparedTransfer prepared, string localPath,
-        TransferItem? existingTransfer = null, Action? onQueued = null)
+        TransferItem? existingTransfer = null, Action? onQueued = null, TransferAttemptRegistry.Lease? attempt = null, bool forceBluetooth = false)
     {
         var id = prepared.Id;
+        using var transferStream = _transferStreams.StartOutgoing(id, _negotiation.Supports(BtxCapability.TransferAttemptStreams), _listenerRole);
+        using var ownedAttempt = attempt is null ? Attempts.Begin(id) : null;
+        attempt ??= ownedAttempt!;
+        void Publish(TransferItem value) => attempt.Publish(value, _onTransfer);
         var transfer = existingTransfer ?? new TransferItem
         {
             Id = id, Name = prepared.Name, TotalBytes = prepared.Size, Outgoing = true,
             Status = TransferStatus.Offered, MimeType = prepared.MimeType, LocalPath = localPath,
             MessageId = prepared.MessageId, AttachmentId = prepared.AttachmentId, Role = prepared.Role
         };
+        transfer.SourceSha256 = Convert.ToHexString(prepared.Hash);
         transfer.Status = TransferStatus.Queued;
-        _onTransfer(transfer);
-        var state = new OutgoingTransfer(transfer, _onTransfer);
+        Publish(transfer);
+        var state = new OutgoingTransfer(transfer, Publish);
         _outgoing[id] = state;
         var offer = new FileOffer(id, prepared.Name, prepared.Size, FileExtentSize, prepared.Hash,
             prepared.MessageId, prepared.AttachmentId, prepared.MimeType, prepared.Role);
-        var useMtp = MtpReady;
+        var useMtp = MtpReady && !forceBluetooth;
         try
         {
             if (useMtp) await RunMtpOutgoingAsync(offer, state, SendCoreAsync, onQueued);
@@ -338,7 +352,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         {
             transfer.Status = failure is OperationCanceledException && transfer.Status != TransferStatus.Failed ? TransferStatus.Canceled : TransferStatus.Failed;
             transfer.FailureDetail = failure.Message;
-            _onTransfer(transfer);
+            Publish(transfer);
             SessionLog.Write("Transfer", $"文件发送失败，id={id:N}，name={prepared.Name}", failure);
             if (failure is not (RemoteTransferException or OperationCanceledException)) await TrySendFailureAsync(id, failure.Message);
             throw;
@@ -399,6 +413,7 @@ public sealed partial class PeerSession : IAsyncDisposable
 
     public async Task CancelTransferAsync(Guid id, string reason = "用户取消")
     {
+        using var captured = _transferStreams.Capture(id);
         CancelMtp(id);
         CancelOfferDecision(id);
         var cancellation = new OperationCanceledException(reason);
@@ -466,6 +481,8 @@ public sealed partial class PeerSession : IAsyncDisposable
     private Task Enqueue(WireMessageType type, int stream, byte[] payload)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (TransferRouting(type, payload) is { } route)
+            stream = _transferStreams.StreamFor(route.Id, stream, _negotiation.Supports(BtxCapability.TransferAttemptStreams));
         var value = new Outbound(type, stream, payload, completion);
         lock (_outboundLock)
         {
@@ -479,10 +496,35 @@ public sealed partial class PeerSession : IAsyncDisposable
         return completion.Task;
     }
 
+    private static (Guid Id, bool Starts)? TransferRouting(WireMessageType type, byte[] payload)
+    {
+        if (type == WireMessageType.TransferOffer) return (TransferWire.DecodeOffer(payload).Id, true);
+        if (type == WireMessageType.TransferControl) return (TransferControlWire.Decode(payload).TransferId, false);
+        if (type == WireMessageType.MtpControl)
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(payload);
+            if (!json.RootElement.TryGetProperty("id", out var id) || id.ValueKind == System.Text.Json.JsonValueKind.Null) return null;
+            return (Guid.Parse(id.GetString()!), json.RootElement.GetProperty("op").GetString() == "queue");
+        }
+        return type is WireMessageType.TransferAccept or WireMessageType.TransferExtent or WireMessageType.TransferFinish
+            or WireMessageType.TransferExtentAck or WireMessageType.TransferComplete or WireMessageType.TransferReject or WireMessageType.TransferFailed
+            ? (TransferWire.DecodeId(payload), false) : null;
+    }
+
     private async Task ReadLoopAsync(ReplayGuard replay, CancellationToken token)
     {
         await foreach (var frame in ReadFramesAsync(replay, token))
         {
+            IDisposable? attemptScope = null;
+            if (TransferRouting(frame.Type, frame.Payload) is { } route)
+            {
+                attemptScope = _transferStreams.Receive(route.Id, frame.StreamId, route.Starts,
+                    _incoming.ContainsKey(route.Id) || _outgoing.ContainsKey(route.Id) || _pendingOffers.ContainsKey(route.Id)
+                        || _offerDecisions.ContainsKey(route.Id) || _mtpJobs.ContainsKey(route.Id),
+                    _negotiation.Supports(BtxCapability.TransferAttemptStreams), _listenerRole);
+                if (attemptScope is null) continue;
+            }
+            using (attemptScope)
             switch (frame.Type)
             {
                 case WireMessageType.Chat:
@@ -643,7 +685,7 @@ public sealed partial class PeerSession : IAsyncDisposable
                 throw new InvalidDataException("重复文件 Offer");
             if (offer.Size > _maxReceiveBytes)
             {
-                var pendingItem = CreateIncomingItem(offer, TransferStatus.Rejected);
+                var pendingItem = CreateIncomingItem(offer, TransferStatus.Offered);
                 pendingItem.FailureDetail = $"超过当前接收限制（{_maxReceiveBytes} B）；30 秒内提高限制可继续接收";
                 _pendingOffers[offer.Id] = new(offer, pendingItem, DateTimeOffset.UtcNow + OfferTimeout);
                 _onTransfer(pendingItem);
@@ -841,6 +883,7 @@ public sealed partial class PeerSession : IAsyncDisposable
             SessionLog.Write("Transfer", $"文件完成校验失败，id={id:N}", failure);
             await TrySendFailureAsync(id, failure.Message);
         }
+        finally { await incoming.Receiver.DisposeAsync(); }
     }
 
     private async Task HandleTransferFailureAsync(FileTransferFailure failure)
@@ -906,6 +949,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _onClosed("设备会话已结束");
         lock (_receiveDecisionLock) if (!_cancellation.IsCancellationRequested) _cancellation.Cancel();
+        var mtpStopped = _mtpJobs.Values.Select(job => job.Stopped.Task).ToArray();
         DropMtp();
         lock (_outboundLock)
             while (_outbound.TryDequeue(out var pending, out _)) pending.Completion.TrySetCanceled();
@@ -928,6 +972,7 @@ public sealed partial class PeerSession : IAsyncDisposable
         foreach (var transfer in _outgoing.Values) transfer.Fail(stopped);
         _outgoing.Clear();
         await _connection.DisposeAsync();
+        await Task.WhenAll(mtpStopped);
         _outboundSignal.Dispose();
         // RunAsync and confirmation cancellation may still observe this token while the transport closes.
     }

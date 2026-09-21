@@ -50,14 +50,33 @@ public sealed record ConversationSummary(string PeerId, string PeerName, PeerPla
         internal set
         {
             if (ReferenceEquals(_activeTransfer, value)) return;
+            if (_activeTransfer is not null) _activeTransfer.PropertyChanged -= ActiveTransferChanged;
             _activeTransfer = value;
+            if (_activeTransfer is not null) _activeTransfer.PropertyChanged += ActiveTransferChanged;
+            PropertyChanged?.Invoke(this, new(nameof(ActiveTransferSummary)));
             PropertyChanged?.Invoke(this, new(nameof(ActiveTransfer)));
             PropertyChanged?.Invoke(this, new(nameof(HasActiveTransfer)));
         }
     }
+    private int _activeTransferCount;
+    public int ActiveTransferCount
+    {
+        get => _activeTransferCount;
+        internal set { _activeTransferCount = value; PropertyChanged?.Invoke(this, new(nameof(ActiveTransferSummary))); }
+    }
+    public string ActiveTransferSummary => (ActiveTransfer?.DeviceStatusText ?? "") +
+        (ActiveTransferCount > 1 ? Localization.Strings.Format($" · 另有 {ActiveTransferCount - 1} 项") : "");
+    private void ActiveTransferChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(TransferItem.DeviceStatusText) or "" or null)
+            PropertyChanged?.Invoke(this, new(nameof(ActiveTransferSummary)));
+    }
     public bool HasActiveTransfer => ActiveTransfer is not null;
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string DisplayName => PeerName;
+    public string LocalNote { get; init; } = "";
+    public bool IsPinned { get; init; }
+    public string PinActionText => Localization.Strings.Get(IsPinned ? "取消置顶" : "置顶设备");
+    public string DisplayName => string.IsNullOrWhiteSpace(LocalNote) ? PeerName : LocalNote;
     public string PlatformIconSource => "/BlueLink;component/Assets/Figma/" + (Platform switch
     {
         PeerPlatform.Android => "phone.png", PeerPlatform.Windows => "desktop.png", _ => "generic.png"
@@ -83,8 +102,15 @@ public enum ChatItemKind { Text, Image, File, System }
 
 public sealed record ChatAttachment(Guid AttachmentId, Guid TransferId, string FileName,
     string MimeType, long Size, string? LocalPath = null, string State = "Offered", string? PreviewPath = null,
-    long CompletedBytes = 0, double BytesPerSecond = 0)
+    long CompletedBytes = 0, double BytesPerSecond = 0, bool RecoveryPending = false, bool RecoveryOutgoing = true, string? SourceSha256 = null, bool QueuedForUsb = false)
 {
+    public ChatAttachment WithTransfer(TransferItem? transfer) => transfer is null || transfer.Id != TransferId
+        || transfer.Role == AttachmentRole.ImagePreview ? this : this with
+        {
+            LocalPath = transfer.LocalPath ?? LocalPath, State = transfer.Status.ToString(),
+            CompletedBytes = transfer.CompletedBytes, BytesPerSecond = transfer.BytesPerSecond,
+            RecoveryPending = transfer.RecoveryPending, RecoveryOutgoing = transfer.Outgoing, SourceSha256 = transfer.SourceSha256, QueuedForUsb = transfer.QueuedForUsb
+        };
     public override string ToString() => FileName;
     public bool IsImage => MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
     public string FileIcon => "FileTypeIcon-" + Files.FileTypeCatalog.Classify(FileName, MimeType);
@@ -92,9 +118,10 @@ public sealed record ChatAttachment(Guid AttachmentId, Guid TransferId, string F
     public bool IsMissing => !string.IsNullOrWhiteSpace(LocalPath) && !File.Exists(LocalPath);
     public string? DisplayPath => !string.IsNullOrWhiteSpace(PreviewPath) && File.Exists(PreviewPath)
         ? PreviewPath : LocalPath;
-    public string StateText => IsMissing ? Localization.Strings.Get("文件已移动或删除") : State switch
+    public string StateText => RecoveryPending ? Localization.Strings.Get(RecoveryOutgoing ? "待恢复" : "等待发送方恢复") : IsMissing ? Localization.Strings.Get("文件已移动或删除") : State switch
     {
         "Completed" => Localization.Strings.Get("已完成"),
+        "Queued" when QueuedForUsb => Localization.Strings.Get("等待 USB 通道空闲"),
         "Transferring" => Localization.Strings.Get("传输中"),
         "Paused" => Localization.Strings.Get("已暂停"),
         "RemotePaused" => Localization.Strings.Get("对端已暂停，等待继续"),
@@ -111,12 +138,16 @@ public sealed record ChatAttachment(Guid AttachmentId, Guid TransferId, string F
     public bool CanOpen => State == "Completed" && IsAvailable;
     public bool CanPause => State is "Offered" or "Queued" or "Transferring" or "Resuming";
     public bool CanResume => State == "Paused";
-    public bool HasFailure => State is "Failed" or "Rejected" or "Canceled";
+    public bool HasFailure => !RecoveryPending && State is "Failed" or "Rejected";
+    public bool IsRetryableTerminal => State is "Failed" or "Rejected" or "Canceled";
     public bool CanDelete => !IsTransferActive;
     public double Progress => Size == 0 ? 1 : Math.Clamp((double)CompletedBytes / Size, 0, 1);
     public double ProgressPercent => Progress * 100;
+    public bool IsProgressIndeterminate => State is "Offered" or "Queued" or "Verifying" or "Committing";
+    public string ProgressLabel => RecoveryPending ? "—" : IsProgressIndeterminate ? "" : $"{Progress:P0}";
     public bool ShowProgress => State is "Transferring" or "Resuming" or "Verifying" or "Committing";
-    public string ProgressText => $"{Format(CompletedBytes)} / {Format(Size)}" +
+
+    public string ProgressText => IsProgressIndeterminate ? StateText : $"{Format(CompletedBytes)} / {Format(Size)}" +
         (BytesPerSecond > 0 && ShowProgress ? $" · {Format((long)BytesPerSecond)}/s" : "");
     public string SizeText => Size switch
     {
@@ -195,9 +226,15 @@ public sealed class TransferItem : INotifyPropertyChanged
     public string RouteText => Outgoing ? Localization.Strings.Format($"本机 → {PeerName}") : Localization.Strings.Format($"{PeerName} → 本机");
     public string SizeText => Format(TotalBytes);
     public string TimeText => CreatedAt.ToLocalTime().ToString("MM-dd HH:mm");
-    public string GroupText => IsActive ? Localization.Strings.Get("进行中") : IsCompleted ? Localization.Strings.Get("完成") : Localization.Strings.Get("失败");
+    public string GroupText => IsActive ? Localization.Strings.Get("进行中") : IsCompleted ? Localization.Strings.Get("已完成") : Localization.Strings.Get("未完成");
     public int GroupOrder => IsActive ? 0 : IsCompleted ? 1 : 2;
     public string FileIcon => "FileTypeIcon-" + Files.FileTypeCatalog.Classify(Name, MimeType);
+    public Guid? AttemptId { get; set; }
+    public long AttemptSequence { get; set; }
+    public string? SourceSha256 { get; set; }
+    public bool RecoveryPending { get; set; }
+    public bool QueuedForUsb { get; set; }
+    public bool CanSwitchToBluetooth => Outgoing && Status == TransferStatus.Queued && QueuedForUsb;
     public required Guid Id { get; init; }
     public required string Name { get; init; }
     public required long TotalBytes { get; init; }
@@ -241,7 +278,7 @@ public sealed class TransferItem : INotifyPropertyChanged
             }
             _completedBytes = value;
             Changed(); Changed(nameof(Progress)); Changed(nameof(Detail)); Changed(nameof(SpeedText));
-            Changed(nameof(RemainingText)); Changed(nameof(DeviceStatusText));
+            Changed(nameof(RemainingText)); Changed(nameof(DeviceStatusText)); Changed(nameof(ProgressLabel));
         }
     }
     public TransferStatus Status
@@ -251,13 +288,16 @@ public sealed class TransferItem : INotifyPropertyChanged
         {
             _status = value;
             Changed(); Changed(nameof(Detail)); Changed(nameof(IsActive)); Changed(nameof(IsCompleted));
-            Changed(nameof(IsFailed)); Changed(nameof(CanLocate)); Changed(nameof(CanPause));
-            Changed(nameof(CanResume)); Changed(nameof(CanCancel)); Changed(nameof(CanRetry));
+            Changed(nameof(IsFailed)); Changed(nameof(IsCanceled)); Changed(nameof(IsRetryableTerminal)); Changed(nameof(CanLocate)); Changed(nameof(CanPause));
+            Changed(nameof(CanResume)); Changed(nameof(CanCancel)); Changed(nameof(CanRetry)); Changed(nameof(RetryActionText));
             Changed(nameof(CanOpen)); Changed(nameof(CanDelete)); Changed(nameof(StatusText)); Changed(nameof(ShowPauseAction));
             Changed(nameof(GroupText)); Changed(nameof(GroupOrder)); Changed(nameof(DeviceStatusText));
+            Changed(nameof(IsProgressIndeterminate)); Changed(nameof(ProgressLabel));
         }
     }
     public double Progress => TotalBytes == 0 ? 1 : Math.Clamp((double)CompletedBytes / TotalBytes, 0, 1);
+    public bool IsProgressIndeterminate => Status is TransferStatus.Offered or TransferStatus.Queued or TransferStatus.Verifying or TransferStatus.Committing;
+    public string ProgressLabel => RecoveryPending || IsProgressIndeterminate ? "—" : $"{Progress:P0}";
     public string Direction => Outgoing ? Localization.Strings.Get("发送") : Localization.Strings.Get("接收");
     public string DeviceStatusText
     {
@@ -270,7 +310,7 @@ public sealed class TransferItem : INotifyPropertyChanged
                 TransferStatus.Transferring or TransferStatus.Resuming => Outgoing ? "正在发送文件" : "正在接收文件",
                 _ => StatusText
             };
-            return $"{Localization.Strings.Get(label)} · {Progress:P0}";
+            return IsProgressIndeterminate ? Localization.Strings.Get(label) : $"{Localization.Strings.Get(label)} · {Progress:P0}";
         }
     }
     public double BytesPerSecond => _bytesPerSecond;
@@ -280,10 +320,10 @@ public sealed class TransferItem : INotifyPropertyChanged
         : "";
     public string Detail => $"{Format(CompletedBytes)} / {Format(TotalBytes)} · {StatusText}" +
         (Status == TransferStatus.Transferring && _bytesPerSecond > 0 ? $" · {SpeedText} {RemainingText}" : "");
-    public string StatusText => Status switch
+    public string StatusText => RecoveryPending ? Localization.Strings.Get(Outgoing ? "待恢复" : "等待发送方恢复") : Status switch
     {
         TransferStatus.Offered => Outgoing ? Localization.Strings.Get("等待对端接受") : Localization.Strings.Get("等待接收"),
-        TransferStatus.Queued => Localization.Strings.Get("排队等待"),
+        TransferStatus.Queued => Localization.Strings.Get(QueuedForUsb ? "等待 USB 通道空闲" : "排队等待"),
         TransferStatus.Transferring => Localization.Strings.Get("传输中"),
         TransferStatus.Paused => Localization.Strings.Get("已暂停"),
         TransferStatus.RemotePaused => Localization.Strings.Get("对端已暂停，等待继续"),
@@ -299,14 +339,18 @@ public sealed class TransferItem : INotifyPropertyChanged
     public bool IsActive => Status is TransferStatus.Offered or TransferStatus.Queued or TransferStatus.Transferring
         or TransferStatus.Paused or TransferStatus.RemotePaused or TransferStatus.Resuming or TransferStatus.Verifying or TransferStatus.Committing;
     public bool IsCompleted => Status == TransferStatus.Completed;
-    public bool IsFailed => Status is TransferStatus.Failed or TransferStatus.Rejected or TransferStatus.Canceled;
+    public bool IsFailed => !RecoveryPending && Status is TransferStatus.Failed or TransferStatus.Rejected;
+    public bool IsCanceled => Status == TransferStatus.Canceled;
+    public bool IsRetryableTerminal => Status is TransferStatus.Failed or TransferStatus.Rejected or TransferStatus.Canceled;
     public bool CanLocate => IsCompleted && !string.IsNullOrWhiteSpace(LocalPath) && File.Exists(LocalPath);
     public bool CanPause => Status is TransferStatus.Offered or TransferStatus.Queued or TransferStatus.Transferring or TransferStatus.Resuming;
     public string PauseActionText => Localization.Strings.Get(Outgoing ? "暂停传输" : "暂停接收");
     public bool ShowPauseAction => Status is TransferStatus.Transferring or TransferStatus.Resuming;
     public bool CanResume => Status == TransferStatus.Paused;
     public bool CanCancel => IsActive || (!Outgoing && Status == TransferStatus.Rejected);
-    public bool CanRetry => Outgoing && IsFailed && !string.IsNullOrWhiteSpace(LocalPath) && File.Exists(LocalPath);
+    public string RetryActionText => Localization.Strings.Get(RecoveryPending ? "恢复传输" : "重试");
+    public bool CanReselectSource => Outgoing && IsRetryableTerminal && SourceSha256?.Length == 64;
+    public bool CanRetry => Outgoing && IsRetryableTerminal && !string.IsNullOrWhiteSpace(LocalPath) && File.Exists(LocalPath);
     public bool CanOpen => CanLocate;
     public bool CanDelete => !IsActive;
     public event PropertyChangedEventHandler? PropertyChanged;

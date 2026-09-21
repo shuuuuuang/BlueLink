@@ -27,6 +27,7 @@ public sealed class SessionSupervisor : IAsyncDisposable
     private readonly Dictionary<Guid, Entry> _entries = [];
     private readonly Dictionary<string, Guid> _peerIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, Entry> _transferOwners = [];
+    private readonly TransferAttemptRegistry _attempts = new();
     private bool _suspended;
     private bool _disposed;
 
@@ -72,6 +73,7 @@ public sealed class SessionSupervisor : IAsyncDisposable
     public event Action<SessionSnapshot, ChatEnvelope, bool>? EnvelopeReceived;
     public event Action<SessionSnapshot, ChatReceipt>? ReceiptReceived;
     public event Action<SessionSnapshot, TransferItem>? TransferChanged;
+    public Func<SessionSnapshot, TransferItem, bool>? PersistRecovery { get; set; }
 
     public SessionSupervisor(IdentityStore identity, Action<TrustRequest> presentTrust)
     {
@@ -119,6 +121,7 @@ public sealed class SessionSupervisor : IAsyncDisposable
                 (envelope, outgoing) => EnvelopeReceived?.Invoke(entry!.Snapshot(), envelope, outgoing),
                 receipt => ReceiptReceived?.Invoke(entry!.Snapshot(), receipt), ReceiveDirectory, MaxReceiveBytes,
                 AutoAcceptFiles, expectedTrustedPeerId, IdentityAssociations?.Invoke(connection));
+            session.Attempts = _attempts;
             session.LocalDeviceName = LocalDeviceName;
             session.OutgoingDirectory = OutgoingDirectory;
             session.ReceiveDecision = ReceiveDecision;
@@ -137,11 +140,25 @@ public sealed class SessionSupervisor : IAsyncDisposable
     public Task SendChatAsync(Guid sessionId, string text, Guid? messageId = null) => Find(sessionId)?.Session.SendChatAsync(text, messageId)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
-    public Task SendFileAsync(Guid sessionId, string path) => Find(sessionId)?.Session.SendFileAsync(path)
+    public Task SendFileAsync(Guid sessionId, string path, string? displayName = null, Action? onAnnounced = null) => Find(sessionId)?.Session.SendFileAsync(path, displayName, onAnnounced)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
-    public Task RetryFileAsync(Guid sessionId, string path, TransferItem transfer) =>
-        Find(sessionId)?.Session.RetryFileAsync(path, transfer)
+    public Task RetryFileAsync(Guid sessionId, string path, TransferItem transfer)
+    {
+        Entry? entry;
+        lock (_gate)
+        {
+            entry = Find(sessionId);
+            if (entry is null || !TransferRetryEligibility.Allows(transfer, entry.PeerId,
+                    !entry.IsClosed && entry.Phase == ConnectionPhase.Connected && !_suspended && !_disposed,
+                    entry.PeerId is { } peerId && _identity.FindTrustedKey(peerId) is not null))
+                return Task.FromException(new InvalidOperationException(Localization.Strings.Get("任务状态或设备连接已变化，请刷新后重试")));
+        }
+        return entry.Session.RetryFileAsync(path, transfer);
+    }
+
+    internal Task SwitchQueuedToBluetoothAsync(Guid sessionId, TransferItem transfer) =>
+        FindTransfer(sessionId, transfer.Id)?.Session.SwitchQueuedToBluetoothAsync(transfer)
         ?? Task.FromException(new InvalidOperationException("会话当前未连接"));
 
     public Task CancelTransferAsync(Guid sessionId, Guid transferId, string reason = "用户取消") =>
@@ -251,7 +268,8 @@ public sealed class SessionSupervisor : IAsyncDisposable
                 else { _peerIndex.Remove(entry.PeerId); changed = entry.Snapshot(); }
             }
         }
-        foreach (var transfer in interrupted) TransferChanged?.Invoke(entry.Snapshot(), transfer);
+        foreach (var transfer in interrupted)
+            if (SaveRecovery(entry.Snapshot() with { SessionId = entry.Id }, transfer)) TransferChanged?.Invoke(entry.Snapshot(), transfer);
         if (changed is not null) SessionChanged?.Invoke(changed);
     }
 
@@ -274,14 +292,41 @@ public sealed class SessionSupervisor : IAsyncDisposable
     private void PublishTransfer(Entry entry, TransferItem transfer)
     {
         TransferItem? snapshot;
+        Exception? persistenceFailure = null;
         lock (_gate)
         {
-            snapshot = entry.Transfers.Record(transfer);
+            var owned = transfer.Snapshot();
+            owned.PeerId = entry.PeerId;
+            owned.PeerName = entry.PeerName;
+            owned.RecoveryPending = false;
+            snapshot = entry.Transfers.Record(owned);
             if (snapshot is null) return;
+            try { if (!SaveRecovery(entry.Snapshot() with { SessionId = entry.Id }, snapshot)) return; }
+            catch (Exception failure)
+            {
+                persistenceFailure = failure;
+                snapshot.Status = TransferStatus.Failed;
+                snapshot.FailureDetail = "无法保存任务恢复记录，请检查存储空间后重试";
+                entry.Transfers.Record(snapshot);
+                SaveRecovery(entry.Snapshot() with { SessionId = entry.Id }, snapshot);
+            }
             if (snapshot.IsActive) _transferOwners[transfer.Id] = entry;
             else _transferOwners.Remove(transfer.Id);
         }
         TransferChanged?.Invoke(entry.Snapshot(), snapshot);
+        if (persistenceFailure is not null) throw new IOException(Localization.Strings.Get("无法保存任务恢复记录，请检查存储空间后重试"), persistenceFailure);
+    }
+
+    private bool SaveRecovery(SessionSnapshot session, TransferItem transfer)
+    {
+        try { return PersistRecovery?.Invoke(session, transfer) ?? true; }
+        catch (Exception failure) when (!transfer.IsActive)
+        {
+            // Do not interrupt stream disposal when a terminal write fails (for example, a full disk).
+            // The last durable active record remains an explicit recovery candidate, never an automatic send.
+            SessionLog.Write("Recovery", "无法保存任务终态", failure);
+            return true;
+        }
     }
 
     private void ForEachSession(Action<PeerSession> action)
@@ -294,7 +339,9 @@ public sealed class SessionSupervisor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lock (_gate) _disposed = true;
-        await SuspendAsync();
+        var drained = _attempts.CloseAndDrain();
+        try { await SuspendAsync(); }
+        finally { await drained; }
     }
 
     public async Task SuspendAsync()

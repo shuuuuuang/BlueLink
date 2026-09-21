@@ -1,0 +1,8 @@
+<resources>
+    <string name="peer_pin">置顶设备</string>
+    <string name="peer_unpin">取消置顶</string>
+    <string name="peer_note">设备备注</string>
+    <string name="peer_note_help">仅在本机显示；留空恢复设备原名。</string>
+    <string name="peer_pinned">已置顶</string>
+    <string name="peer_save">保存</string>
+</resources>

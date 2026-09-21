@@ -39,6 +39,7 @@ internal fun DeviceMenuAcceptance(scene: String, close: () -> Unit) {
     var menu by remember { mutableStateOf(scene.startsWith("device-actions-") && !scene.endsWith("nearby")) }
     var nearbyMenu by remember { mutableStateOf(scene.endsWith("nearby")) }
     var info by remember { mutableStateOf<ConversationSummary?>(null) }
+    var editNote by remember { mutableStateOf(false) }
     var confirmation by remember { mutableStateOf<DeviceAction?>(null) }
     var view by remember { mutableIntStateOf(0) }
     var searchRequested by remember { mutableStateOf(false) }
@@ -73,6 +74,8 @@ internal fun DeviceMenuAcceptance(scene: String, close: () -> Unit) {
         searchConversation = if (view != 0) { { searchRequested = true } } else null) { action ->
         lastAction = action.name
         when (action) {
+            DeviceAction.PIN -> peer=peer.copy(isPinned=!peer.isPinned)
+            DeviceAction.NOTE -> editNote = true
             DeviceAction.OPEN -> view = 1
             DeviceAction.TRANSFERS -> view = 2
             DeviceAction.INFO -> info = peer
@@ -87,6 +90,7 @@ internal fun DeviceMenuAcceptance(scene: String, close: () -> Unit) {
         info = ConversationSummary(nearby.discoveryId, nearby.name, nearby.platform, DeviceAvailability.CONNECTABLE)
     })
     info?.let { DeviceDetailsPrompt(it) { info = null } }
+    if (editNote) PeerNotePrompt(peer,{ editNote = false }) { peer=peer.copy(localNote=it.trim()); editNote=false }
     confirmation?.let { action ->
         val title = context.getString(if (action == DeviceAction.CLEAR) R.string.content_clear_conversation else R.string.content_remove_trust)
         val message = context.getString(if (action == DeviceAction.CLEAR) R.string.content_clear_conversation_body else R.string.content_remove_trust_body, peer.peerName)

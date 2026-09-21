@@ -21,7 +21,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private System.Windows.Point? _attachmentDragStart;
     private ChatAttachment? _dragAttachment;
     private ICollectionView? _transferPanelView;
-    private string _transferFilter = "All";
     private ScrollViewer? _messageScrollViewer;
     private bool _messagePinnedToBottom = true;
     internal Appearance.WindowSizePersistence WindowSizing { get; }
@@ -31,11 +30,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         _model = new MainViewModel(dataRoot);
         InitializeComponent();
+        Closed += (_,_) => { if(_columnFilterPopup is { } popup) popup.IsOpen = false; };
         PreviewMouseDown += (_, args) => ClearMessageSelectionExcept(MessageTextAt(args.OriginalSource as DependencyObject));
         PreviewGotKeyboardFocus += (_, args) => ClearMessageSelectionExcept(MessageTextAt(args.NewFocus as DependencyObject));
         Deactivated += (_, _) => { if (_selectedMessageText?.ContextMenu?.IsOpen != true) ClearMessageSelectionExcept(null); };
         WindowSizing = new(this, "main", _model.DataDirectory);
         DataContext = _model;
+        InitializeComposer();
+        InitializeMessageBatch();
+        InitializeMessageHistory();
         _model.TransientNoticeRequested += OnTransientNoticeRequested;
         ConfigureTransferView();
         _model.Messages.CollectionChanged += Messages_CollectionChanged;
@@ -47,9 +50,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (args.PropertyName == nameof(MainViewModel.Settings)) Dispatcher.BeginInvoke(new Action(() =>
             {
-                RefreshFileDeviceChoices();
                 UpdateFileResultCount();
-                UpdateFileToolbarLayout();
             }));
         };
         if (initializeRuntime) SourceInitialized += (_, _) =>
@@ -116,30 +117,55 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         await _model.ConnectAsync();
     }
     private async void Send_Click(object sender, RoutedEventArgs e) => await SendCurrentAsync();
-    private async void MessageInput_KeyDown(object sender, KeyEventArgs e)
+    private bool _composerImeActive;
+
+    internal bool IsComposerSendKey(Key key, ModifierKeys modifiers) =>
+        ComposerShortcuts.IsSendKey(_model.Settings.SendShortcut, key, modifiers, _composerImeActive);
+
+    private async void MessageInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; await SendCurrentAsync(); }
+        if (!IsComposerSendKey(e.Key, Keyboard.Modifiers)) return;
+        // Mark handled before awaiting: RichTextBox otherwise inserts a newline first.
+        e.Handled = true;
+        if (!e.IsRepeat) await SendCurrentAsync();
     }
 
+    private async void DraftInput_LostFocus(object sender, KeyboardFocusChangedEventArgs args) => await _model.FlushDraftsAsync();
     private async Task SendCurrentAsync()
     {
-        var text = MessageInput.Text;
-        if (string.IsNullOrWhiteSpace(text)) return;
-        MessageInput.Clear();
-        await _model.SendAsync(text);
-        ScrollMessagesToBottom();
+        if (_composerDrafts is null || _composerPeer is not { } peer || !_model.IsConnected || _composerImports.GetValueOrDefault(peer) > 0 || _sendingComposers.Contains(peer) || !PersistComposer()) return;
+        _sendingComposers.Add(peer);
+        try
+        {
+            var parts = _composerDrafts.Take(peer);
+            _model.DraftText = ""; LoadComposer();
+            foreach (var part in parts)
+            {
+                if (part.File is { } file) await _model.SendComposerFileAsync(peer, file.Path, file.Name);
+                else if (!await _model.SendComposerTextAsync(peer, part.Text!)) throw new IOException("Text send failed");
+                _composerDrafts.Acknowledge(peer, part.Id);
+            }
+            ScrollMessagesToBottom();
+        }
+        catch { ShowToast(Localization.Strings.Get("部分内容未发送，已保留在输入框中"), ToastLevel.Error); }
+        finally
+        {
+            try { _composerDrafts.Restore(peer); if (_composerPeer == peer) { LoadComposer(); Composer_TextChanged(MessageInput, null!); } }
+            catch { ShowToast(Localization.Strings.Get("输入草稿未能读取，请检查存储空间"), ToastLevel.Error); }
+            _sendingComposers.Remove(peer);
+        }
     }
 
-    private async void File_Click(object sender, RoutedEventArgs e)
+    private void File_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new OpenFileDialog { Title = "选择要发送的文件", Multiselect = true };
-        if (picker.ShowDialog(this) == true) await SendFilesAsync(picker.FileNames);
+        var picker = new OpenFileDialog { Title = Localization.Strings.Get("添加附件"), Multiselect = true };
+        if (picker.ShowDialog(this) == true) StageComposerFiles(picker.FileNames);
     }
 
     private void Attachment_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ChatAttachment attachment })
-            FileInteractionService.Open(this, attachment);
+            FileInteractionService.Open(this, attachment, _model.Messages.SelectMany(message => message.Attachments ?? []));
     }
 
     private void Attachment_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -178,34 +204,105 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ChatSurface_PreviewDragLeave(object sender, DragEventArgs e)
     {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         FileDropOverlay.Visibility = Visibility.Collapsed;
         e.Handled = true;
     }
 
     private async void ChatSurface_PreviewDrop(object sender, DragEventArgs e)
     {
+        // Keep copy-out drags available to other applications, but never feed them back
+        // into BlueLink's staging/sending or the RichTextBox's native drop handler.
+        if (FileDragDropService.IsOutboundDrag(e.Data))
+        {
+            FileDropOverlay.Visibility = Visibility.Collapsed;
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = FileDragDropService.ExtractFilePaths(e.Data);
         FileDropOverlay.Visibility = Visibility.Collapsed;
-        e.Effects = _model.IsConnected && files.Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
-        if (_model.IsConnected && files.Count > 0) await SendFilesAsync(files);
+        if (!ComposerDrafts.AcceptsDrop(files.Count))
+        {
+            e.Effects = DragDropEffects.None;
+            if (files.Count > ComposerDrafts.MaximumDropFiles) ShowToast(Localization.Strings.Get("每次最多拖入10个文件，请分批添加"), ToastLevel.Warning);
+            return;
+        }
+        if (IsComposerDrop(e))
+        {
+            e.Effects = _model.CanEditDraft ? DragDropEffects.Copy : DragDropEffects.None;
+            if (_model.CanEditDraft)
+            {
+                var position = MessageInput.GetPositionFromPoint(e.GetPosition(MessageInput), true);
+                if (position is not null) MessageInput.CaretPosition = position;
+                StageComposerFiles(files);
+            }
+        }
+        else
+        {
+            e.Effects = _model.IsConnected ? DragDropEffects.Copy : DragDropEffects.None;
+            if (_model.IsConnected) await SendFilesAsync(files);
+        }
     }
 
     private void UpdateFileDropFeedback(DragEventArgs e)
     {
+        // Keep copy-out drags available to other applications, but never feed them back
+        // into BlueLink's staging/sending or the RichTextBox's native drop handler.
+        if (FileDragDropService.IsOutboundDrag(e.Data))
+        {
+            FileDropOverlay.Visibility = Visibility.Collapsed;
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = FileDragDropService.ExtractFilePaths(e.Data);
-        e.Effects = ShowFileDropFeedback(files.Count) ? DragDropEffects.Copy : DragDropEffects.None;
+        var composer = IsComposerDrop(e);
+        var accepted = ShowFileDropFeedback(files.Count, composer);
+        e.Effects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
-    internal bool ShowFileDropFeedback(int fileCount)
+    internal bool ShowFileDropFeedback(int fileCount, bool composer = false)
     {
-        var canSend = _model.IsConnected && fileCount > 0;
+        var canSend = (composer ? _model.CanEditDraft : _model.IsConnected) && ComposerDrafts.AcceptsDrop(fileCount);
+        FileDropOverlay.SetValue(Grid.RowProperty, composer ? 3 : 0);
+        FileDropOverlay.SetValue(Grid.RowSpanProperty, composer ? 1 : 3);
+        FileDropOverlay.Margin = composer ? new Thickness(0, 8, 0, 8) : new Thickness(-14, 0, -14, 0);
+        FileDropOutline.Margin = composer ? new Thickness(0) : new Thickness(12);
+        FileDropOutline.StrokeThickness = composer ? 1 : 2;
+        FileDropBody.ColumnDefinitions[0].Width = composer ? new GridLength(32) : new GridLength(0);
+        FileDropBody.RowDefinitions[0].Height = composer ? new GridLength(0) : GridLength.Auto;
+        Grid.SetRow(FileDropIcon, composer ? 1 : 0);
+        Grid.SetColumn(FileDropIcon, 0);
+        Grid.SetColumnSpan(FileDropIcon, composer ? 1 : 2);
+        FileDropIcon.Width = FileDropIcon.Height = composer ? 28 : 54;
+        FileDropTitle.FontSize = (double)FindResource(composer ? "ClientFont14" : "ClientFont22");
+        FileDropTitle.FontWeight = composer ? FontWeights.SemiBold : FontWeights.Bold;
+        FileDropTitle.TextAlignment = composer ? TextAlignment.Left : TextAlignment.Center;
+        FileDropTitle.Margin = composer ? new Thickness(0) : new Thickness(0, 16, 0, 0);
+        FileDropDetail.FontSize = composer ? 12 : (double)FindResource("ClientFont14");
+        FileDropDetail.TextAlignment = composer ? TextAlignment.Left : TextAlignment.Center;
+        FileDropDetail.Margin = new Thickness(0, composer ? 4 : 10, 0, 0);
         FileDropOverlay.Visibility = Visibility.Visible;
         FileDropOutline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, canSend ? "BlueBrush" : "WarningBrush");
         FileDropOutline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, canSend ? "SoftBlueBrush" : "SoftWarningBrush");
         FileDropIcon.SetResourceReference(System.Windows.Controls.Image.SourceProperty, canSend ? "FigmaIcon-drop-send" : "FigmaIcon-drop-blocked");
-        if (!_model.IsConnected)
+        if (fileCount > ComposerDrafts.MaximumDropFiles)
+        {
+            FileDropTitle.Text = Localization.Strings.Get("每次最多拖入10个文件，请分批添加");
+            FileDropDetail.Text = Localization.Strings.Get("本批文件不会发送或添加到输入框");
+        }
+        else if (composer && canSend)
+        {
+            FileDropIcon.SetResourceReference(System.Windows.Controls.Image.SourceProperty, "FigmaIcon-attachment");
+            FileDropTitle.Text = Localization.Strings.Get("释放以添加待发送附件");
+            FileDropDetail.Text = Localization.Strings.Get("可以继续输入文字，点击发送后才会发送");
+        }
+        else if (!_model.IsConnected)
         {
             FileDropTitle.Text = Localization.Strings.Get("设备未连接，无法发送文件");
             FileDropDetail.Text = Localization.Strings.Get("重新连接设备后再拖放文件");
@@ -251,7 +348,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void MessageScroll_Changed(object sender, ScrollChangedEventArgs e)
     {
-        if (_messageScrollViewer is null) return;
+        if (_messageScrollViewer is null || !ReferenceEquals(e.OriginalSource, _messageScrollViewer) || _restoringHistoryViewport || _model.IsPrependingMessages) return;
+        if (e.VerticalChange < 0 && e.ExtentHeightChange == 0) QueueEarlierHistory();
         _messagePinnedToBottom = _messageScrollViewer.ScrollableHeight <= 1 ||
             _messageScrollViewer.VerticalOffset >= _messageScrollViewer.ScrollableHeight - 2;
         if (_messagePinnedToBottom) NewMessagesButton.Visibility = Visibility.Collapsed;
@@ -259,10 +357,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action == NotifyCollectionChangedAction.Reset) return;
+        if (e.Action == NotifyCollectionChangedAction.Reset) { _messageScrollRevision++; _historyRetryAfter = default; return; }
+        if (e.Action != NotifyCollectionChangedAction.Add || _model.IsPrependingMessages) return;
+        var revision = _messageScrollRevision;
+        var conversation = _model.MessageHistoryVersion;
         var outgoing = e.NewItems?.OfType<ChatItem>().Any(value => value.Outgoing) == true;
         Dispatcher.BeginInvoke(() =>
         {
+            if (_disposed || revision != _messageScrollRevision || conversation != _model.MessageHistoryVersion || _restoringHistoryViewport) return;
             if (outgoing || _messagePinnedToBottom) ScrollMessagesToBottom();
             else NewMessagesButton.Visibility = Visibility.Visible;
         });
@@ -270,11 +372,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ScrollMessagesToBottom()
     {
+        var revision = ++_messageScrollRevision;
+        var conversation = _model.MessageHistoryVersion;
         _messagePinnedToBottom = true;
         NewMessagesButton.Visibility = Visibility.Collapsed;
         if (MessageList.Items.Count > 0)
             MessageList.ScrollIntoView(MessageList.Items[MessageList.Items.Count - 1]);
-        Dispatcher.BeginInvoke(() => _messageScrollViewer?.ScrollToEnd());
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_disposed && revision == _messageScrollRevision && conversation == _model.MessageHistoryVersion && !_restoringHistoryViewport)
+                _messageScrollViewer?.ScrollToEnd();
+        });
     }
 
     private void NewMessages_Click(object sender, RoutedEventArgs e) => ScrollMessagesToBottom();
@@ -293,33 +401,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ConfigureTransferView()
     {
         if (TransferList is null) return;
-        RefreshFileDeviceChoices();
-        _model.FilesAllDevices = _fileDevice != "@current";
-        if (_transferPanelView is null)
+        _model.FilesAllDevices = _fileDevice != "@current" || _fileColumnSelections["Route"].Any(key => key.StartsWith("peer:") && key != "peer:@current");
+        if (!_fileQuerySubscribed)
         {
-            var view = new ListCollectionView(_model.AllTransfers);
-            view.Filter = value => value is TransferItem transfer && TransferMatchesFilter(transfer);
-            view.SortDescriptions.Add(new SortDescription(nameof(TransferItem.GroupOrder), ListSortDirection.Ascending));
-            view.SortDescriptions.Add(new SortDescription(nameof(TransferItem.CreatedAt), ListSortDirection.Descending));
-            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TransferItem.GroupText)));
-            view.LiveFilteringProperties.Add(nameof(TransferItem.Status));
-            view.LiveGroupingProperties.Add(nameof(TransferItem.GroupText));
-            view.LiveSortingProperties.Add(nameof(TransferItem.GroupOrder));
-            view.IsLiveFiltering = true; view.IsLiveGrouping = true; view.IsLiveSorting = true;
-            ((INotifyCollectionChanged)view).CollectionChanged += (_, _) => UpdateFileResultCount();
-            _transferPanelView = view;
-            TransferList.ItemsSource = view;
+            _fileQuerySubscribed = true;
+            _model.AllTransfers.CollectionChanged += FileSourceChanged;
+            TrackFileItems();
         }
         RefreshFileResults();
     }
 
-    private bool TransferMatchesFilter(TransferItem transfer) => HistoryQuery.Matches(transfer,
-        _fileQuery, _transferFilter, _fileDirection, _fileDevice == "@current" ? _model.ActivePeerId : _fileDevice);
-
-    private void TransferFilter_Changed(object sender, RoutedEventArgs e)
-    {
-        if (sender is RadioButton { IsChecked: true, Tag: string value }) SetTransferFilter(value);
-    }
 
     private static ChatAttachment TransferAttachment(TransferItem item) => new(
         item.AttachmentId ?? Guid.Empty, item.Id, item.Name, item.MimeType, item.TotalBytes,
@@ -328,7 +419,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void TransferOpen_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: TransferItem item })
-            FileInteractionService.Open(this, TransferAttachment(item));
+            FileInteractionService.Open(this, TransferAttachment(item), _fileResults.Select(TransferAttachment));
     }
 
     private void TransferMore_Click(object sender, RoutedEventArgs e)
@@ -350,7 +441,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void TransferOpenMenu_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: TransferItem item })
-            FileInteractionService.Open(this, TransferAttachment(item));
+            FileInteractionService.Open(this, TransferAttachment(item), _fileResults.Select(TransferAttachment));
     }
 
     private void TransferLocateMenu_Click(object sender, RoutedEventArgs e)
@@ -376,7 +467,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (sender is not FrameworkElement { DataContext: TransferItem item } || !item.CanDelete) return;
         if (!ConfirmationWindow.Show(this, ConfirmationDocument.DeleteRecord(Localization.Strings.Format($"确定删除“{item.Name}”的本机传输记录吗？")))) return;
         await WithToastAsync(() => _model.DeleteTransferAsync(item), "已删除本机记录", "删除本机记录失败");
-        _transferPanelView?.Refresh();
+        RefreshFileResults();
     }
 
     private async void PauseTransfer_Click(object sender, RoutedEventArgs e)
@@ -436,7 +527,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         HomeWorkspace.Visibility = Visibility.Visible;
         _model.IsSettingsOpen = false;
         _ = _model.SetWindowFocusAsync(IsActive);
-        RefreshFileDeviceChoices();
         RefreshFileResults();
         MessageList.Items.Refresh();
         return true;
@@ -548,7 +638,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void AttachmentOpenMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ChatAttachment attachment }) FileInteractionService.Open(this, attachment);
+        if (sender is FrameworkElement { DataContext: ChatAttachment attachment }) FileInteractionService.Open(this, attachment, _model.Messages.SelectMany(message => message.Attachments ?? []));
     }
 
     private void AttachmentLocateMenu_Click(object sender, RoutedEventArgs e)
@@ -596,18 +686,27 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (_disposed) return;
         _disposed = true;
+        _messageScrollRevision++;
+        if (_messageScrollViewer is not null) _messageScrollViewer.ScrollChanged -= MessageScroll_Changed;
+        _messageSelectionGesture?.Dispose();
+        _fileSelectionGesture?.Dispose();
         _usbEventSource?.RemoveHook(UsbDeviceChange);
         _usbEventSource = null;
         _model.TransientNoticeRequested -= OnTransientNoticeRequested;
-        Toasts.Dispose();
+        Title = Localization.Strings.Get("正在结束传输，请稍候…");
+        IsEnabled = false;
         ActiveSettingsPage?.Dispose();
         _model.Messages.CollectionChanged -= Messages_CollectionChanged;
+        _fileCancellation?.Cancel(); _fileRevision++;
+        _model.AllTransfers.CollectionChanged -= FileSourceChanged;
+        foreach (var item in _trackedFileItems) item.PropertyChanged -= FileItemChanged;
         try
         {
-            await _model.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            await _model.DisposeAsync();
         }
         finally
         {
+            Toasts.Dispose();
             Close();
         }
     }

@@ -16,6 +16,7 @@
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <PackageReference Include="SkiaSharp" Version="4.152.1" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\shared\WindowsAppControlChannel.cs" Link="Shared\WindowsAppControlChannel.cs" />
@@ -38,4 +39,9 @@
     </Resource>
   </ItemGroup>
   <ItemGroup><Compile Include="..\..\shared\WindowsDialogLayout.cs" Link="Shared\WindowsDialogLayout.cs" /></ItemGroup>
+  <Target Name="ExcludeSkiaDebugSymbolsFromRelease" AfterTargets="ComputeFilesToPublish" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
 </Project>

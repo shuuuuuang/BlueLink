@@ -38,7 +38,6 @@
     <string name="support_privacy">Privacy policy</string>
     <string name="support_agreement">User agreement</string>
     <string name="support_licenses">Open-source licenses</string>
-    <string name="support_local_update">Choose a local update package</string>
     <string name="support_version">Android version %1$s (%2$d)</string>
     <string name="support_unresolved">Still need help?</string>
     <string name="support_fill_feedback">Describe your issue</string>

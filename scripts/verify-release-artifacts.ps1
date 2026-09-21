@@ -36,12 +36,17 @@ if ($LASTEXITCODE -ne 0) { throw 'aapt could not inspect the APK.' }
 if ($badging -notmatch "versionName='$([regex]::Escape($version))'") { throw 'APK versionName mismatch.' }
 $expectedLabel = ([string][char]0x84DD) + ([string][char]0x8054)
 if ($badging -notmatch "application-label:'$([regex]::Escape($expectedLabel))'") { throw 'APK application label mismatch.' }
-if ($badging -match 'android.permission.INTERNET') { throw 'APK unexpectedly requests INTERNET.' }
+if ($badging -notmatch 'android.permission.INTERNET') { throw 'APK lacks the GitHub update metadata permission.' }
+if ($badging -notmatch 'android.permission.REQUEST_INSTALL_PACKAGES') { throw 'APK lacks user-confirmed update installation permission.' }
 & $apksigner verify --verbose $apk | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
 $releaseBadging = (& $aapt dump badging $releaseApk) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $releaseBadging -notmatch "versionName='$([regex]::Escape($version))'") {
     throw 'Android release APK metadata is invalid.'
+}
+
+if ($releaseBadging -notmatch 'android.permission.INTERNET' -or $releaseBadging -notmatch 'android.permission.REQUEST_INSTALL_PACKAGES') {
+    throw 'Release APK must permit in-app updates and user-confirmed package installation.'
 }
 
 if (-not $AllowUnsignedDevelopmentArtifacts) {

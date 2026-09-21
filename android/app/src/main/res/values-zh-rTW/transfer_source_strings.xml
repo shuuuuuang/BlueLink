@@ -1,0 +1,4 @@
+<resources>
+    <string name="transfer_source_identity_missing">舊任務缺少檔案指紋，請重新選擇檔案傳送</string>
+    <string name="transfer_source_identity_changed">檔案內容已變更，請重新選擇檔案傳送</string>
+</resources>

@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity android:name=".AcceptanceActivity" android:windowSoftInputMode="adjustResize" android:exported="true" android:launchMode="singleTop" />
+        <provider android:name=".ShareInputAcceptanceProvider" android:authorities="${applicationId}.qa-share-input" android:exported="false" android:grantUriPermissions="true" />
         <activity android:name=".AcceptanceCoverActivity" android:exported="false" />
     </application>
 </manifest>

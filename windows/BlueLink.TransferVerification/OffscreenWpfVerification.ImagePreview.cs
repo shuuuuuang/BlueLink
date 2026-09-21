@@ -38,7 +38,7 @@ internal sealed partial class OffscreenWpfVerification
         var originalTheme = AppearanceService.CurrentTheme == Wpf.Ui.Appearance.ApplicationTheme.Dark ? "dark" : "light";
         try
         {
-            foreach (var language in new[] { "zh-CN", "en-US" })
+            foreach (var language in new[] { "zh-CN", "en-US", "zh-TW" })
             foreach (var theme in new[] { "light", "dark" })
             {
                 var settings = BlueLinkSettings.Defaults(directory) with { Language = language, Theme = theme };
@@ -87,7 +87,7 @@ internal sealed partial class OffscreenWpfVerification
                         var titleText = (TextBlock)window.FindName("TitleBarFileName");
                         var titleBounds = titleText.TransformToAncestor(root).TransformBounds(new Rect(titleText.RenderSize));
                         Check(close.ActualWidth == 32 && close.ActualHeight == 32 && Math.Abs(width - closeBounds.Right - 20) < 1 &&
-                            Math.Abs(closeBounds.Top + closeBounds.Height / 2 - 32) < 1 && titleBounds.Right <= closeBounds.Left - 11 &&
+                            Math.Abs(closeBounds.Top + closeBounds.Height / 2 - 32) < 1 && titleBounds.Right <= ((Button)window.FindName("FullScreenButton")).TransformToAncestor(root).TransformBounds(new Rect(0, 0, 32, 32)).Left - 11 &&
                             titleText.Text == title && titleText.ToolTip as string == title && titleText.TextTrimming == TextTrimming.CharacterEllipsis,
                             "image preview: close button is centered and inset, long filename cannot cover it: " + scene);
                         Check(actions.Select((b, i) => AutomationProperties.GetName(b) == Strings.Get(names[i]) && b.ToolTip is string tip && tip.Length > 0).All(v => v),
@@ -96,7 +96,7 @@ internal sealed partial class OffscreenWpfVerification
                         Check(fit.Tag is true && extent.Left >= 27 && extent.Top >= 27 && extent.Right <= viewport.ActualWidth - 27 && extent.Bottom <= viewport.ActualHeight - 27,
                             "image preview: fit mode updates image bounds when viewport changes: " + scene);
                         Check(!Descendants<TextBlock>(root).Any(t => t.Visibility == Visibility.Visible && t.Text.Contains("Esc")) &&
-                            !Descendants<Button>(root).Any(b => new[] { "另存为", "在资源管理器中打开", "Save as", "Show in Explorer" }.Contains(AutomationProperties.GetName(b))),
+                            !Descendants<Button>(root).Any(b => new[] { "另存为", "在资源管理器中打开", "复制文件名", "Copy file name", "複製檔案名稱", "Save as", "Show in Explorer" }.Contains(AutomationProperties.GetName(b))),
                             "image preview: Escape hint and duplicate file actions are absent: " + scene);
                     }
                     Capture(root, output, $"preview-design-{language}-{theme}-wide", 1000, 700);
@@ -134,6 +134,8 @@ internal sealed partial class OffscreenWpfVerification
                         "image preview: reset restores upright fit mode and hides the navigator");
                     Check(new WindowInteropHelper(window).Handle == IntPtr.Zero && PresentationSource.FromVisual(root) is null,
                         "image preview: rendering and command checks never create a native window");
+                    VerifyPreviewNavigation(window, root, sourcePath, directory, output, language, theme);
+                    VerifyPreviewFullScreen(window, root, directory, output, language, theme);
                     var escaped = false;
                     window.Closed += (_, _) => escaped = true;
                     var escape = window.InputBindings.OfType<KeyBinding>().Single();
@@ -147,6 +149,24 @@ internal sealed partial class OffscreenWpfVerification
                     ((IInvokeProvider)closePeer!.GetPattern(PatternInterface.Invoke)).Invoke();
                     DrainDispatcher();
                     Check(escaped, "image preview: UI Automation invokes the close button and dismisses the window");
+                    var closingPreview = new ImagePreviewWindow(sourcePath, title, directory);
+                    try
+                    {
+                        var closingRoot = DetachForRendering(closingPreview);
+                        Layout(closingRoot, 1000, 700);
+                        closingPreview.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+                        closingPreview.ToggleFullScreen();
+                        var preferences = new WindowPreferencesStore(directory, "preview");
+                        var beforeClose = preferences.Read();
+                        closingPreview.Close();
+                        Check(beforeClose is not null && preferences.Read() == beforeClose,
+                            "closing directly from fullscreen preserves the pre-fullscreen size preference");
+                        var reopened = new ImagePreviewWindow(sourcePath, title, directory);
+                        Check(!reopened.IsFullScreen && reopened.WindowStyle != WindowStyle.None && reopened.ResizeMode != ResizeMode.NoResize,
+                            "reopened preview uses ordinary window mode after a fullscreen close");
+                        reopened.Close();
+                    }
+                    finally { closingPreview.Close(); }
                 }
                 finally { window.Close(); }
             }

@@ -35,7 +35,16 @@ internal static class TransientNoticeVerification
                 var model = window.ViewModel;
                 var device = new NearbyDevice("qa", "QA 手机", "00:00:00:00:00:01", PeerPlatform.Android);
                 var peer = device with { Id = "qa-other", Name = "QA 另一台手机", Address = "00:00:00:00:00:02" };
-                window.Show(); Drain();
+                var root = (FrameworkElement)window.Content;
+                root.DataContext = window.DataContext;
+                root.Resources.MergedDictionaries.Add(app.Resources);
+                root.Resources.MergedDictionaries.Add(window.Resources);
+                root.SetValue(System.Windows.Documents.TextElement.FontFamilyProperty, window.FontFamily);
+                root.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "InkBrush");
+                if (NameScope.GetNameScope(window) is { } names) NameScope.SetNameScope(root, names);
+                window.Content = null;
+                void Layout() { Drain(); root.InvalidateMeasure(); root.InvalidateArrange(); root.Measure(new Size(1000,640)); root.Arrange(new Rect(0,0,1000,640)); root.UpdateLayout(); Drain(); root.Measure(new Size(1000,640)); root.Arrange(new Rect(0,0,1000,640)); root.UpdateLayout(); Drain(); }
+                Layout();
                 void Check(bool valid, string name) { if (!valid) throw new InvalidOperationException(name); checks++; }
                 foreach (var theme in new[] { "light", "dark" })
                 foreach (var language in new[] { "zh-CN", "en-US", "zh-TW" })
@@ -47,9 +56,8 @@ internal static class TransientNoticeVerification
                     Check(host.Items.Count == 1 && host.Items[0].Level == ToastLevel.Error && !host.Items[0].Message.Contains("RAW"), "friendly connection timeout");
                     Check(host.Items[0].Message.Contains(device.Name) && app.Windows.Count == windowsBefore, "model failure routes to existing nonmodal host");
                     Check(host.Items[0].ExpiresAt > DateTimeOffset.UtcNow.AddSeconds(3) && host.Items[0].ExpiresAt <= DateTimeOffset.UtcNow.AddSeconds(5), "error lifetime is five seconds");
-                    Drain(); window.UpdateLayout();
-                    var root = (FrameworkElement)window.Content;
-                    var bmp = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32); bmp.Render(root);
+                    Layout();
+                    var bmp = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32); bmp.Render(root); Drain(); bmp.Clear(); bmp.Render(root);
                     var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bmp));
                     using (var file = File.Create(Path.Combine(output, $"connection-{theme}-{language}.png"))) png.Save(file);
                     host.Expire(DateTimeOffset.UtcNow.AddSeconds(6));
@@ -58,16 +66,22 @@ internal static class TransientNoticeVerification
                     Check(host.Items.Count == 1 && !host.Items[0].Message.Contains("RAW"), "friendly scan failure");
                     host.Items.Clear();
                 }
-                var now = DateTimeOffset.UtcNow;
-                model.ReportConnectionFailure(device, new TimeoutException(), true, now);
-                model.ReportConnectionFailure(device, new TimeoutException(), true, now.AddSeconds(30));
-                Check(host.Items.Count == 1, "automatic retry errors deduplicate per device");
-                model.ReportConnectionFailure(peer, new TimeoutException(), true, now);
-                Check(host.Items.Count == 2, "other devices are not suppressed");
-                model.ReportConnectionFailure(device, new TimeoutException(), false, now.AddSeconds(40));
-                Check(host.Items.Count == 3, "manual retry reports its result immediately");
-                model.ReportConnectionFailure(device, new TimeoutException(), true, now.AddSeconds(61));
-                Check(host.Items.Count == 4, "automatic error can recur after cooldown");
+                var notices = 0;
+                model.TransientNoticeRequested += (_, _) => notices++;
+                foreach (var target in new[] { device, peer })
+                foreach (var error in new Exception[] { new IOException("background-offline"), new TimeoutException("background-timeout"), new OperationCanceledException("background-cancel") })
+                {
+                    for (var attempt = 0; attempt < 10; attempt++) model.ReportConnectionFailure(target, error, true);
+                    Check(host.Items.Count == 0 && notices == 0, "startup and repeated background failures never request a toast, across devices and error types");
+                }
+                Check(File.ReadAllText(BlueLink.Session.SessionLog.FilePath).Contains("Automatic Bluetooth connection attempt failed") &&
+                      File.ReadAllText(BlueLink.Session.SessionLog.FilePath).Contains("background-offline"), "silent automatic failure retains diagnostics");
+                model.ReportConnectionFailure(device, new IOException("RAW manual connection failure"), false);
+                Check(host.Items.Count == 1 && notices == 1 && host.Items[0].Message.Contains(device.Name) && !host.Items[0].Message.Contains("RAW"), "manual connection failure remains immediate after automatic failures");
+                model.ReportConnectionFailure(device, new TimeoutException(), false);
+                Check(host.Items.Count == 2 && notices == 2, "manual timeout remains immediate with no cooldown");
+                model.ReportConnectionFailure(device, new IOException(), true);
+                Check(host.Items.Count == 2 && notices == 2, "later background failure neither replaces nor adds to manual feedback");
                 host.Items.Clear();
                 model.CancelConnection();
                 model.ReportConnectionFailure(device, new OperationCanceledException(), false);
@@ -77,7 +91,8 @@ internal static class TransientNoticeVerification
                 disposal.GetAwaiter().GetResult();
                 model.ReportScanFailure(new IOException("disposed"));
                 Check(host.Items.Count == 0, "disposed windows do not receive notices");
-                Console.WriteLine($"Transient notice verification passed: {checks} checks, 6 themed/localized screenshots.");
+                Check(new System.Windows.Interop.WindowInteropHelper(window).Handle == IntPtr.Zero,"notice verification creates no native window");
+                Console.WriteLine($"Transient notice verification passed: {checks} checks, 6 offscreen themed/localized screenshots; native HWND = 0.");
             }
             catch (Exception error) { failure = error; }
             finally { window?.Close(); app?.Shutdown(); }

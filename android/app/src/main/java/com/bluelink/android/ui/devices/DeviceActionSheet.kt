@@ -23,6 +23,8 @@ internal fun DeviceActionSheet(peer: ConversationSummary, transfer: TransferItem
         })
     val options = DeviceActions.available(peer, active, canConnect).map { action ->
         val label = when (action) {
+            DeviceAction.PIN -> if(peer.isPinned) R.string.peer_unpin else R.string.peer_pin
+            DeviceAction.NOTE -> R.string.peer_note
             DeviceAction.OPEN -> if (searchConversation != null) R.string.content_search_chat_history else R.string.content_open_conversation
             DeviceAction.CONNECT -> R.string.content_connect_device
             DeviceAction.INFO -> R.string.content_view_device
@@ -34,6 +36,8 @@ internal fun DeviceActionSheet(peer: ConversationSummary, transfer: TransferItem
             DeviceAction.REMOVE_TRUST -> R.string.content_remove_trust
         }
         val icon = when (action) {
+            DeviceAction.PIN -> R.drawable.ic_peer_pin
+            DeviceAction.NOTE -> R.drawable.ic_peer_note
             DeviceAction.OPEN -> if (searchConversation != null) R.drawable.figma_content_search else R.drawable.figma_action_message
             DeviceAction.CONNECT -> R.drawable.figma_device_connect
             DeviceAction.RESUME -> R.drawable.figma_action_resume
@@ -48,7 +52,7 @@ internal fun DeviceActionSheet(peer: ConversationSummary, transfer: TransferItem
                 if (action == DeviceAction.OPEN && searchConversation != null) searchConversation() else onAction(action)
             }
     }
-    ActionSheet(peer.peerName, detail, options, dismiss,
+    ActionSheet(peer.displayName, detail, options, dismiss,
         detailColor = if (online) DeviceColors.Success else DeviceColors.Secondary)
 }
 
@@ -71,5 +75,6 @@ internal fun deviceTransferDetail(transfer: TransferItem, context: Context): Str
     TransferStatus.TRANSFERRING, TransferStatus.RESUMING -> context.getString(
         if (transfer.outgoing) R.string.device_sending_progress else R.string.device_receiving_progress,
         (transfer.progress.coerceIn(0f, 1f) * 100).toInt())
-    else -> "${contentStatus(transfer.status, context, transfer.outgoing)} · ${(transfer.progress.coerceIn(0f, 1f) * 100).toInt()}%"
+    else -> if (transfer.isProgressIndeterminate) contentStatus(transfer, context)
+        else "${contentStatus(transfer, context)} · ${(transfer.progress.coerceIn(0f, 1f) * 100).toInt()}%"
 }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 
 class BlueLinkRepository(internal val database: BlueLinkDatabase) {
+    suspend fun referencedFiles(): List<String> = database.attachments().referencedFiles()
     val peers: Flow<List<PeerEntity>> = database.peers().observeAll()
     val conversations: Flow<List<ConversationEntity>> = database.conversations().observeAll()
     val transfers: Flow<List<TransferEntity>> = database.transfers().observeAll()
@@ -26,9 +27,12 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
     val trustedDevices: Flow<List<TrustEntity>> = database.trust().observeAll()
     val settings: Flow<AppSettings> = database.settings().observeAll().map(SettingsCodec::decode)
 
+    var associateComposerDrafts: (suspend (Map<String, String>) -> Map<String, String>)? = null
+
     suspend fun initialize(identityStore: IdentityStore) {
         database.withTransaction {
             ensureDefaults()
+            database.messages().recoverInterruptedOutgoing()
             applyIdentityAssociations(identityStore)
             database.peers().loadAll().forEach { peer ->
                 com.bluelink.android.domain.PeerIdentityHint.fromAddress(peer.transportAddress)?.let {
@@ -36,6 +40,18 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
                 }
             }
             val now = System.currentTimeMillis()
+            // Migrate legacy rows once; retain intentional UNKNOWN rows created after migration.
+            val migrateUnknown = database.settings().loadAll().none {
+                it.key == LegacyPeerTrustMigration.MARKER && it.value == "1"
+            }
+            val trustedIds = identityStore.trustedEntries().keys.map { it.lowercase(java.util.Locale.ROOT) }.toSet()
+            database.peers().loadAll().forEach { peer ->
+                if (LegacyPeerTrustMigration.shouldRemove(peer,
+                        peer.peerId.lowercase(java.util.Locale.ROOT) in trustedIds, migrateUnknown)) {
+                    database.peers().upsert(peer.copy(trustState = "REMOVED"))
+                }
+            }
+            database.settings().upsert(AppSettingEntity(LegacyPeerTrustMigration.MARKER, "1"))
             // Repair stale database projections after a process/disk interruption.
             synchronizeAllTrust(identityStore)
             identityStore.trustedEntries().forEach { (peerId, publicKey) ->
@@ -62,6 +78,16 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
         val trusted = identityStore.trustedEntries()
         return database.peers().loadAll().filter { it.transportAddress.equals(address, true) }
             .mapNotNull { peer -> trusted[peer.peerId.lowercase(java.util.Locale.ROOT)] }
+    }
+
+    suspend fun loadDrafts(): Map<String, String> = database.conversations().loadAll().associate { it.peerId to it.draft }
+
+    suspend fun saveDraft(peerId: String, text: String): Boolean = database.withTransaction {
+        val peer = database.peers().find(peerId) ?: return@withTransaction false
+        if (peer.trustState == "RETIRED") return@withTransaction false
+        if (database.conversations().findForPeer(peerId) == null)
+            database.conversations().upsert(ConversationEntity(conversationId(peerId), peerId, peer.lastConnectedAt ?: peer.createdAt))
+        database.conversations().updateDraft(peerId, text) == 1
     }
 
     suspend fun saveSettings(value: AppSettings) = database.withTransaction {
@@ -125,6 +151,19 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
         database.sessions().upsert(SessionRecordEntity(state.sessionId.toString(), peerId,
             state.startedAtEpochMs, "DISCONNECTED", connectedAt = state.startedAtEpochMs,
             disconnectedAt = now, disconnectReason = state.detail))
+    }
+
+    /** Only the user's explicit shared-text retry may reset a failed local attempt. */
+    suspend fun prepareSharedText(state: ManagedSessionState,item: ChatItem): Boolean = database.withTransaction {
+        val peerId=requireNotNull(state.peerId)
+        check(ensureConversation(peerId,state.peerName,state.transportAddress,item.timestamp.toEpochMilli()))
+        val previous=database.messages().find(item.id.toString())
+        if(previous!=null) {
+            check(previous.peerId==peerId && previous.direction=="OUTGOING" && previous.content==item.text)
+            if(previous.status in setOf("SENT","DELIVERED","READ")) return@withTransaction true
+            database.messages().upsert(previous.copy(status="SENDING"))
+        } else saveChat(state,item)
+        false
     }
 
     suspend fun saveChat(state: ManagedSessionState, item: ChatItem, unread: Boolean = false) {
@@ -200,6 +239,16 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
         }
     }
 
+    /** Queue handoff must be durable before any shared-file envelope or bytes are submitted. */
+    suspend fun prepareSharedTransfer(state: ManagedSessionState,value: TransferItem) = database.withTransaction {
+        require(value.outgoing && value.role != AttachmentRole.IMAGE_PREVIEW)
+        val peerId = requireNotNull(state.peerId)
+        check(ensureConversation(peerId,state.peerName,state.transportAddress,System.currentTimeMillis()))
+        saveTransfer(state,value)
+        val saved = checkNotNull(database.transfers().find(value.id.toString()))
+        check(saved.peerId == peerId && saved.localUri == value.localUri && saved.direction == "OUTGOING")
+    }
+
     suspend fun saveTransfer(state: ManagedSessionState, value: TransferItem) {
         val peerId = state.peerId ?: return
         val now = System.currentTimeMillis()
@@ -227,7 +276,7 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
                 if (value.outgoing) "OUTGOING" else "INCOMING", value.status.name, value.name,
                 value.mimeType.ifBlank { previous?.mimeType ?: "application/octet-stream" }, value.totalBytes,
                 value.completedBytes, value.localUri ?: previous?.localUri, previous?.snapshotPath,
-                previous?.sha256, if (value.status.name == "FAILED") "TRANSFER_FAILED" else null,
+                value.sourceSha256?.chunked(2)?.map { it.toInt(16).toByte() }?.toByteArray() ?: previous?.sha256, if (value.status.name == "FAILED") "TRANSFER_FAILED" else null,
                 value.failureDetail, previous?.createdAt ?: value.startedAtEpochMs, value.updatedAtEpochMs))
             value.attachmentId?.toString()?.let { id -> database.attachments().find(id)?.let { attachment ->
                 database.attachments().upsert(attachment.copy(transferId = value.id.toString(),
@@ -236,11 +285,24 @@ class BlueLinkRepository(internal val database: BlueLinkDatabase) {
         }
     }
 
-    suspend fun loadHistory(peerId: String): List<ChatItem> {
-        val conversation = database.conversations().findForPeer(peerId) ?: return emptyList()
-        return database.messages().loadConversation(conversation.conversationId).map { message ->
-            val attachments = database.attachments().loadForMessage(message.messageId).map { attachment ->
-                val transfer = attachment.transferId?.let { database.transfers().find(it) }
+    suspend fun loadHistory(peerId: String, before: java.util.UUID? = null, around: java.util.UUID? = null,
+                            all: Boolean = false): List<ChatItem> = database.withTransaction {
+        val conversation = database.conversations().findForPeer(peerId) ?: return@withTransaction emptyList()
+        val anchorId = around ?: before
+        val anchor = anchorId?.let { database.messages().find(it.toString()) }?.takeIf { it.conversationId == conversation.conversationId }
+        if (anchorId != null && anchor == null) return@withTransaction emptyList()
+        val stored = when {
+            all -> database.messages().loadConversation(conversation.conversationId)
+            around != null && anchor != null -> database.messages().loadPage(conversation.conversationId, anchor.createdAt, anchor.messageId, 99) + anchor +
+                database.messages().loadAfter(conversation.conversationId, anchor.createdAt, anchor.messageId, 100)
+            else -> database.messages().loadPage(conversation.conversationId, anchor?.createdAt, anchor?.messageId, 200)
+        }.sortedWith(compareBy<MessageEntity> { it.createdAt }.thenBy { it.messageId })
+        val allAttachments = (if(all) database.attachments().loadForConversation(conversation.conversationId)
+            else database.attachments().loadForMessages(stored.map { it.messageId })).groupBy { it.messageId }
+        val allTransfers = database.transfers().loadForPeer(peerId).associateBy { it.transferId }
+        stored.map { message ->
+            val attachments = allAttachments[message.messageId].orEmpty().map { attachment ->
+                val transfer = attachment.transferId?.let { allTransfers[it] }
                     ?.takeIf { it.peerId == message.peerId }
                 val status = transfer?.status ?: attachment.state
                 ChatAttachment(java.util.UUID.fromString(attachment.attachmentId),

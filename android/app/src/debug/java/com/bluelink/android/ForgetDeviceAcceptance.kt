@@ -33,7 +33,7 @@ internal fun ForgetDeviceAcceptance(close: () -> Unit) {
     LaunchedEffect(Unit) {
         try {
             peers = verifyForgetDevice(context)
-            result = "PASSED: removal, restart, late callback, retrust, history, files, remove-all"
+            result = "PASSED: legacy migration, removal, restart, late callback, retrust, history, files, remove-all"
         } catch (failure: Exception) {
             android.util.Log.e("BlueLinkForgetAcceptance", "Failed", failure)
             result = "FAILED: ${failure.message}"
@@ -77,7 +77,10 @@ private suspend fun verifyForgetDevice(context: Context): List<ConversationSumma
         database.transfers().upsert(TransferEntity(transferId, id, messageId, "INCOMING", "COMPLETED", file.name, "text/plain", 13, 13,
             localUri = file.toURI().toString(), createdAt = now, updatedAt = now))
         identity.removeTrust(id)
-        repository.synchronizeTrust(id, identity, removeFromDeviceList = true)
+        // Seed the exact pre-fix state without using the modern removal projection.
+        database.peers().upsert(requireNotNull(database.peers().find(id)).copy(trustState = "UNKNOWN"))
+        database.settings().upsert(AppSettingEntity(LegacyPeerTrustMigration.MARKER, "0"))
+        repository.initialize(identity)
         check(database.peers().find(id)?.trustState == "REMOVED")
         check(database.trust().loadAll().isEmpty())
         database.close(); database = open()
@@ -93,6 +96,9 @@ private suspend fun verifyForgetDevice(context: Context): List<ConversationSumma
         trust(); repository.recordConnectedSession(session, identity)
         check(database.peers().find(id)?.trustState == "TRUSTED")
         check(repository.loadHistory(id).single().text == "retained history")
+        identity.removeTrust(id); repository.synchronizeTrust(id, identity, removeFromDeviceList = true)
+        check(database.peers().find(id)?.trustState == "REMOVED")
+        trust(); repository.recordConnectedSession(session, identity)
         identity.removeAllTrust(); repository.synchronizeAllTrust(identity, removeFromDeviceList = true)
         check(database.peers().find(id)?.trustState == "REMOVED")
         val removed = ConversationSummary(id, "QA Removed PC", PeerPlatform.WINDOWS, DeviceAvailability.OFFLINE,

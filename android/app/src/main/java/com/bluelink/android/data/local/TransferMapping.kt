@@ -11,4 +11,5 @@ internal fun TransferEntity.toTransferItem() = TransferItem(
     messageId = messageId?.let(UUID::fromString), mimeType = mimeType,
     localUri = localUri, failureDetail = failureDetail, peerId = peerId,
     startedAtEpochMs = createdAt, updatedAtEpochMs = updatedAt,
+    sourceSha256 = sha256?.joinToString("") { "%02x".format(it) },
 )

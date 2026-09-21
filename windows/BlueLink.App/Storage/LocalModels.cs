@@ -103,7 +103,8 @@ public sealed record BlueLinkSettings(
     string DuplicateFilePolicy = "rename",
     bool MessageNotifications = true,
     bool ConnectionNotifications = true,
-    bool TransferNotifications = true)
+    bool TransferNotifications = true,
+    string SendShortcut = "enter")
 {
     public static BlueLinkSettings Defaults(string downloadDirectory) => new(DownloadDirectory: downloadDirectory);
 }

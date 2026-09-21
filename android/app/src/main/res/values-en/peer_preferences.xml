@@ -1,0 +1,8 @@
+<resources>
+    <string name="peer_pin">Pin device</string>
+    <string name="peer_unpin">Unpin device</string>
+    <string name="peer_note">Device note</string>
+    <string name="peer_note_help">Shown only on this device. Leave blank to use the original name.</string>
+    <string name="peer_pinned">Pinned</string>
+    <string name="peer_save">Save</string>
+</resources>

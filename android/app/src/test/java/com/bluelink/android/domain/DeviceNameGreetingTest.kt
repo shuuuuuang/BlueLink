@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 class DeviceNameGreetingTest {
     @Test fun sharesUnicodeVectorWithWindowsAndKeepsLegacyDecoderCompatible() {
-        val golden = "010100000000003f424c444e0011e9aa8ce694b6e6898be69cba20f09f93b1".chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val golden = "010100000000007f424c444e0011e9aa8ce694b6e6898be69cba20f09f93b1".chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         assertArrayEquals(golden, DeviceNameGreeting.encode("验收手机 📱"))
         assertEquals("验收手机 📱", DeviceNameGreeting.decode(golden))
         assertEquals(ProtocolGreeting.current(), ProtocolGreeting.decode(golden))

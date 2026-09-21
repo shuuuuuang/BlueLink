@@ -44,3 +44,5 @@ __pycache__/
 *.keystore
 *.p12
 *.pfx
+
+.gradle-user/

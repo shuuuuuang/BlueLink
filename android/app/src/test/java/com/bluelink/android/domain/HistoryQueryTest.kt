@@ -15,8 +15,8 @@ class HistoryQueryTest {
         ChatItem(text = text, outgoing = false, timestamp = instant, status = MessageStatus.RECEIVED, kind = kind, attachments = attachments)
 
     @Test fun queryFindsTextAndAttachmentNamesWithTrimmedCaseInsensitiveInput() {
-        val text = message("Review tomorrow")
-        val file = message("", ChatItemKind.FILE, listOf(attachment("Review.pdf")))
+        val text = message("Review tomorrow").copy(id = UUID(0, 1))
+        val file = message("", ChatItemKind.FILE, listOf(attachment("Review.pdf"))).copy(id = UUID(0, 2))
         val image = message("", ChatItemKind.IMAGE, listOf(attachment("other.png", "image/png")))
         assertEquals(listOf(text, file), HistoryQuery.messages(listOf(text, file, image), "  rEvIeW ", HistoryKind.ALL))
         assertTrue(HistoryQuery.messages(listOf(text, file), "missing", HistoryKind.ALL).isEmpty())
@@ -40,7 +40,7 @@ class HistoryQueryTest {
         val paused = file("peer-a", TransferStatus.PAUSED, false, 6)
         val canceled = file("peer-a", TransferStatus.CANCELED, false, 7)
         val items = listOf(failed, other, sent, paused, canceled)
-        assertEquals(listOf(canceled, failed), HistoryQuery.files(items, " review ", FileStatusFilter.FAILED, FileDirectionFilter.RECEIVED, "peer-a"))
+        assertEquals(listOf(canceled, failed), HistoryQuery.files(items, " review ", FileStatusFilter.INCOMPLETE, FileDirectionFilter.RECEIVED, "peer-a"))
         assertEquals(listOf(paused), HistoryQuery.files(items, "", FileStatusFilter.ACTIVE, FileDirectionFilter.ALL, "peer-a"))
         assertEquals(listOf(canceled, paused, sent, other, failed), HistoryQuery.files(items, "", FileStatusFilter.ALL, FileDirectionFilter.ALL, null))
     }

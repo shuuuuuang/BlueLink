@@ -39,7 +39,7 @@ data class DeviceScreenState(
             }
             val term = query.trim()
             fun matches(vararg fields: String) = fields.any { it.contains(term, ignoreCase = true) }
-            val visible = history.filter { matches(it.peerName, it.peerId, it.transportAddress) }
+            val visible = history.sortedByDescending { it.isPinned }.filter { matches(it.peerName, it.localNote, it.peerId, it.transportAddress) }
             val fresh = if (access.canUseBluetooth) DeviceProjectionPolicy.nearbyCandidates(
                 devices, emptySet(), history.map { it.peerId }.toSet(),
                 emptySet(), history.map { it.transportAddress }.toSet(),

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_resize">拖曳以調整輸入框高度</string>
+    <string name="composer_taller">增高輸入框</string>
+    <string name="composer_shorter">縮小輸入框</string>
+    <string name="composer_save_failed">輸入草稿無法儲存，請重試</string>
+    <string name="composer_adding">正在加入附件</string>
+    <string name="composer_limit">待傳送附件最多100個</string>
+    <string name="composer_add_failed">無法加入附件，請檢查讀取權限與儲存空間</string>
+    <string name="composer_send_failed">部分內容未傳送，已保留在輸入框中</string>
+    <string name="composer_incomplete">附件加入未完成，請刪除後重新加入</string>
+    <string name="composer_identity_busy">附件仍在準備或傳送，請結束後重試身分關聯。</string>
+</resources>

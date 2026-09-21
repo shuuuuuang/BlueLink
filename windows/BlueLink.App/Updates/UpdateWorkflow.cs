@@ -24,7 +24,7 @@ public sealed class UpdateWorkflow(UpdateService service) : ObservableObject, ID
     {
         UpdateStage.Checking => Strings.Get("正在检查更新…"), UpdateStage.Current => Strings.Get("已是最新版本"),
         UpdateStage.CheckFailed => Strings.Get("检查失败，点击重试"), UpdateStage.Ready => Strings.Get("更新已准备就绪"),
-        UpdateStage.Idle => "", _ => Release is null ? "" : Strings.Format($"发现新版本 {Release.Version}"),
+        UpdateStage.Idle => "", _ => Release is null ? "" : Strings.Format($"发现新版本 {Release.DisplayVersion}"),
     };
     public string Title => Strings.Get(Stage switch
     {
@@ -39,14 +39,14 @@ public sealed class UpdateWorkflow(UpdateService service) : ObservableObject, ID
         _ => "已在应用内检测到新版本，请选择更新时间。",
     });
     public string VersionText => Stage == UpdateStage.DownloadFailed ? Strings.Get("未能完成下载") :
-        Stage == UpdateStage.Downloading ? $"BlueLink {Release?.Version} · {Percent:0}%" :
-        Stage is UpdateStage.Ready or UpdateStage.Installing ? Strings.Format($"BlueLink {Release?.Version} 下载完成") : Strings.Format($"BlueLink {Release?.Version} 已可用");
+        Stage == UpdateStage.Downloading ? $"BlueLink {Release?.DisplayVersion} · {Percent:0}%" :
+        Stage is UpdateStage.Ready or UpdateStage.Installing ? Strings.Format($"BlueLink {Release?.DisplayVersion} 下载完成") : Strings.Format($"BlueLink {Release?.DisplayVersion} 已可用");
     public string SizeText => Stage switch
     {
         UpdateStage.Downloading => $"{DownloadedBytes / 1048576d:0.0} MB / {(Release?.Size ?? 0) / 1048576d:0.0} MB",
         UpdateStage.Ready or UpdateStage.Installing => Strings.Get("安装包已保存到本机"),
         UpdateStage.DownloadFailed => Strings.Get("未安装此更新"),
-        _ => Strings.Format($"约 {(Release?.Size ?? 0) / 1048576d:0.0} MB · 安装前将核验发布者"),
+        _ => Strings.Format($"约 {(Release?.Size ?? 0) / 1048576d:0.0} MB · 下载后核验 SHA-256"),
     };
     public string NoteTitle => Strings.Get(Stage switch
     {
@@ -57,7 +57,12 @@ public sealed class UpdateWorkflow(UpdateService service) : ObservableObject, ID
     {
         UpdateStage.DownloadFailed => Error,
         UpdateStage.Downloading => Strings.Get("请保持网络连接，下载完成后可选择安装。"),
+        UpdateStage.Ready when Release?.IsPortable == true => Strings.Get(UpdateService.PortableUpdateNotice),
+        UpdateStage.Ready when Release?.IsUnsignedPreview == true => Strings.Get(UpdateService.AllowUnsignedPreviewInstallation
+            ? "此预览安装包未签名。已核对固定 GitHub 发布源、大小、SHA-256 和产品版本；点击安装将交给安装程序确认。"
+            : "安装包已下载并校验，但当前预览包未签名，暂不能安装。"),
         UpdateStage.Ready or UpdateStage.Installing => Strings.Get("安装前请结束正在进行的传输。点击安装后将交由安装程序处理。"),
+        _ when Release?.IsUnsignedPreview == true => Strings.Get("此预览安装包未签名，下载将在应用内完成。") + "\n\n" + Release.Notes,
         _ => string.IsNullOrWhiteSpace(Release?.Notes) ? Strings.Get("此版本未提供更新说明。") : Release.Notes,
     };
     public string PrimaryText => Strings.Get(Stage switch
@@ -132,6 +137,9 @@ public sealed class UpdateWorkflow(UpdateService service) : ObservableObject, ID
         }
         finally { End(); }
     }
+
+    public bool CanUsePrimary => !Busy && !(Stage == UpdateStage.Ready &&
+        (Release?.IsPortable == true || (Release?.IsUnsignedPreview == true && !UpdateService.AllowUnsignedPreviewInstallation)));
 
     public void Cancel() => _cancellation?.Cancel();
     public void RefreshText() => Notify();

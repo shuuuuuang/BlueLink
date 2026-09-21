@@ -14,6 +14,8 @@ public sealed class TransferReceiver : IAsyncDisposable
     private static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
         { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
           "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> PartialOwners = new(StringComparer.OrdinalIgnoreCase);
+    private bool _ownsPartial;
     private string _target;
     private readonly string _requestedTarget;
     private readonly string _duplicatePolicy;
@@ -40,11 +42,22 @@ public sealed class TransferReceiver : IAsyncDisposable
         _wholeHash = offer.Hash;
         _completed = new bool[checked((int)((offer.Size + offer.ExtentSize - 1) / offer.ExtentSize))];
         Directory.CreateDirectory(Path.GetDirectoryName(_target)!);
-        var resume = TryLoadResume();
-        _stream = new FileStream(_partial, resume ? FileMode.Open : FileMode.Create,
-            FileAccess.ReadWrite, FileShare.None, 128 * 1024,
-            FileOptions.Asynchronous | FileOptions.RandomAccess);
-        if (_stream.Length > _size) _stream.SetLength(_size);
+        if (!PartialOwners.TryAdd(_partial, 0)) throw new IOException("上次接收仍在结束，请稍后重试。");
+        _ownsPartial = true;
+        try
+        {
+            var resume = TryLoadResume();
+            _stream = new FileStream(_partial, resume ? FileMode.Open : FileMode.Create,
+                FileAccess.ReadWrite, FileShare.None, 128 * 1024,
+                FileOptions.Asynchronous | FileOptions.RandomAccess);
+            if (_stream.Length > _size) _stream.SetLength(_size);
+        }
+        catch
+        {
+            _stream?.Dispose();
+            PartialOwners.TryRemove(_partial, out _); _ownsPartial = false;
+            throw;
+        }
     }
 
     public long ContiguousBytes
@@ -54,7 +67,11 @@ public sealed class TransferReceiver : IAsyncDisposable
 
     public async Task AcceptAsync(FileExtent extent, CancellationToken token)
     {
-        if (extent.Index >= _completed.Length) throw new InvalidDataException("Extent index is out of range");
+        await _finishGate.WaitAsync(token);
+        try
+        {
+        if (_writerClosed) throw new ObjectDisposedException(nameof(TransferReceiver));
+        if (extent.Index < 0 || extent.Index >= _completed.Length) throw new InvalidDataException("Extent index is out of range");
         if (_completed[extent.Index]) return;
         var offset = (long)extent.Index * _extentSize;
         var expected = (int)Math.Min(_extentSize, _size - offset);
@@ -70,6 +87,8 @@ public sealed class TransferReceiver : IAsyncDisposable
         await _stream.FlushAsync(token);
         _completed[extent.Index] = true;
         await PersistResumeAsync(token);
+        }
+        finally { _finishGate.Release(); }
     }
 
     public async Task<string> FinishAsync(CancellationToken token, Action? onCommitting = null)
@@ -135,7 +154,11 @@ public sealed class TransferReceiver : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _finishGate.WaitAsync();
-        try { await CloseWriterAsync(); }
+        try
+        {
+            await CloseWriterAsync();
+            if (_ownsPartial) { PartialOwners.TryRemove(_partial, out _); _ownsPartial = false; }
+        }
         finally { _finishGate.Release(); }
     }
 

@@ -3,18 +3,19 @@ namespace BlueLink.Transfer;
 public static class OutgoingSnapshot
 {
     public static async Task<string> CreateAsync(string sourcePath, string cacheRoot, Guid transferId,
-        CancellationToken token)
+        CancellationToken token, Guid? ownerTask = null)
     {
         var source = Path.GetFullPath(sourcePath);
         if (!File.Exists(source)) throw new FileNotFoundException("待发送文件不存在", source);
         Directory.CreateDirectory(cacheRoot);
         var target = Path.Combine(cacheRoot, $"{transferId:N}.snapshot");
+        Storage.OwnedTemporaryFiles.Register(target, ownerTask ?? transferId);
         try
         {
             await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read,
                 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var expected = input.Length;
-            await using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None,
+            await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                              128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.WriteThrough))
             {
                 await input.CopyToAsync(output, 128 * 1024, token);
@@ -27,6 +28,7 @@ public static class OutgoingSnapshot
         catch
         {
             try { File.Delete(target); } catch { }
+            Storage.OwnedTemporaryFiles.Release(target);
             throw;
         }
     }

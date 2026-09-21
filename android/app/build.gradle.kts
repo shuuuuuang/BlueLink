@@ -5,6 +5,10 @@ plugins {
 }
 
 val productVersion = rootProject.file("../VERSION").readText().trim()
+val releaseTag = providers.environmentVariable("BLUELINK_RELEASE_TAG").orNull ?: "v$productVersion"
+require(Regex("^v" + Regex.escape(productVersion) + "(-preview\\.[1-9][0-9]*)?$").matches(releaseTag)) {
+    "BLUELINK_RELEASE_TAG must match VERSION and use an optional preview number"
+}
 
 android {
     namespace = "com.bluelink.android"
@@ -14,8 +18,9 @@ android {
         applicationId = "com.bluelink.android"
         minSdk = 33
         targetSdk = 34
-        versionCode = 12
+        versionCode = 13
         versionName = productVersion
+        buildConfigField("String", "RELEASE_TAG", "\"$releaseTag\"")
     }
 
     // A physical device may already use the developer's debug key. Sandboxed
@@ -65,6 +70,9 @@ android {
 
 dependencies {
     implementation(project(":protocol-core"))
+    implementation("org.commonmark:commonmark:0.29.0")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.29.0")
+    implementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.29.0")
     implementation("org.conscrypt:conscrypt-android:2.6.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.activity:activity-compose:1.8.2")
@@ -82,6 +90,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 kapt {

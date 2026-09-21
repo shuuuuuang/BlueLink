@@ -4,6 +4,7 @@ namespace BlueLink.Storage;
 
 public sealed partial class BlueLinkDatabase
 {
+    public Func<IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, string>>? AssociateComposerDrafts { get; set; }
     private static void InitializeIdentityHints(NativeSqliteConnection connection)
     {
         connection.Execute("CREATE TABLE IF NOT EXISTS peer_hint(peer_id TEXT NOT NULL REFERENCES peer(peer_id) ON DELETE CASCADE, hint TEXT NOT NULL, PRIMARY KEY(peer_id,hint));");
@@ -47,14 +48,23 @@ public sealed partial class BlueLinkDatabase
     public Task ApplyIdentityAssociationsAsync(IdentityStore identity, CancellationToken token = default) => Run(() =>
     {
         using var connection = Open();
-        ApplyIdentityAssociations(connection, identity);
+        ApplyIdentityAssociations(connection, identity, AssociateComposerDrafts);
     }, token);
 
-    private static void ApplyIdentityAssociations(NativeSqliteConnection connection, IdentityStore identity)
+    private static void ApplyIdentityAssociations(NativeSqliteConnection connection, IdentityStore identity,
+        Func<IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, string>>? associateDrafts = null)
     {
         var associations = identity.IdentityAssociations;
         InTransaction(connection, () =>
         {
+            IReadOnlyDictionary<string, string>? merged = null;
+            if (associations.Count > 0 && associateDrafts is not null)
+            {
+                var legacy = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                using (var query = connection.Prepare("SELECT peer_id,draft FROM conversation"))
+                    while (query.Read()) legacy[query.GetString(0)] = query.GetString(1);
+                merged = associateDrafts(legacy);
+            }
             foreach (var (oldId, initialTarget) in associations)
             {
                 var target = initialTarget;
@@ -65,6 +75,11 @@ public sealed partial class BlueLinkDatabase
                     target = next;
                 }
                 MovePeerHistory(connection, oldId, target, identity.FindTrustedKey(target));
+            }
+            if (merged is not null) foreach (var (peer, text) in merged)
+            {
+                using var update = connection.Prepare("UPDATE conversation SET draft=? WHERE peer_id=?");
+                update.Bind(1, text).Bind(2, peer).ExecuteNonQuery();
             }
         });
     }

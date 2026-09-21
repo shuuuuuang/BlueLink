@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_resize">Drag to resize the composer</string>
+    <string name="composer_taller">Increase composer height</string>
+    <string name="composer_shorter">Decrease composer height</string>
+    <string name="composer_save_failed">Could not save the composer draft. Try again.</string>
+    <string name="composer_adding">Adding attachments</string>
+    <string name="composer_limit">Up to 100 attachments can be staged.</string>
+    <string name="composer_add_failed">Could not add attachments. Check read access and free space.</string>
+    <string name="composer_send_failed">Some content was not sent and remain in the composer.</string>
+    <string name="composer_incomplete">Attachment incomplete. Remove it and add it again.</string>
+    <string name="composer_identity_busy">Attachments are still being prepared or sent. Retry identity association after they finish.</string>
+</resources>

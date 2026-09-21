@@ -20,12 +20,27 @@ class BlueLinkApplication : Application() {
     val identityStore by lazy { IdentityStore(this) }
     val database by lazy { BlueLinkDatabase.open(this) }
     val localRepository by lazy { BlueLinkRepository(database) }
+    val shareInbox by lazy { com.bluelink.android.sharing.ShareInbox(this) }
+    val shareScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val runtime by lazy { BlueLinkRuntime(this, identityStore, cryptoStartup, localRepository) }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
         CoroutineExceptionHandler { _, failure -> CrashReporter.recordNonFatal(this, "ApplicationScope", failure) })
 
+    private val startedClients = mutableSetOf<android.app.Activity>()
+    fun clientStarted(activity: android.app.Activity) {
+        if(startedClients.add(activity) && startedClients.size==1) runtime.onAppForegrounded()
+    }
+    fun clientStopped(activity: android.app.Activity): Boolean {
+        startedClients.remove(activity)
+        if(startedClients.isNotEmpty() || activity.isChangingConfigurations) return false
+        runtime.onAppBackgrounded()
+        if(!runtime.keepBackgroundSessionsEnabled()) stopService(android.content.Intent(this,com.bluelink.android.service.BluetoothSessionService::class.java))
+        return true
+    }
+
     override fun onCreate() {
         super.onCreate()
+        com.bluelink.android.files.OwnedTemporaryFiles.configurePrivateRoot(dataDir)
         CrashReporter.install(this)
         cryptoStartup = try {
             CryptoRuntime.preferProvider(Conscrypt.newProvider())
@@ -37,6 +52,7 @@ class BlueLinkApplication : Application() {
             )
         }
         applicationScope.launch { localRepository.initialize(identityStore) }
+        applicationScope.launch { shareInbox.load() }
     }
 }
 

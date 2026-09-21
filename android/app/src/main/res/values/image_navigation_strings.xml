@@ -1,0 +1,4 @@
+<resources>
+    <string name="content_first_image">已经是第一张图片</string>
+    <string name="content_last_image">已经是最后一张图片</string>
+</resources>

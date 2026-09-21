@@ -368,7 +368,8 @@ if ($SkipInstaller) { Write-Host "Windows framework-dependent staged directory: 
     "-p:UninstallConfig=$(Join-Path $stageRoot 'Uninstall.exe.config')" "-p:ManifestPath=$manifestPath"
 if ($LASTEXITCODE -ne 0) { throw 'WiX MSI compilation failed.' }
 
-$msi = Join-Path $projectRoot "installer\BlueLink.Package\bin\x64\$Configuration\BlueLink.Package.msi"
+$msi = Join-Path $projectRoot "installer\BlueLink.Package\bin\x64\$Configuration\zh-CN\BlueLink.Package.msi"
+& (Join-Path $projectRoot 'scripts/verify-msi-wizard.ps1') -MsiPath $msi -FrameworkDependent
 $baOutput = Join-Path $projectRoot "installer\BlueLink.SetupUI\bin\$Configuration\net472\win-x64"
 & $dotnet build $bundleProject -c $Configuration --no-restore -t:Rebuild `
     "-p:ProductVersion=$version" "-p:ProductCode=$productCode" "-p:PayloadFingerprint=$payloadFingerprint" `

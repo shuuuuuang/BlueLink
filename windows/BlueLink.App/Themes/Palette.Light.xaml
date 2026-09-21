@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <SolidColorBrush x:Key="BlueBrush" Color="#176BFF"/>
     <SolidColorBrush x:Key="CyanBrush" Color="#12C8E8"/>
@@ -128,4 +128,5 @@
     <SolidColorBrush x:Key="FileTypeBrush-file-3d" Color="#07888B"/>
     <SolidColorBrush x:Key="FileTypeBrush-file-certificate" Color="#B47B12"/>
     <!-- Generated file type colors: end -->
+    <SolidColorBrush x:Key="BatchSelectedRowBrush" Color="#ECECEC"/>
 </ResourceDictionary>

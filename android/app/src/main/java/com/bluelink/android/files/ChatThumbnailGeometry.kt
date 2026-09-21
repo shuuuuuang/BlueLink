@@ -9,9 +9,8 @@ internal data class ChatThumbnailGeometry(val width: Double, val height: Double,
     val insetY get() = (height - imageHeight) / 2
 
     companion object {
-        fun calculate(width: Double, height: Double, maxWidth: Double = 190.0, maxHeight: Double = 126.0): ChatThumbnailGeometry {
-            val minimum = 48.0
-            require(width.isFinite() && height.isFinite() && width > 0 && height > 0 &&
+        fun calculate(width: Double, height: Double, maxWidth: Double = 190.0, maxHeight: Double = 126.0, minimum: Double = 48.0): ChatThumbnailGeometry {
+            require(minimum.isFinite() && minimum > 0 && width.isFinite() && height.isFinite() && width > 0 && height > 0 &&
                 maxWidth.isFinite() && maxHeight.isFinite() && maxWidth >= minimum && maxHeight >= minimum)
             val shortEdge = minOf(width, height)
             val fit = minOf(1.0, maxWidth / width, maxHeight / height)

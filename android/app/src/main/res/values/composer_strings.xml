@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_resize">拖动调整输入框高度</string>
+    <string name="composer_taller">增高输入框</string>
+    <string name="composer_shorter">缩小输入框</string>
+    <string name="composer_save_failed">输入草稿未能保存，请重试</string>
+    <string name="composer_adding">正在添加附件</string>
+    <string name="composer_limit">待发送附件最多100个</string>
+    <string name="composer_add_failed">附件未能添加，请检查读取权限和存储空间</string>
+    <string name="composer_send_failed">部分内容未发送，已保留在输入框中</string>
+    <string name="composer_incomplete">附件添加未完成，请删除后重新添加</string>
+    <string name="composer_identity_busy">附件仍在准备或发送，请结束后重试身份关联。</string>
+</resources>

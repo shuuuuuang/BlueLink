@@ -6,11 +6,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
@@ -161,12 +159,14 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var acceptanceKeepScreenOn = false
+    private var notificationPeer by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acceptanceKeepScreenOn = acceptanceWakeSession.value
             ?: savedInstanceState?.getBoolean(ACCEPTANCE_KEEP_SCREEN_ON) ?: false
         applyAcceptanceWakePolicy(intent)
+        notificationPeer = intent.getStringExtra(com.bluelink.android.service.BlueLinkNotifications.OPEN_PEER)?.takeIf { it.length <= 128 }
         if (BuildConfig.DEBUG) lifecycleScope.launch {
             // USB attachment can open another MainActivity over the launcher instance.
             // All BlueLink windows in this debug session share explicit keep-awake changes.
@@ -177,7 +177,7 @@ class MainActivity : ComponentActivity() {
                 if (acceptanceKeepScreenOn) window.addFlags(flag) else window.clearFlags(flag)
             }
         }
-        setContent { BlueLinkApp(onPermissionsReady = ::startBluetoothService, fileInfo = ::fileInfo) }
+        setContent { BlueLinkApp(onPermissionsReady = ::startBluetoothService, notificationPeer = notificationPeer, consumeNotification = { notificationPeer = null; intent.removeExtra(com.bluelink.android.service.BlueLinkNotifications.OPEN_PEER) }) }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyAcceptanceWakePolicy(intent)
+        notificationPeer = intent.getStringExtra(com.bluelink.android.service.BlueLinkNotifications.OPEN_PEER)?.takeIf { it.length <= 128 }
     }
 
     private fun applyAcceptanceWakePolicy(intent: Intent) {
@@ -216,14 +217,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        (application as BlueLinkApplication).runtime.onAppForegrounded()
+        (application as BlueLinkApplication).clientStarted(this)
     }
 
     override fun onStop() {
-        val runtime = (application as BlueLinkApplication).runtime
-        runtime.onAppBackgrounded()
-        if (!runtime.keepBackgroundSessionsEnabled())
-            stopService(Intent(this, BluetoothSessionService::class.java))
+        (application as BlueLinkApplication).clientStopped(this)
         super.onStop()
     }
 
@@ -237,19 +235,7 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
-    private fun fileInfo(uri: android.net.Uri): Pair<String, Long> {
-        var name = "文件"
-        var size = 0L
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                name = cursor.value(OpenableColumns.DISPLAY_NAME) ?: name
-                size = cursor.value(OpenableColumns.SIZE)?.toLongOrNull() ?: 0L
-            }
-        }
-        return name to size
-    }
 
-    private fun Cursor.value(column: String): String? = getColumnIndex(column).takeIf { it >= 0 }?.let(::getString)
 }
 
 private val Blue = Color(0xFF176BFF)
@@ -262,14 +248,15 @@ private data class ConfirmAction(val title: String, val message: String, val con
 @Composable
 private fun BlueLinkApp(
     onPermissionsReady: () -> Unit,
-    fileInfo: (android.net.Uri) -> Pair<String, Long>,
+    notificationPeer: String? = null,
+    consumeNotification: () -> Unit = {},
     model: MainViewModel = viewModel(),
 ) {
     val settings by model.settings.collectAsStateWithLifecycle()
     // The entire content, including launchers and menu callbacks, must capture
     // the app-selected locale instead of the Activity/system locale.
     BlueLinkTheme(settings.theme, settings.language) {
-        BlueLinkAppContent(onPermissionsReady, fileInfo, model)
+        BlueLinkAppContent(onPermissionsReady, model, notificationPeer, consumeNotification)
     }
 }
 
@@ -277,13 +264,15 @@ private fun BlueLinkApp(
 @Composable
 private fun BlueLinkAppContent(
     onPermissionsReady: () -> Unit,
-    fileInfo: (android.net.Uri) -> Pair<String, Long>,
     model: MainViewModel = viewModel(),
+    notificationPeer: String? = null,
+    consumeNotification: () -> Unit = {},
 ) {
     val devices by model.devices.collectAsStateWithLifecycle()
     val discovery by model.discovery.collectAsStateWithLifecycle()
     val connection by model.connection.collectAsStateWithLifecycle()
     val messages by model.messages.collectAsStateWithLifecycle()
+    val historyRevision by model.historyRevision.collectAsStateWithLifecycle()
     val transfers by model.transfers.collectAsStateWithLifecycle()
     val allTransfers by model.allTransfers.collectAsStateWithLifecycle()
     val trust by model.trustPrompt.collectAsStateWithLifecycle()
@@ -294,16 +283,35 @@ private fun BlueLinkAppContent(
     val usbState by model.usbState.collectAsStateWithLifecycle()
     val diagnostics by model.diagnostics.collectAsStateWithLifecycle()
     val identityFingerprint by model.identityFingerprint.collectAsStateWithLifecycle()
+    val drafts by model.drafts.collectAsStateWithLifecycle()
+    val draftSaveFailed by model.draftSaveFailed.collectAsStateWithLifecycle()
     val conversations by model.conversations.collectAsStateWithLifecycle()
     val settings by model.settings.collectAsStateWithLifecycle()
     var previewAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
+    var previewImages by remember { mutableStateOf<List<ChatAttachment>>(emptyList()) }
+    val reportPreviewImages: (List<ChatAttachment>) -> Unit = { items ->
+        previewImages = items.filter { it.isImage && it.canOpen }.distinctBy { it.transferId }
+    }
     var actionConversation by remember { mutableStateOf<ConversationSummary?>(null) }
     var actionNearbyDevice by remember { mutableStateOf<NearbyDevice?>(null) }
     var actionMessage by remember { mutableStateOf<ChatItem?>(null) }
+    var selectMultipleMessages by remember { mutableStateOf<(() -> Unit)?>(null) }
     var actionAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
+    var selectMultipleFiles by remember { mutableStateOf<(() -> Unit)?>(null) }
     var actionTransfer by remember { mutableStateOf<TransferItem?>(null) }
+    val context = LocalContext.current
     var pendingSaveAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
+    var pendingRecoveryId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val recoverySourcePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val transfer = pendingRecoveryId?.let { id -> allTransfers.values.firstOrNull { it.id.toString() == id } }
+        pendingRecoveryId = null
+        if (uri != null && transfer != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            if (!model.retryTransferFrom(transfer, uri)) Toast.makeText(context, context.getString(R.string.transfer_reselect_unavailable), Toast.LENGTH_SHORT).show()
+        }
+    }
     var infoConversation by remember { mutableStateOf<ConversationSummary?>(null) }
+    var noteConversation by remember { mutableStateOf<ConversationSummary?>(null) }
     var infoTransfer by remember { mutableStateOf<TransferItem?>(null) }
     var infoAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
     var failureTransfer by remember { mutableStateOf<TransferItem?>(null) }
@@ -311,7 +319,9 @@ private fun BlueLinkAppContent(
     var selected by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var settingsPage by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(SETTINGS_HOME) }
-    val context = LocalContext.current
+    LaunchedEffect(draftSaveFailed) {
+        if (draftSaveFailed) Toast.makeText(context, R.string.content_draft_save_failed, Toast.LENGTH_LONG).show()
+    }
     var permissionRevision by remember { mutableIntStateOf(0) }
     val bluetoothAccess = rememberBluetoothAccess(permissionRevision)
     var selectedPeerId by remember { mutableStateOf<String?>(null) }
@@ -345,16 +355,26 @@ private fun BlueLinkAppContent(
         model.selectPeer(peerId)
         selected = 1
     }
+    LaunchedEffect(notificationPeer, conversations) {
+        notificationPeer?.let { peer ->
+            conversations.firstOrNull { it.peerId.equals(peer,true) }?.let {
+                previewAttachment = null
+                actionMessage = null; actionAttachment = null; actionTransfer = null
+                requestedConversationSearch = false
+                showSettings = false; openConversation(it.peerId); consumeNotification()
+            }
+        }
+    }
     BackHandler(enabled = showSettings || selected != 0) {
         if (showSettings && settingsPage != SETTINGS_HOME) settingsPage = settingsParent(settingsPage)
         else { showSettings = false; selected = 0 }
     }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && connection.canSendContent(readBluetoothAccess(context))) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val (name, size) = fileInfo(uri)
-            model.sendFile(uri, name, size)
+    var filePickerPeer by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val peer = filePickerPeer
+        if (peer != null && uris.isNotEmpty()) {
+            uris.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+            model.composer.picked(peer, uris)
         }
     }
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -378,15 +398,18 @@ private fun BlueLinkAppContent(
                 "com.android.externalstorage.documents", "primary:Download"))
         }
     }
-    val localUpdatePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            })
-        }.onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_open_package_failed), Toast.LENGTH_SHORT).show() }
-    }
     val interactionScope = rememberCoroutineScope()
+    var openingDocument by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun openDocument(attachment: com.bluelink.android.domain.ChatAttachment) {
+        if (openingDocument?.isActive == true) return
+        openingDocument = interactionScope.launch {
+            try { FileInteraction.open(context, attachment) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                Toast.makeText(context, context.getString(R.string.content_open_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     val saveCopyPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val attachment = pendingSaveAttachment
         pendingSaveAttachment = null
@@ -399,10 +422,46 @@ private fun BlueLinkAppContent(
         }
     }
 
+    fun requestMessageDeletion(message: ChatItem) {
+        confirmAction = ConfirmAction(context.getString(R.string.content_delete_record), context.getString(R.string.content_delete_message_body), context.getString(R.string.content_delete)) {
+            model.deleteMessage(message.id)
+        }
+    }
+    fun performTransferAction(transfer: TransferItem, action: TransferAction, messageId: java.util.UUID? = null) {
+        val attachment = transfer.asAttachment()
+        when (action) {
+            TransferAction.OPEN -> if (attachment.isImage) previewAttachment = attachment else openDocument(attachment)
+            TransferAction.SHARE -> runCatching { FileInteraction.share(context, attachment) }
+                .onFailure { Toast.makeText(context, context.getString(R.string.content_share_failed), Toast.LENGTH_SHORT).show() }
+            TransferAction.SAVE -> { pendingSaveAttachment = attachment; saveCopyPicker.launch(transfer.name) }
+            TransferAction.DETAILS -> { infoTransfer = transfer }
+            TransferAction.PAUSE -> model.pauseTransfer(transfer)
+            TransferAction.RESUME -> model.resumeTransfer(transfer)
+            TransferAction.RETRY -> model.retryTransfer(transfer)
+            TransferAction.BLUETOOTH -> if (!model.switchQueuedToBluetooth(transfer))
+                Toast.makeText(context, context.getString(R.string.transfer_reselect_unavailable), Toast.LENGTH_SHORT).show()
+            TransferAction.RESELECT -> { pendingRecoveryId = transfer.id.toString(); recoverySourcePicker.launch(arrayOf("*/*")) }
+            TransferAction.FAILURE -> { failureTransfer = transfer }
+            TransferAction.CANCEL -> {
+                val title = context.getString(if (transfer.outgoing) R.string.content_cancel_sending else R.string.content_cancel_receiving)
+                confirmAction = ConfirmAction(title,
+                    context.getString(if (transfer.outgoing) R.string.content_stop_sending else R.string.content_stop_receiving, transfer.name), title,
+                    context.getString(R.string.content_keep_files)) { model.cancelTransfer(transfer) }
+            }
+            TransferAction.DELETE -> {
+                if (messageId != null) confirmAction = ConfirmAction(context.getString(R.string.content_delete_local_message),
+                    context.getString(R.string.content_delete_file_message_body), context.getString(R.string.content_delete)) { model.deleteMessage(messageId) }
+                else confirmAction = ConfirmAction(context.getString(R.string.content_delete_transfer), context.getString(R.string.content_delete_transfer_body),
+                    context.getString(R.string.content_delete)) { model.deleteTransfer(transfer.id) }
+            }
+        }
+    }
+
     LaunchedEffect(bluetoothAccess) {
         if (bluetoothAccess.canUseBluetooth) onPermissionsReady()
     }
 
+    var filesSelectionMode by remember { mutableStateOf(false) }
     val mainContentState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (previewAttachment == null) {
         mainContentState.SaveableStateProvider("main") {
@@ -417,7 +476,8 @@ private fun BlueLinkAppContent(
                     }
                 },
                 bottomBar = {
-                    if ((showSettings && settingsPage == SETTINGS_HOME) || (!showSettings && selected != 1)) DeviceBottomNavigation(
+                    if (!(selected == 2 && !showSettings && filesSelectionMode) &&
+                        ((showSettings && settingsPage == SETTINGS_HOME) || (!showSettings && selected != 1))) DeviceBottomNavigation(
                         selected = if (showSettings) 2 else if (selected == 2) 1 else 0,
                     ) { destination ->
                         showSettings = destination == 2
@@ -439,8 +499,7 @@ private fun BlueLinkAppContent(
                             context.startActivity(Intent(if (bluetoothAccess == com.bluelink.android.domain.BluetoothAccessState.OFF)
                                 android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE else android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
                         }.onFailure { Toast.makeText(context, context.getString(R.string.connection_system_error), Toast.LENGTH_SHORT).show() }
-                    },
-                    checkLocalUpdate = { localUpdatePicker.launch(arrayOf("application/vnd.android.package-archive")) })
+                    })
                 else when (selected) {
                     0 -> DevicesScreen(
                         Modifier.padding(padding), devices, conversations, allTransfers.values.toList(), connection, discovery,
@@ -458,6 +517,13 @@ private fun BlueLinkAppContent(
                         if (bluetoothAccess.canUseBluetooth || connection.transport == com.bluelink.android.domain.SessionTransport.USB) connection else connection.copy(phase = ConnectionPhase.OFFLINE), conversations,
                         transfers = transfers.values.toList(), receiveDirectory = settings.downloadDirectory,
                         showImageThumbnails = settings.showImageThumbnails,
+                        composer = model.composer,
+                        draftText = selectedPeerId?.let { drafts?.get(it.lowercase(java.util.Locale.ROOT)) }.orEmpty(), draftReady = drafts != null,
+                        draftChanged = { text -> selectedPeerId?.let { model.editDraft(it, text) } }, flushDraft = model::flushDrafts,
+                        historyRevision = historyRevision,
+                        loadSearchHistory = { selectedPeerId?.let { model.loadSearchHistory(it) }.orEmpty() },
+                        loadHistoryContext = { item -> selectedPeerId?.let { model.loadHistoryContext(it, item.id) } ?: false },
+                        loadEarlierHistory = { selectedPeerId?.let { model.loadEarlierHistory(it) } ?: false },
                         searchRequested = requestedConversationSearch, searchRequestHandled = { requestedConversationSearch = false },
                         requestedTab = requestedConversationTab, tabRequestHandled = { requestedConversationTab = null },
                         messageListVisibilityChanged = model::setVisibleMessagePeer,
@@ -466,29 +532,44 @@ private fun BlueLinkAppContent(
                         openSettings = { settingsPage = 1; showSettings = true },
                         openTransfer = { transfer ->
                             if (transfer.asAttachment().canOpen && transfer.asAttachment().isImage) previewAttachment = transfer.asAttachment()
-                            else if (transfer.asAttachment().canOpen) runCatching { FileInteraction.open(context, transfer.asAttachment()) }
-                                .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_open_failed), Toast.LENGTH_SHORT).show() }
+                            else if (transfer.asAttachment().canOpen) openDocument(transfer.asAttachment())
                             else actionTransfer = transfer
-                        }, moreTransfer = { actionTransfer = it },
+                        }, moreTransfer = { selectMultipleFiles = null; actionTransfer = it },
+                        previewImagesChanged = reportPreviewImages,
+                        fileBatch = model.fileBatch,
+                        moreTransferWithSelection = { item, select -> actionTransfer = item; selectMultipleFiles = select },
                         send = { if (connection.canSendContent(readBluetoothAccess(context))) model.sendMessage(it) },
-                        pickFile = { if (connection.canSendContent(readBluetoothAccess(context))) filePicker.launch(arrayOf("*/*")) },
-                        longPressMessage = { actionMessage = it },
-                        longPressAttachment = { actionAttachment = it },
+                        pickFile = { selectedPeerId?.let { filePickerPeer = it; filePicker.launch(arrayOf("*/*")) } },
+                        searchTransferAction = { transfer, action, messageId -> performTransferAction(transfer, action, messageId) },
+                        deleteSearchMessage = ::requestMessageDeletion,
+                        deleteSelectedMessages = { ids -> selectedPeerId?.let { model.deleteSelectedMessages(it, ids) } ?: emptyList() },
+                        longPressMessageWithSelection = { message, enter -> actionMessage = message; selectMultipleMessages = enter },
+                        longPressAttachmentWithSelection = { attachment, enter -> actionAttachment = attachment; selectMultipleMessages = enter },
+                        longPressMessage = { actionMessage = it; selectMultipleMessages = null },
+                        longPressAttachment = { actionAttachment = it; selectMultipleMessages = null },
                         openAttachment = { attachment ->
                             if (attachment.canOpen && attachment.isImage) previewAttachment = attachment
-                            else runCatching { FileInteraction.open(context, attachment) }
-                                .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_open_failed), Toast.LENGTH_SHORT).show() }
+                            else openDocument(attachment)
                         })
-                    2 -> FilesScreen(Modifier.padding(padding), allTransfers.values.toList(), conversations,
+                    2 -> Column(Modifier.padding(padding)) {
+                        val pendingShares by (context.applicationContext as BlueLinkApplication).shareInbox.requests.collectAsStateWithLifecycle()
+                        val pendingShareCount = pendingShares.count { !it.complete }
+                        if(pendingShareCount > 0) TextButton(onClick={context.startActivity(Intent(context,com.bluelink.android.sharing.IncomingShareActivity::class.java))}) {
+                            Text(context.getString(R.string.share_pending,pendingShareCount))
+                        }
+                        FilesScreen(Modifier.weight(1f), allTransfers.values.toList(), conversations,
+                        previewImagesChanged = reportPreviewImages,
+                        selectionModeChanged = { filesSelectionMode = it },
                         receiveDirectory = settings.downloadDirectory,
-                        openSettings = { settingsPage = 1; showSettings = true }, more = { actionTransfer = it },
+                        openSettings = { settingsPage = 1; showSettings = true }, more = { selectMultipleFiles = null; actionTransfer = it },
+                        batch = model.fileBatch, moreWithSelection = { item, select -> actionTransfer = item; selectMultipleFiles = select },
                         open = { transfer ->
                             val attachment = transfer.asAttachment()
                             if (attachment.canOpen && attachment.isImage) previewAttachment = attachment
-                            else if (attachment.canOpen) runCatching { FileInteraction.open(context, attachment) }
-                                .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_open_failed), Toast.LENGTH_SHORT).show() }
+                            else if (attachment.canOpen) openDocument(attachment)
                             else actionTransfer = transfer
                         })
+                    }
                     else -> DiagnosticsScreen(Modifier.padding(padding), diagnostics, connection, discovery,
                         clear = model::clearDiagnostics)
                 }
@@ -532,6 +613,21 @@ private fun BlueLinkAppContent(
             conversations.firstOrNull { it.peerId == (transfer?.peerId ?: selectedPeerId) }?.peerName,
             outgoing = transfer?.outgoing ?: owner?.outgoing,
             timestamp = owner?.timestamp ?: transfer?.let { Instant.ofEpochMilli(it.startedAtEpochMs) },
+            loadAdjacent = { step ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val gallery = previewImages
+                    val current = gallery.indexOfFirst { it.transferId == attachment.transferId }
+                    var index = if (current >= 0) current + step else -1
+                    var readable: ChatAttachment? = null
+                    while (index in gallery.indices) {
+                        val candidate = gallery[index]
+                        if (FileInteraction.readable(context, candidate.localUri)) { readable = candidate; break }
+                        index += step
+                    }
+                    readable
+                }
+            },
+            selectImage = { previewAttachment = it },
             dismiss = { previewAttachment = null })
     }
 
@@ -550,6 +646,8 @@ private fun BlueLinkAppContent(
                 { requestedConversationSearch = true }
             } else null) { action ->
             when (action) {
+                DeviceAction.PIN -> model.savePeerPreference(conversation.peerId,pinned=!conversation.isPinned)
+                DeviceAction.NOTE -> noteConversation=conversation
                 DeviceAction.OPEN -> openConversation(conversation.peerId)
                 DeviceAction.CONNECT -> nearby?.let(connectDevice)
                 DeviceAction.INFO -> infoConversation = conversation
@@ -588,45 +686,11 @@ private fun BlueLinkAppContent(
                     val clipboard = context.getSystemService(ClipboardManager::class.java)
                     clipboard.setPrimaryClip(ClipData.newPlainText("BlueLink", message.text))
                 })
+                selectMultipleMessages?.let { enter -> add(ActionOption(context.getString(R.string.batch_select), R.drawable.ic_message_multiselect, action = enter)) }
                 add(ActionOption(context.getString(R.string.content_delete_record), R.drawable.figma_action_delete, destructive = true) {
-                    confirmAction = ConfirmAction(context.getString(R.string.content_delete_record), context.getString(R.string.content_delete_message_body), context.getString(R.string.content_delete)) {
-                        model.deleteMessage(message.id)
-                    }
+                    requestMessageDeletion(message)
                 })
-            }, dismiss = { actionMessage = null })
-    }
-    fun performTransferAction(transfer: TransferItem, action: TransferAction, messageId: java.util.UUID? = null) {
-        val attachment = transfer.asAttachment()
-        when (action) {
-            TransferAction.OPEN -> if (attachment.isImage) previewAttachment = attachment else runCatching { FileInteraction.open(context, attachment) }
-                .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_open_failed), Toast.LENGTH_SHORT).show() }
-            TransferAction.COPY -> runCatching { FileInteraction.copyReference(context, attachment) }
-                .onSuccess { Toast.makeText(context, context.getString(R.string.content_file_copied), Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.content_copy_failed), Toast.LENGTH_SHORT).show() }
-            TransferAction.REVEAL -> interactionScope.launch {
-                try { FileInteraction.reveal(context, attachment) }
-                catch (canceled: kotlinx.coroutines.CancellationException) { throw canceled }
-                catch (failure: Exception) { Toast.makeText(context, failure.message ?: context.getString(R.string.content_folder_unavailable), Toast.LENGTH_LONG).show() }
-            }
-            TransferAction.SAVE -> { pendingSaveAttachment = attachment; saveCopyPicker.launch(transfer.name) }
-            TransferAction.DETAILS -> { infoTransfer = transfer }
-            TransferAction.PAUSE -> model.pauseTransfer(transfer)
-            TransferAction.RESUME -> model.resumeTransfer(transfer)
-            TransferAction.RETRY -> model.retryTransfer(transfer)
-            TransferAction.FAILURE -> { failureTransfer = transfer }
-            TransferAction.CANCEL -> {
-                val title = context.getString(if (transfer.outgoing) R.string.content_cancel_sending else R.string.content_cancel_receiving)
-                confirmAction = ConfirmAction(title,
-                    context.getString(if (transfer.outgoing) R.string.content_stop_sending else R.string.content_stop_receiving, transfer.name), title,
-                    context.getString(R.string.content_keep_files)) { model.cancelTransfer(transfer) }
-            }
-            TransferAction.DELETE -> {
-                if (messageId != null) confirmAction = ConfirmAction(context.getString(R.string.content_delete_local_message),
-                    context.getString(R.string.content_delete_file_message_body), context.getString(R.string.content_delete)) { model.deleteMessage(messageId) }
-                else confirmAction = ConfirmAction(context.getString(R.string.content_delete_transfer), context.getString(R.string.content_delete_transfer_body),
-                    context.getString(R.string.content_delete)) { model.deleteTransfer(transfer.id) }
-            }
-        }
+            }, dismiss = { actionMessage = null; selectMultipleMessages = null })
     }
     actionAttachment?.let { attachment ->
         val owner = messages.firstOrNull { item -> item.attachments.any { it.attachmentId == attachment.attachmentId } }
@@ -638,17 +702,23 @@ private fun BlueLinkAppContent(
             startedAtEpochMs = owner?.timestamp?.toEpochMilli() ?: 0, updatedAtEpochMs = owner?.timestamp?.toEpochMilli() ?: 0)
         val online = allTransfers.containsKey(transfer.id) && conversations.any {
             it.peerId == transfer.peerId && it.availability == DeviceAvailability.CONNECTED }
-        com.bluelink.android.ui.files.TransferActionSheet(transfer, online, { actionAttachment = null },
-            messageContext = true, allowDelete = owner != null) { action -> performTransferAction(transfer, action, owner?.id) }
+        com.bluelink.android.ui.files.TransferActionSheet(transfer, online, { actionAttachment = null; selectMultipleMessages = null },
+            messageContext = true, allowDelete = owner != null, selectMultiple = selectMultipleMessages) { action -> performTransferAction(transfer, action, owner?.id) }
     }
     actionTransfer?.let { selectedTransfer ->
         val transfer = allTransfers[selectedTransfer.id] ?: selectedTransfer
         val online = conversations.any { it.peerId == transfer.peerId && it.availability == DeviceAvailability.CONNECTED }
-        com.bluelink.android.ui.files.TransferActionSheet(transfer, online, { actionTransfer = null }) { action ->
+        com.bluelink.android.ui.files.TransferActionSheet(transfer, online, { actionTransfer = null; selectMultipleFiles = null },
+            selectMultiple = selectMultipleFiles) { action ->
             performTransferAction(transfer, action)
         }
     }
 
+    noteConversation?.let { conversation ->
+        com.bluelink.android.ui.devices.PeerNotePrompt(conversation,{ noteConversation=null }) { text ->
+            model.savePeerPreference(conversation.peerId,note=text); noteConversation=null
+        }
+    }
     infoConversation?.let { conversation ->
         DeviceDetailsPrompt(conversation) { infoConversation = null }
     }
@@ -719,7 +789,6 @@ private fun SettingsScreen(
     diagnostics: List<DiagnosticEntry>,
     bluetoothAccess: com.bluelink.android.domain.BluetoothAccessState,
     changeBluetooth: () -> Unit,
-    checkLocalUpdate: () -> Unit,
 ) {
     if (selectedPage == SETTINGS_HOME) {
         SettingsHome(modifier, selectPage)
@@ -734,7 +803,7 @@ private fun SettingsScreen(
         1 -> { FileStorageSettings(modifier, settings, save, chooseDirectory, manageFiles); return }
         2 -> { PrivacySettings(modifier, settings, save, fingerprint, diagnostics, performPrivacyAction); return }
         SETTINGS_TRUSTED -> { TrustedDevicesScreen(modifier, conversations, forgetPeer, forgetAllPeers); return }
-        3 -> { AboutSettings(modifier, selectPage, checkLocalUpdate); return }
+        3 -> { AboutSettings(modifier, selectPage); return }
         SETTINGS_HELP -> { HelpFeedbackScreen(modifier, diagnostics, selectPage); return }
         SETTINGS_HELP_CONNECTION, SETTINGS_HELP_MESSAGES, SETTINGS_HELP_FAQ, SETTINGS_PRIVACY_POLICY, SETTINGS_AGREEMENT -> {
             SupportArticle(modifier, selectedPage) { selectPage(SETTINGS_HELP) }; return

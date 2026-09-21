@@ -22,6 +22,11 @@ import kotlin.io.path.inputStream
 
 
 object FileInteraction {
+    fun copyFileName(context: android.content.Context, fileName: String) {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setPrimaryClip(android.content.ClipData.newPlainText("BlueLink", fileName))
+    }
+
     data class ImageMetadata(val width: Int, val height: Int, val mimeType: String)
 
     suspend fun imageMetadata(context: Context, attachment: ChatAttachment): ImageMetadata? = withContext(Dispatchers.IO) {
@@ -47,15 +52,25 @@ object FileInteraction {
             ?: if (DocumentsContract.isDocumentUri(context, uri)) runCatching { DocumentsContract.getDocumentId(uri) }.getOrDefault(raw) else raw
     }
 
-    fun copyReference(context: Context, attachment: ChatAttachment) {
-        val uri = shareableUri(context, attachment)
-        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { }
-            ?: throw IOException("文件已移动或无法读取")
-        context.getSystemService(android.content.ClipboardManager::class.java)
-            .setPrimaryClip(android.content.ClipData.newUri(context.contentResolver, attachment.fileName, uri))
+    suspend fun open(context: Context, attachment: ChatAttachment) {
+        require(attachment.canOpen)
+        // Probe before navigation: binary files must never create a transient preview Activity.
+        val previewable = !attachment.isImage && readTextDocument(context, attachment) != null
+        withContext(Dispatchers.Main.immediate) {
+            if (previewable) TextPreviewActivity.open(context, attachment)
+            else openExternal(context, attachment)
+        }
     }
 
-    fun open(context: Context, attachment: ChatAttachment) {
+    internal suspend fun readTextDocument(context: Context, attachment: ChatAttachment): TextDocument? =
+        withContext(Dispatchers.IO) {
+            val uri = Uri.parse(requireNotNull(attachment.localUri))
+            val input = if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream()
+                else requireNotNull(context.contentResolver.openInputStream(uri))
+            input.use { TextDocuments.read(it, attachment.fileName, attachment.mimeType) }
+        }
+
+    fun openExternal(context: Context, attachment: ChatAttachment) {
         val uri = shareableUri(context, attachment)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, attachment.mimeType)
@@ -65,56 +80,90 @@ object FileInteraction {
     }
 
     fun share(context: Context, attachment: ChatAttachment) {
-        val uri = shareableUri(context, attachment)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = attachment.mimeType
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(intent, "分享文件"))
+        context.startActivity(shareChooserIntent(context, attachment))
     }
 
-    /** Directory navigation depends on the installed document provider/file manager. */
-    suspend fun reveal(context: Context, attachment: ChatAttachment) {
-        val folder = withContext(Dispatchers.IO) {
-            if (!attachment.canOpen) throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-            val uri = Uri.parse(attachment.localUri)
-            when {
-                DocumentsContract.isTreeUri(uri) && DocumentsContract.isDocumentUri(context, uri) -> {
-                    // https://developer.android.com/reference/android/provider/DocumentsContract#findDocumentPath(android.content.ContentResolver,android.net.Uri)
-                    val path = DocumentsContract.findDocumentPath(context.contentResolver, uri)?.path.orEmpty()
-                    val parent = path.getOrNull(path.lastIndex - 1)
-                        ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-                    DocumentsContract.buildDocumentUriUsingTree(uri, parent)
-                }
-                uri.authority == MediaStore.AUTHORITY -> {
-                    val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.VOLUME_NAME)
-                    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                        if (!cursor.moveToFirst()) throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-                        val relative = cursor.getString(0)?.trim('/')?.takeIf { it.isNotBlank() && it.split('/').none { part -> part == ".." } }
-                            ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-                        val volume = cursor.getString(1)?.takeIf { it.isNotBlank() }
-                            ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-                        val storage = if (volume == MediaStore.VOLUME_EXTERNAL_PRIMARY) "primary" else volume
-                        DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "$storage:$relative")
-                    } ?: throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-                }
-                uri.scheme == "file" || uri.authority == "${context.packageName}.files" ->
-                    throw IOException(context.getString(com.bluelink.android.R.string.content_folder_private))
-                else -> throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable))
-            }
-        }
-        withContext(Dispatchers.Main) {
-            try { context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(folder, DocumentsContract.Document.MIME_TYPE_DIR)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }) } catch (failure: android.content.ActivityNotFoundException) {
-                throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable), failure)
-            } catch (failure: SecurityException) {
-                throw IOException(context.getString(com.bluelink.android.R.string.content_folder_unavailable), failure)
-            }
+    internal fun shareChooserIntent(context: Context, attachment: ChatAttachment): Intent =
+        Intent.createChooser(shareIntent(context, attachment), null)
+
+    internal fun shareIntent(context: Context, attachment: ChatAttachment): Intent {
+        val uri = shareableUri(context, attachment)
+        // EXTRA_STREAM supplies the attachment; ClipData propagates its temporary read grant
+        // through the Android chooser, including WeChat and QQ's receiving activities.
+        return Intent(Intent.ACTION_SEND).apply {
+            type = attachment.mimeType.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TITLE, attachment.fileName)
+            clipData = android.content.ClipData.newUri(context.contentResolver, attachment.fileName, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
+
+    internal fun multiShareIntent(context: Context, attachments: List<ChatAttachment>): Intent {
+        require(attachments.isNotEmpty() && attachments.size <= com.bluelink.android.domain.FileBatchPolicy.MAXIMUM_SELECTION)
+        if (attachments.size == 1) return shareIntent(context, attachments.single())
+        val uris = attachments.map { shareableUri(context, it) }.distinct()
+        val types = attachments.map { it.mimeType.ifBlank { "application/octet-stream" } }.distinct()
+        return Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = types.singleOrNull() ?: if(types.all { it.startsWith("image/") }) "image/*" else "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            clipData = android.content.ClipData.newUri(context.contentResolver, attachments.first().fileName, uris.first()).also { clip ->
+                uris.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    /** Pure text is one compatible share; mixed runs become ordered UTF-8 text files. */
+    internal fun messageShareIntent(context: Context, messages: List<com.bluelink.android.domain.ChatItem>): Intent {
+        val parts = com.bluelink.android.domain.MessageShareContent.parts(messages)
+        require(parts.isNotEmpty())
+        val attachments = com.bluelink.android.domain.MessageBatch.attachments(messages)
+        if (attachments.isEmpty()) {
+            val text = (parts.single() as com.bluelink.android.domain.MessageSharePart.Text).content
+            return Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+                clipData = android.content.ClipData.newPlainText("BlueLink", text)
+            }
+        }
+        // Include generated text files in the same limit, before creating anything on disk.
+        require(parts.size <= com.bluelink.android.domain.FileBatchPolicy.MAXIMUM_SELECTION)
+        require(attachments.all { it.canOpen && !it.isTransferActive && !it.recoveryPending && readable(context, it.localUri) })
+        val created = mutableListOf<File>()
+        try {
+            val reserved = attachments.map { it.fileName.lowercase(java.util.Locale.ROOT) }.toMutableSet()
+            var textIndex = 0
+            val files = parts.map { part -> when (part) {
+                is com.bluelink.android.domain.MessageSharePart.File -> part.attachment
+                is com.bluelink.android.domain.MessageSharePart.Text -> {
+                    val baseName = com.bluelink.android.domain.MessageShareContent.textFileName(part.content, ++textIndex,
+                        context.getString(com.bluelink.android.R.string.message_share_text_file))
+                    var name = baseName
+                    var suffix = 2
+                    while (!reserved.add(name.lowercase(java.util.Locale.ROOT))) {
+                        name = baseName.removeSuffix(".txt") + " (${suffix++}).txt"
+                    }
+                    MessageShareTextFiles.create(context, part.content, name, created)
+                }
+            } }
+            return multiShareIntent(context, files).apply {
+                // TXT groups are files, so use the generic file receiver route, not text-only filters.
+                if (parts.any { it is com.bluelink.android.domain.MessageSharePart.Text }) type = "*/*"
+            }
+        } catch (failure: Exception) {
+            created.forEach { file -> runCatching { file.delete(); OwnedTemporaryFiles.release(file) } }
+            throw failure
+        }
+    }
+
+    fun readable(context: Context, uri: String?): Boolean = uri?.let {
+        runCatching {
+            val source = Uri.parse(it)
+            if(source.scheme == "file") File(requireNotNull(source.path)).inputStream().use { true }
+            else context.contentResolver.openInputStream(source)?.use { true } ?: false
+        }.getOrDefault(false)
+    } ?: false
 
     fun copyTo(context: Context, attachment: ChatAttachment, destination: Uri) {
         require(attachment.canOpen) { "文件尚未传输完成或已不可用" }
@@ -186,6 +235,6 @@ object FileInteraction {
         val raw = attachment.localUri ?: throw IOException("文件尚未下载完成")
         val parsed = Uri.parse(raw)
         return if (parsed.scheme == "file") FileProvider.getUriForFile(context,
-            "${context.packageName}.files", File(requireNotNull(parsed.path))) else parsed
+            "${context.packageName}.files", File(requireNotNull(parsed.path)), attachment.fileName) else parsed
     }
 }

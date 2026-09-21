@@ -17,8 +17,11 @@ public sealed partial class MainViewModel
         var trusted = _identity.TrustedIdentities.Any(item => string.Equals(item.PeerIdHex, peer.PeerId, StringComparison.OrdinalIgnoreCase));
         var signal = Devices.FirstOrDefault(item => item.Address == peer.TransportAddress)?.Rssi;
         var state = Strings.Get(peer.IsConnected ? "已连接" : peer.IsOffline ? "离线" : "附近可连接");
-        return DeviceInformation(peer.PeerName, peer.PlatformText, peer.PeerId, peer.PlatformIconSource,
+        var document = DeviceInformation(peer.PeerName, peer.PlatformText, peer.PeerId, peer.PlatformIconSource,
             trusted, state, peer.IsConnected, signal, peer.LastConnectedAt);
+        return string.IsNullOrWhiteSpace(peer.LocalNote) ? document : document with {
+            SummaryTitle = peer.DisplayName, Fields = document.Fields.Prepend(Field("设备备注",peer.LocalNote)).ToArray() };
+
     }
 
     internal InformationDocument DescribeDevice(NearbyDevice device)
@@ -37,7 +40,7 @@ public sealed partial class MainViewModel
         [Field("设备名称", name), Field("设备类型", Strings.Format($"{platform} 设备")), Field("设备标识", identifier),
          Field("信任状态", Strings.Get(trusted ? "已信任" : "未信任"), trusted ? "Success" : "Normal"),
          Field("连接状态", state, connected ? "Success" : "Normal"), Field("蓝牙信号", rssi is { } value ? $"{value} dBm" : null),
-         Field("最后连接", InformationTime(lastConnected))]);
+         Field("通信协议", "BTX/1.1"), Field("最后连接", InformationTime(lastConnected))]);
 
     internal async Task<InformationDocument> DescribeAttachmentAsync(ChatAttachment attachment, TransferItem? transfer = null, bool failure = false)
     {
@@ -49,6 +52,10 @@ public sealed partial class MainViewModel
         var peerId = transfer?.PeerId ?? stored?.PeerId;
         var peerName = peerId is null ? transfer?.PeerName : Conversations.FirstOrDefault(item => item.PeerId == peerId)?.PeerName
             ?? _storedPeers.GetValueOrDefault(peerId)?.DisplayName ?? peerId;
+        if (transfer?.RecoveryPending == true)
+            return new(Strings.Get("恢复说明"), transfer.StatusText, attachment.FileName, InformationIcon("information-file"), 370,
+                [Field("传输状态", transfer.StatusText), Field("恢复说明", Strings.Get(transfer.FailureDetail ?? "")),
+                 Field("设备名称", peerName), Field("保存位置", attachment.LocalPath ?? Strings.Get("尚未保存"))]);
         return AttachmentInformation(attachment, outgoing, peerName, stored, transfer?.FailureDetail, failure);
     }
 

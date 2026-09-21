@@ -57,10 +57,10 @@ internal fun ContentIconButton(asset: Int, description: String, modifier: Modifi
 
 @Composable
 internal fun ContentSearch(value: String, onChange: (String) -> Unit, placeholder: String,
-                           modifier: Modifier = Modifier, height: Dp = 40.dp) {
+                           modifier: Modifier = Modifier, height: Dp = 40.dp, cornerRadius: Dp = 12.dp) {
     val context = LocalContext.current
-    Row(modifier.fillMaxWidth().heightIn(min = height).clip(RoundedCornerShape(12.dp))
-        .background(DeviceColors.Surface).border(1.dp, DeviceColors.Border, RoundedCornerShape(12.dp))
+    Row(modifier.fillMaxWidth().heightIn(min = height).clip(RoundedCornerShape(cornerRadius))
+        .background(DeviceColors.Surface).border(1.dp, DeviceColors.Border, RoundedCornerShape(cornerRadius))
         .padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         FigmaIcon(R.drawable.figma_content_search, size = 20.dp)
         BasicTextField(value, onChange, singleLine = true,
@@ -173,6 +173,11 @@ internal fun contentDay(instant: Instant, context: Context): String {
     return when (date) { LocalDate.now() -> context.getString(R.string.content_today); LocalDate.now().minusDays(1) -> context.getString(R.string.content_yesterday); else -> date.toString() }
 }
 internal fun contentTime(instant: Instant): String = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(instant)
+internal fun contentStatus(item: TransferItem, context: Context): String =
+    if (item.recoveryPending) context.getString(if (item.outgoing) R.string.transfer_recovery_pending else R.string.transfer_recovery_wait_sender)
+    else if (item.queuedForUsb && item.status == TransferStatus.QUEUED) context.getString(R.string.transfer_usb_waiting)
+    else contentStatus(item.status, context, item.outgoing)
+
 internal fun contentStatus(status: TransferStatus, context: Context, outgoing: Boolean? = null): String = when (status) {
     TransferStatus.OFFERED, TransferStatus.QUEUED -> context.getString(if (outgoing == false) R.string.content_waiting_receive else R.string.content_waiting)
     TransferStatus.TRANSFERRING -> context.getString(if (outgoing == false) R.string.content_receiving else R.string.content_transferring)
@@ -186,8 +191,11 @@ internal fun contentStatus(status: TransferStatus, context: Context, outgoing: B
     TransferStatus.FAILED -> context.getString(if (outgoing == false) R.string.content_receive_failed else R.string.content_failed)
     TransferStatus.CANCELED -> context.getString(R.string.content_canceled)
 }
-internal fun ChatAttachment.contentStatus(context: Context, outgoing: Boolean? = null): String = TransferStatus.entries.firstOrNull { it.name == state }
-    ?.let { contentStatus(it, context, outgoing) } ?: context.getString(R.string.content_waiting)
+internal fun ChatAttachment.contentStatus(context: Context, outgoing: Boolean? = null): String =
+    if (recoveryPending) context.getString(if (outgoing ?: recoveryOutgoing) R.string.transfer_recovery_pending else R.string.transfer_recovery_wait_sender)
+    else if (queuedForUsb && state == "QUEUED") context.getString(R.string.transfer_usb_waiting)
+    else TransferStatus.entries.firstOrNull { it.name == state }
+        ?.let { contentStatus(it, context, outgoing) } ?: context.getString(R.string.content_waiting)
 
 internal fun receiveDirectoryLabel(raw: String, context: Context): String = when {
     raw.startsWith("downloads://") -> "Download/${raw.removePrefix("downloads://")}" 
@@ -200,7 +208,10 @@ internal fun FileStatusFilter.contentLabel(context: Context): String = context.g
     FileStatusFilter.ALL -> R.string.content_all_statuses
     FileStatusFilter.ACTIVE -> R.string.content_transferring
     FileStatusFilter.COMPLETED -> R.string.content_completed
+    FileStatusFilter.INCOMPLETE -> R.string.content_incomplete_group
     FileStatusFilter.FAILED -> R.string.content_failed_group
+    FileStatusFilter.REJECTED -> R.string.content_rejected
+    FileStatusFilter.CANCELED -> R.string.content_canceled
 })
 internal fun FileDirectionFilter.contentLabel(context: Context): String = context.getString(when (this) {
     FileDirectionFilter.ALL -> R.string.content_all_directions

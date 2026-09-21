@@ -1,15 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
   <Package Name="$(var.ProductName)" ProductCode="$(var.ProductCode)" Manufacturer="BlueLink"
            Version="$(var.ProductVersion)" Language="2052" Scope="perUser" InstallerVersion="500"
            UpgradeCode="$(var.PackageUpgradeCode)">
     <SummaryInformation Description="蓝联安全蓝牙聊天与文件传输" Manufacturer="BlueLink" />
     <MajorUpgrade DowngradeErrorMessage="此电脑上已安装更高版本的蓝联。" Schedule="$(var.MajorUpgradeSchedule)" AllowSameVersionUpgrades="$(var.AllowSameVersionUpgrades)" />
     <MediaTemplate EmbedCab="yes" />
+<?ifdef NativeMsiUi ?>
+    <Property Id="BLUELINK_BUNDLED_RUNTIME" Value="$(var.BundledDesktopRuntime)" />
+    <Property Id="MsiLogging" Value="voicewarmupx" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="立即运行蓝联" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <ui:WixUI Id="BlueLink_Msi" InstallDirectory="INSTALLFOLDER" />
+    <CustomAction Id="LaunchBlueLinkAfterInstall" FileRef="BlueLinkExe" ExeCommand="" Return="asyncNoWait" Impersonate="yes" />
+<?if $(var.BundledDesktopRuntime) = 0 ?>
+    <netfx:DotNetCompatibilityCheck Id="BlueLinkDesktopRuntime" Property="BLUELINK_DOTNET_CHECK" Platform="$(sys.BUILDARCH)" RuntimeType="desktop" Version="8.0.0" RollForward="latestMinor" />
+    <Launch Condition="REMOVE~=&quot;ALL&quot; OR BLUELINK_DOTNET_CHECK=&quot;0&quot;" Message="需要匹配架构的 Microsoft .NET 8 桌面运行时。请先安装运行时，或使用蓝联 EXE 安装向导，再重试 MSI。" />
+<?endif ?>
+<?endif ?>
     <Property Id="CREATE_DESKTOP_SHORTCUT" Value="1" Secure="yes" />
     <Property Id="AUTOSTART" Value="0" Secure="yes" />
     <Property Id="BLUELINK_BUNDLE_PROVIDER_KEY" Secure="yes" />
     <Property Id="ARPINSTALLLOCATION" Secure="yes" />
+    <Property Id="BLUELINK_PREVIOUS_INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="BlueLinkPreviousInstallFolder" Root="HKCU" Key="$(var.ProductRegistryKey)" Name="InstallFolder" Type="directory" />
+    </Property>
+    <Property Id="INSTALLFOLDER" Secure="yes" />
+    <!-- Resolve before directory costing in both interactive and quiet installs.
+         A user/Burn-supplied directory always takes precedence over discovery. -->
+    <SetProperty Id="INSTALLFOLDER" Action="UsePreviousBlueLinkFolder" Value="[BLUELINK_PREVIOUS_INSTALLFOLDER]" Before="CostInitialize" Sequence="both" Condition="NOT INSTALLFOLDER AND BLUELINK_PREVIOUS_INSTALLFOLDER" />
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="both" />
     <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
 
     <StandardDirectory Id="LocalAppDataFolder">

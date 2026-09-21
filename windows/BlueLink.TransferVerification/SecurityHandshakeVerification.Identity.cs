@@ -1,6 +1,7 @@
 using System.IO;
 using BlueLink.Security;
 using BlueLink.Storage;
+using BlueLink.Domain;
 
 internal sealed partial class SecurityHandshakeVerification
 {
@@ -39,10 +40,19 @@ internal sealed partial class SecurityHandshakeVerification
             var candidate = await db.FindIdentityCandidateAsync(newId, hint);
             Check(candidate?.PeerId == oldId, mode + ": exact known MAC selects original peer");
             var applied = 0;
+            var drafts = new ComposerDrafts(Path.Combine(root, "composer-" + mode));
+            var sourcePath = Path.Combine(root, "identity-source-" + mode + ".bin"); File.WriteAllText(sourcePath, "owned test source");
+            var stagedFile = new ComposerAttachment(Guid.NewGuid(), sourcePath, "source.bin", new FileInfo(sourcePath).Length);
+            drafts.Edit(oldId, [new(Guid.NewGuid(), "保留的草稿"), new(stagedFile.Id, File: stagedFile)]);
+            db.AssociateComposerDrafts = legacy =>
+            {
+                var merged = drafts.Associate(local.IdentityAssociations, legacy);
+                if (mode == "recover" && applied == 1) { applied++; throw new IOException("Injected DB failure after composer commit"); }
+                return merged;
+            };
             var handler = new IdentityAssociationHandler((id, token) => db.FindIdentityCandidateAsync(id, hint, token), _ => mode != "busy", async () =>
             {
                 applied++;
-                if (mode == "recover") throw new IOException("Simulated interruption before history migration");
                 await db.ApplyIdentityAssociationsAsync(local);
             });
             await using (var pair = new Pair(local, remote, mode == "timeout" ? TimeSpan.FromMilliseconds(800) : null, oldId, handler))
@@ -76,7 +86,7 @@ internal sealed partial class SecurityHandshakeVerification
                 {
                     Check(mode == "recover" ? result.Error is not null : result.Error is null, mode + ": expected handshake outcome");
                     Check(local.FindTrustedKey(oldId) is null && local.FindTrustedKey(newId) is not null && local.IsRetired(oldId), mode + ": old trust replaced once");
-                    Check(local.IdentityAssociations.GetValueOrDefault(oldId) == newId && applied == 1, mode + ": durable approved migration journal");
+                    Check(local.IdentityAssociations.GetValueOrDefault(oldId) == newId && applied == (mode == "recover" ? 2 : 1), mode + ": durable approved migration journal");
                 }
                 else
                 {
@@ -90,6 +100,10 @@ internal sealed partial class SecurityHandshakeVerification
             var reloaded = Store(root, "associate-" + mode);
             await db.InitializeAsync(reloaded);
             await db.ApplyIdentityAssociationsAsync(reloaded);
+            Check(drafts.Get(oldId).Count == 0 && drafts.Get(newId).Single(value => value.File is not null).File == stagedFile,
+                mode + ": mixed draft attachment and position survive repeated association");
+            Check(new ComposerDrafts(Path.Combine(root, "composer-" + mode)).Get(newId).Count == 2 && File.ReadAllText(sourcePath) == "owned test source",
+                mode + ": reopened mixed draft and original bytes survive DB rollback/replay");
             var peer = (await db.LoadPeersAsync()).Single();
             Check(peer.PeerId == newId && peer.DisplayName == "原电脑备注" && peer.CreatedAt == 100, mode + ": one card retains original metadata");
             var conversation = (await db.LoadConversationsAsync()).Single();

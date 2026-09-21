@@ -5,4 +5,7 @@
     <FileVersion>$(BlueLinkVersion).0</FileVersion>
     <AssemblyVersion>$(BlueLinkVersion).0</AssemblyVersion>
   </PropertyGroup>
+  <ItemGroup Condition="'$(BLUELINK_RELEASE_TAG)' != ''">
+    <AssemblyMetadata Include="ReleaseTag" Value="$(BLUELINK_RELEASE_TAG)" />
+  </ItemGroup>
 </Project>

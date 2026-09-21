@@ -1,0 +1,4 @@
+<resources>
+    <string name="content_first_image">已經是第一張圖片</string>
+    <string name="content_last_image">已經是最後一張圖片</string>
+</resources>

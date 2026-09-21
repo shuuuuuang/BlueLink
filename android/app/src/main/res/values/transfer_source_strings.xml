@@ -1,0 +1,4 @@
+<resources>
+    <string name="transfer_source_identity_missing">旧任务缺少文件指纹，请重新选择文件发送</string>
+    <string name="transfer_source_identity_changed">文件内容已变化，请重新选择文件发送</string>
+</resources>

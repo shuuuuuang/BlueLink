@@ -25,7 +25,7 @@ public partial class UpdateWindow : Wpf.Ui.Controls.FluentWindow
     private void ApplyState()
     {
         if (_closed) return;
-        UpdatePrimaryButton.IsEnabled = !_workflow.Busy;
+        UpdatePrimaryButton.IsEnabled = _workflow.CanUsePrimary;
         UpdateNote.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, _workflow.HasError ? "SoftDangerBrush" : "SoftBlueBrush");
         UpdateNoteTitle.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, _workflow.HasError ? "DangerBrush" : "InkBrush");
     }

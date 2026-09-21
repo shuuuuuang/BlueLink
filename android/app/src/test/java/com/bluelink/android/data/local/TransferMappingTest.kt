@@ -10,10 +10,11 @@ class TransferMappingTest {
         val id = UUID.randomUUID(); val message = UUID.randomUUID()
         val row = TransferEntity(id.toString(), "other-peer", message.toString(), "INCOMING", "COMPLETED",
             "photo.png", "image/png", 200, 200, "content://qa/photo", createdAt = 1700000000000,
-            updatedAt = 1700000002000)
+            updatedAt = 1700000002000, sha256 = ByteArray(32) { 0x9f.toByte() })
         val item = row.toTransferItem()
         assertEquals(row.createdAt, item.startedAtEpochMs); assertEquals(row.updatedAt, item.updatedAtEpochMs)
         assertEquals(row.toTransferItem(), item)
+        assertEquals("9f".repeat(32), item.sourceSha256)
         assertEquals(id, item.id); assertEquals(message, item.messageId); assertEquals("other-peer", item.peerId)
         assertFalse(item.outgoing); assertEquals(TransferStatus.COMPLETED, item.status)
         assertEquals(row.localUri, item.localUri); assertEquals("image/png", item.mimeType)

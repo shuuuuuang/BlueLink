@@ -61,7 +61,7 @@
         <item>Device and data security</item>
         <item>After resetting a device identity or removing a trusted device, verify the safety code again. Back up important files and records yourself.</item>
         <item>Updates and internet access</item>
-        <item>Checking for updates and downloading new versions requires internet access. Messages and files continue to be transferred only over Bluetooth.</item>
+        <item>Updates query public GitHub release information and download and verify packages inside the app. No device, message, or file content is uploaded. Installation requires permission to install apps from BlueLink and confirmation in the system installer. Messages and files continue to use direct device connections.</item>
         <item>Limitations and termination</item>
         <item>Interruptions or data loss caused by device compatibility, Bluetooth conditions or user actions must be addressed according to the circumstances. You may stop using and uninstall the app at any time.</item>
     </string-array>

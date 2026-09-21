@@ -13,11 +13,15 @@ internal class MtpSpool private constructor(private val context: Context, val tr
     val epoch: String, val path: List<String>, val proof: ByteArray) : AutoCloseable {
     private val resolver get() = context.contentResolver
     private val owned = java.util.concurrent.ConcurrentHashMap.newKeySet<Uri>()
-    fun createBlob(name: String): Uri {
+    fun createBlob(name: String, taskId: UUID): Uri {
         validateName(name)
         check(find(name) == null) { "USB 中转文件已存在" }
         return (Documents.createDocument(resolver, directory, "application/octet-stream", name)
-            ?: throw IOException("无法创建 USB 中转文件")).also { owned.add(it) }
+            ?: throw IOException("无法创建 USB 中转文件")).also {
+                owned.add(it)
+                try { MtpOwnedStorage.ledger(context).add(epoch,it.toString(),taskId) }
+                catch (error: Exception) { runCatching { Documents.deleteDocument(resolver,it) }; throw error }
+            }
     }
     fun find(name: String): Uri? {
         validateName(name)
@@ -34,6 +38,7 @@ internal class MtpSpool private constructor(private val context: Context, val tr
         find(name)?.let { uri -> Documents.deleteDocument(resolver, uri); owned.remove(uri) }
     }
     override fun close() {
+        try {
         // Delete only exact objects created by this session. Never recursively delete the user's tree.
         owned.toList().forEach { uri -> runCatching { Documents.deleteDocument(resolver, uri) }; owned.remove(uri) }
         runCatching {
@@ -41,6 +46,7 @@ internal class MtpSpool private constructor(private val context: Context, val tr
             val empty = resolver.query(children, arrayOf(Documents.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { !it.moveToFirst() } == true
             if (empty) Documents.deleteDocument(resolver, directory)
         }
+        } finally { MtpOwnedStorage.ledger(context).release(epoch) }
     }
     companion object {
         private const val AUTHORITY = "com.android.externalstorage.documents"
@@ -68,9 +74,11 @@ internal class MtpSpool private constructor(private val context: Context, val tr
             val proof = ByteArray(32).also { SecureRandom().nextBytes(it) }
             val spool = MtpSpool(context, tree, directory, epoch, path, proof)
             try {
+                MtpOwnedStorage.ledger(context).begin(epoch,tree.toString(),directory.toString())
                 val marker = Documents.createDocument(context.contentResolver, directory, "application/octet-stream", "peer-proof")
                     ?: throw IOException("无法写入 USB 认证标记")
                 spool.owned.add(marker)
+                MtpOwnedStorage.ledger(context).add(epoch,marker.toString())
                 context.contentResolver.openOutputStream(marker, "wt")!!.use { it.write(proof) }
                 return spool
             } catch (error: Throwable) { spool.close(); throw error }

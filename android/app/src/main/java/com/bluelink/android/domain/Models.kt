@@ -114,7 +114,11 @@ data class ConversationSummary(
     val usbReady: Boolean = false,
     val transport: SessionTransport = SessionTransport.BLUETOOTH,
     val isRemoved: Boolean = false,
-)
+    val localNote: String = "",
+    val isPinned: Boolean = false,
+) {
+    val displayName: String get() = localNote.ifBlank { peerName }
+}
 
 data class TrustPrompt(
     val requestId: UUID = UUID.randomUUID(),
@@ -138,7 +142,15 @@ data class ChatAttachment(
     val previewUri: String? = null,
     val completedBytes: Long = 0,
     val bytesPerSecond: Double = 0.0,
+    val recoveryPending: Boolean = false,
+    val recoveryOutgoing: Boolean = true,
+    val queuedForUsb: Boolean = false,
 ) {
+    fun withTransfer(transfer: TransferItem?): ChatAttachment =
+        if (transfer == null || transfer.id != transferId || transfer.role == AttachmentRole.IMAGE_PREVIEW) this
+        else copy(localUri = transfer.localUri ?: localUri, state = transfer.status.name,
+            completedBytes = transfer.completedBytes, bytesPerSecond = transfer.bytesPerSecond,
+            recoveryPending = transfer.recoveryPending, recoveryOutgoing = transfer.outgoing, queuedForUsb = transfer.queuedForUsb)
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
     val isAvailable: Boolean get() = !localUri.isNullOrBlank()
     val canOpen: Boolean get() = state == "COMPLETED" && isAvailable
@@ -148,6 +160,7 @@ data class ChatAttachment(
     fun showsThumbnail(enabled: Boolean): Boolean = enabled && isImage && thumbnailUri != null
     val progress: Float get() = if (sizeBytes == 0L) 1f else
         (completedBytes.toFloat() / sizeBytes).coerceIn(0f, 1f)
+    val isProgressIndeterminate: Boolean get() = state in setOf("OFFERED", "QUEUED", "VERIFYING", "COMMITTING")
     val isTransferActive: Boolean get() = state in setOf("OFFERED", "QUEUED", "TRANSFERRING",
         "PAUSED", "REMOTE_PAUSED", "RESUMING", "VERIFYING", "COMMITTING")
 }
@@ -184,7 +197,15 @@ data class TransferItem(
     val startedAtEpochMs: Long = System.currentTimeMillis(),
     val updatedAtEpochMs: Long = System.currentTimeMillis(),
     val bytesPerSecond: Double = 0.0,
+    val sourceSha256: String? = null,
+    val attemptId: UUID? = null,
+    val attemptSequence: Long = 0,
+    val recoveryPending: Boolean = false,
+    val queuedForUsb: Boolean = false,
 ) {
+    val canSwitchToBluetooth: Boolean get() = outgoing && status == TransferStatus.QUEUED && queuedForUsb
+    val isProgressIndeterminate: Boolean get() = status in setOf(TransferStatus.OFFERED, TransferStatus.QUEUED,
+        TransferStatus.VERIFYING, TransferStatus.COMMITTING)
     val progress: Float get() = if (totalBytes == 0L) 1f else completedBytes.toFloat() / totalBytes
     val remainingSeconds: Long? get() = bytesPerSecond.takeIf { it > 0.0 && totalBytes > completedBytes }
         ?.let { ((totalBytes - completedBytes) / it).toLong().coerceAtLeast(0) }

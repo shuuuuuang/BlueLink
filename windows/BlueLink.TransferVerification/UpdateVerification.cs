@@ -19,8 +19,10 @@ internal sealed class UpdateVerification
             Check(release?.Version == source.Version && release.Sha256 == Convert.ToHexString(SHA256.HashData(source.Payload)), "feed selects exact Windows package with its digest");
             Check(UpdateService.ParseRelease(source.Metadata(), source.Version) is null, "same version does not produce an update");
             Check(UpdateService.ParseRelease(source.Metadata(), new Version(99, 0, 0)) is null, "older releases cannot cause downgrades");
-            foreach (var mode in new[] { "draft", "prerelease", "missing-asset", "missing-digest", "foreign-url", "huge" })
+            foreach (var mode in new[] { "missing-asset", "missing-digest", "foreign-url", "huge" })
                 await Fails(() => Task.FromResult(UpdateService.ParseRelease(source.Metadata(mode), UpdateService.CurrentVersion)), "invalid release: " + mode);
+            Check(UpdateService.ParseRelease(source.Metadata("draft"), UpdateService.CurrentVersion) is null, "draft release is ignored");
+            Check(UpdateService.ParseRelease(source.Metadata("prerelease"), UpdateService.CurrentVersion) is null, "stable policy ignores prerelease");
             source.Mode = "404";
             await Fails(() => service.CheckAsync(UpdateService.CurrentVersion, CancellationToken.None), "missing release is a failure, not up to date");
             source.Mode = "normal";
@@ -94,12 +96,14 @@ internal sealed class UpdateTestSource : HttpMessageHandler
     public Version Version { get; } = new(UpdateService.CurrentVersion.Major + 1, 1, 0);
     public byte[] Payload { get; } = Enumerable.Range(0, 1000).Select(x => (byte)x).ToArray();
     public string Mode { get; set; } = "normal";
+    public bool Portable { get; init; }
+    private string FileName => Portable ? $"BlueLink-{Version}-{UpdateService.RuntimeIdentifier}-Portable.zip" : $"BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe";
     public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public byte[] Metadata(string mode = "normal") => JsonSerializer.SerializeToUtf8Bytes(new
     {
         tag_name = "v" + Version, draft = mode == "draft", prerelease = mode == "prerelease", body = "QA 更新说明：实际下载与校验状态。",
-        assets = new[] { new { name = mode == "missing-asset" ? "Android.apk" : $"BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
-            browser_download_url = mode == "foreign-url" ? "https://example.com/installer.exe" : $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/BlueLink-Setup-{Version}-{UpdateService.RuntimeIdentifier}.exe",
+        assets = new[] { new { name = mode == "missing-asset" ? "Android.apk" : FileName,
+            browser_download_url = mode == "foreign-url" ? "https://example.com/installer.exe" : $"https://github.com/{UpdateService.Repository}/releases/download/v{Version}/{FileName}",
             size = mode == "huge" ? UpdateService.MaximumPackageBytes + 1 : Payload.Length,
             digest = mode == "missing-digest" ? null : "sha256:" + Convert.ToHexString(SHA256.HashData(Payload)) } }
     });

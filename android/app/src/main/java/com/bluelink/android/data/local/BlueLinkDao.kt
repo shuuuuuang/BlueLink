@@ -45,6 +45,9 @@ interface ConversationDao {
     @Upsert
     suspend fun upsert(value: ConversationEntity)
 
+    @Query("UPDATE conversation SET draft=:text WHERE peerId=:peerId COLLATE NOCASE")
+    suspend fun updateDraft(peerId: String, text: String): Int
+
     @Query("UPDATE conversation SET unreadCount=0")
     suspend fun markAllRead()
 
@@ -54,6 +57,17 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
+    /** Startup only: a previous process cannot still be sending. Reconnect never replays messages. */
+    @Query("UPDATE message SET status='FAILED' WHERE direction='OUTGOING' AND status IN ('SENDING','LOCAL_QUEUED')")
+    suspend fun recoverInterruptedOutgoing(): Int
+
+
+    @Query("SELECT * FROM message WHERE conversationId=:conversationId AND (:beforeTime IS NULL OR createdAt < :beforeTime OR (createdAt=:beforeTime AND messageId < :beforeId)) ORDER BY createdAt DESC,messageId DESC LIMIT :limit")
+    suspend fun loadPage(conversationId: String, beforeTime: Long?, beforeId: String?, limit: Int): List<MessageEntity>
+
+    @Query("SELECT * FROM message WHERE conversationId=:conversationId AND (createdAt > :time OR (createdAt=:time AND messageId > :id)) ORDER BY createdAt,messageId LIMIT :limit")
+    suspend fun loadAfter(conversationId: String, time: Long, id: String, limit: Int): List<MessageEntity>
+
     @Query("SELECT * FROM message WHERE conversationId=:conversationId ORDER BY monotonicOrder, createdAt")
     fun observeConversation(conversationId: String): Flow<List<MessageEntity>>
 
@@ -81,6 +95,15 @@ interface MessageDao {
 
 @Dao
 interface AttachmentDao {
+    @Query("SELECT localUri FROM attachment WHERE localUri IS NOT NULL UNION SELECT previewUri FROM attachment WHERE previewUri IS NOT NULL UNION SELECT localUri FROM transfer WHERE localUri IS NOT NULL UNION SELECT snapshotPath FROM transfer WHERE snapshotPath IS NOT NULL")
+    suspend fun referencedFiles(): List<String>
+
+    @Query("SELECT * FROM attachment WHERE messageId IN (:ids) ORDER BY rowid")
+    suspend fun loadForMessages(ids: List<String>): List<AttachmentEntity>
+
+    @Query("SELECT attachment.* FROM attachment INNER JOIN message ON attachment.messageId=message.messageId WHERE message.conversationId=:conversationId ORDER BY attachment.rowid")
+    suspend fun loadForConversation(conversationId: String): List<AttachmentEntity>
+
     @Query("SELECT * FROM attachment WHERE messageId=:messageId")
     fun observeForMessage(messageId: String): Flow<List<AttachmentEntity>>
 

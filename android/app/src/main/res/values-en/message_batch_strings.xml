@@ -1,0 +1,12 @@
+<resources>
+    <string name="message_batch_copied">Selected messages copied</string>
+    <string name="message_batch_copy_failed">Copy failed. Please try again.</string>
+    <string name="message_batch_copy">Copy</string>
+    <string name="message_batch_share_limit">Share up to 100 attachments at a time. Select fewer files.</string>
+    <string name="message_batch_summary">Deleted %1$d; skipped or failed %2$d</string>
+    <string name="message_batch_delete_confirm">Delete %1$d selected messages from this device?</string>
+    <string name="message_batch_delete_note">Only local message records will be deleted. Saved files are kept. Messages being sent or awaiting recovery will be skipped.</string>
+    <string name="message_batch_active">Messages being sent or awaiting recovery cannot be deleted.</string>
+    <string name="message_batch_select_to_here">Select to here</string>
+    <string name="message_share_text_file">Shared text</string>
+</resources>

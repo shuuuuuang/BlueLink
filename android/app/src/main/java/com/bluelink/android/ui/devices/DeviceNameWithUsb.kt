@@ -16,11 +16,16 @@ import com.bluelink.android.R
 
 /** Shrink the name before the indicator; short names keep the icon directly beside them. */
 @Composable
-internal fun DeviceNameWithUsb(name: String, ready: Boolean, fontSize: TextUnit = 14.sp, lineHeight: TextUnit = 24.sp) {
+internal fun DeviceNameWithUsb(name: String, ready: Boolean, fontSize: TextUnit = 14.sp, lineHeight: TextUnit = 24.sp, pinned: Boolean = false) {
     val description = stringResource(R.string.usb_session_ready)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(name, modifier = Modifier.weight(1f, fill = false), color = DeviceColors.Ink,
             fontSize = fontSize, lineHeight = lineHeight, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (pinned) {
+            val pinnedLabel=stringResource(R.string.peer_pinned)
+            Spacer(Modifier.width(4.dp))
+            FigmaIcon(R.drawable.ic_peer_pin,Modifier.semantics { contentDescription=pinnedLabel },size=14.dp,tint=DeviceColors.Secondary)
+        }
         if (ready) {
             Spacer(Modifier.width(6.dp))
             FigmaIcon(R.drawable.figma_usb_ready, Modifier.semantics { contentDescription = description },

@@ -9,10 +9,9 @@ internal sealed record ChatThumbnailGeometry(double Width, double Height, double
     public double InsetX => (Width - ImageWidth) / 2;
     public double InsetY => (Height - ImageHeight) / 2;
 
-    public static ChatThumbnailGeometry Calculate(double width, double height, double maxWidth = 240, double maxHeight = 144)
+    public static ChatThumbnailGeometry Calculate(double width, double height, double maxWidth = 240, double maxHeight = 144, double minimum = 48)
     {
-        const double minimum = 48;
-        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0 ||
+        if (!double.IsFinite(minimum) || minimum <= 0 || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0 ||
             !double.IsFinite(maxWidth) || !double.IsFinite(maxHeight) || maxWidth < minimum || maxHeight < minimum)
             throw new ArgumentOutOfRangeException(nameof(width));
         var shortEdge = Math.Min(width, height);

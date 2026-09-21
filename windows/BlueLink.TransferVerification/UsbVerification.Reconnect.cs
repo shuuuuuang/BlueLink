@@ -43,8 +43,22 @@ internal sealed partial class UsbVerification
             var retryGate = await Link(cancelRetry ? 0 : null);
             var newRoute = await WaitFor(sender, TransportKind.Bluetooth);
             Check(newRoute.SessionId != oldRoute.SessionId && newRoute.PeerId == oldRoute.PeerId, "reconnect creates a new live owner for same authenticated peer");
+            var retriedEvents = 0;
+            void CountRetry(SessionSnapshot _, TransferItem item) { if (item.Id == failed.Id) Interlocked.Increment(ref retriedEvents); }
+            sender.TransferChanged += CountRetry;
+            try
+            {
+                var changed = bytes.ToArray(); changed[0] ^= 1;
+                await File.WriteAllBytesAsync(source, changed);
+                try { await sender.RetryFileAsync(newRoute.SessionId, source, failed); throw new Exception("changed source was submitted"); }
+                catch (InvalidOperationException) { }
+                Check(retriedEvents == 0, "same-size replacement is rejected before any queued event or offer");
+                await File.WriteAllBytesAsync(source, bytes);
+            }
+            finally { sender.TransferChanged -= CountRetry; }
             var retry = sender.RetryFileAsync(newRoute.SessionId, source, failed);
             var resumed = await Read(sent.Reader, item => item.Status == TransferStatus.Resuming);
+            Check(resumed.AttemptId is not null && resumed.AttemptId != offered.AttemptId, "actual retry has a distinct attempt identity");
             Check(resumed.Id == offered.Id && resumed.CompletedBytes >= 65536, "same file ID resumes from receiver's saved extent");
             if (cancelRetry)
             {

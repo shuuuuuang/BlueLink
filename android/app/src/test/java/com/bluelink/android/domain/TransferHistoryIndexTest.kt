@@ -49,7 +49,7 @@ class TransferHistoryIndexTest {
     }
 
     @Test fun retentionDropsExpiredMemoryAndKeepsBoundaryAndRecentRecords() {
-        val expired = file("a", 1, 9); val boundary = file("b", 1, 10)
+        val expired = file("a", 1, 9).copy(status = TransferStatus.COMPLETED); val boundary = file("b", 1, 10).copy(status = TransferStatus.COMPLETED)
         val index = TransferHistoryIndex().receive(expired).receive(boundary).retainSince(10)
             .restore(listOf(expired, boundary))
         assertEquals(setOf(boundary.id), index.items.keys)

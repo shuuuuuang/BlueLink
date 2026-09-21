@@ -280,6 +280,19 @@ namespace BlueLink.Installation.Tests
                 "missing MSI plan is rejected");
             Assert(InstallerExecutionPolicy.IsMsiExecutionPlanValid(false, false, false, null),
                 "runtime-only plan does not require application MSI execution");
+            Assert(InstallerExecutionPolicy.ShouldRepairPresentMsi(false, false, "Present", "Install"),
+                "standalone MSI followed by new bundle requests real repair");
+            Assert(InstallerExecutionPolicy.ShouldRepairPresentMsi(false, false, "Present", "Repair"),
+                "exact bundle repair retains package repair");
+            foreach (var state in new[] { "Absent", "Obsolete", "Superseded", "Unknown", null })
+                Assert(!InstallerExecutionPolicy.ShouldRepairPresentMsi(false, false, state, "Install"),
+                    "only the exact present MSI may be repaired: " + state);
+            Assert(!InstallerExecutionPolicy.ShouldRepairPresentMsi(true, false, "Present", "Install"),
+                "runtime-only does not repair application MSI");
+            Assert(!InstallerExecutionPolicy.ShouldRepairPresentMsi(false, true, "Present", "Install"),
+                "uninstall context never becomes repair");
+            Assert(!InstallerExecutionPolicy.ShouldRepairPresentMsi(false, false, "Present", "Uninstall"),
+                "uninstall action never becomes repair");
             Assert(InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Install"),
                 "installed bundle converts command-line install to repair");
             Assert(InstallerExecutionPolicy.ShouldConvertInstallToRepair(true, "Unknown"),

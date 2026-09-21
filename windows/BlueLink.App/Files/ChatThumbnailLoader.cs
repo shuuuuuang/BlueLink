@@ -34,21 +34,24 @@ internal static class ChatThumbnailLoader
     private static BitmapSource Decode(string path)
     {
         using var input = File.OpenRead(path);
-        var frame = BitmapDecoder.Create(input, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
-        var geometry = ChatThumbnailGeometry.Calculate(frame.PixelWidth, frame.PixelHeight);
-        var left = (int)Math.Floor(geometry.CropX);
-        var top = (int)Math.Floor(geometry.CropY);
-        var right = Math.Min(frame.PixelWidth, (int)Math.Ceiling(geometry.CropX + geometry.CropWidth));
-        var bottom = Math.Min(frame.PixelHeight, (int)Math.Ceiling(geometry.CropY + geometry.CropHeight));
+        var webp = WebpBitmapDecoder.IsWebp(path) ? WebpBitmapDecoder.Load(path, 4096) : null;
+        BitmapSource frame = webp?.Bitmap ?? BitmapDecoder.Create(input, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+        var geometry = ChatThumbnailGeometry.Calculate(webp?.Width ?? frame.PixelWidth, webp?.Height ?? frame.PixelHeight);
+        var pixelScaleX = frame.PixelWidth / (double)(webp?.Width ?? frame.PixelWidth);
+        var pixelScaleY = frame.PixelHeight / (double)(webp?.Height ?? frame.PixelHeight);
+        var left = (int)Math.Floor(geometry.CropX * pixelScaleX);
+        var top = (int)Math.Floor(geometry.CropY * pixelScaleY);
+        var right = Math.Min(frame.PixelWidth, (int)Math.Ceiling((geometry.CropX + geometry.CropWidth) * pixelScaleX));
+        var bottom = Math.Min(frame.PixelHeight, (int)Math.Ceiling((geometry.CropY + geometry.CropHeight) * pixelScaleY));
         var crop = new CroppedBitmap(frame, new Int32Rect(left, top, right - left, bottom - top));
         var visual = new DrawingVisual();
         RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
         using (var dc = visual.RenderOpen())
         {
             dc.PushClip(new RectangleGeometry(new Rect(geometry.InsetX, geometry.InsetY, geometry.ImageWidth, geometry.ImageHeight)));
-            dc.DrawImage(crop, new Rect(geometry.InsetX + (left - geometry.CropX) * geometry.Scale,
-                geometry.InsetY + (top - geometry.CropY) * geometry.Scale,
-                (right - left) * geometry.Scale, (bottom - top) * geometry.Scale));
+            dc.DrawImage(crop, new Rect(geometry.InsetX + (left / pixelScaleX - geometry.CropX) * geometry.Scale,
+                geometry.InsetY + (top / pixelScaleY - geometry.CropY) * geometry.Scale,
+                (right - left) / pixelScaleX * geometry.Scale, (bottom - top) / pixelScaleY * geometry.Scale));
             dc.Pop();
         }
         // Preserve layout size in DIPs while retaining enough bitmap detail for high-density displays.

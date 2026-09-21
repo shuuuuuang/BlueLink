@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="zh-CN">
+  <!-- Keep the brand bitmap in the sidebar. The native dialog paints the body,
+       so native checkboxes share its system background without a separate block. -->
+  <UI Dialog="WelcomeDlg" Control="Bitmap" Width="130" />
+  <UI Dialog="MaintenanceWelcomeDlg" Control="Bitmap" Width="130" />
+  <UI Dialog="ExitDialog" Control="Bitmap" Width="130" />
+  <UI Dialog="FatalError" Control="Bitmap" Width="130" />
+  <UI Dialog="PrepareDlg" Control="Bitmap" Width="130" />
+  <UI Dialog="ResumeDlg" Control="Bitmap" Width="130" />
+  <UI Dialog="UserExit" Control="Bitmap" Width="130" />
+  <UI Dialog="ExitDialog" Control="OptionalCheckBox" Y="200" Height="17" />
+</WixLocalization>

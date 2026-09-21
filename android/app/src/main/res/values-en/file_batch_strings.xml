@@ -1,0 +1,4 @@
+<resources>
+    <string name="file_batch_retry_action">Retry</string>
+    <string name="file_batch_cancel_action">Cancel transfer</string>
+</resources>

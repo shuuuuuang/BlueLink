@@ -22,7 +22,12 @@ namespace BlueLink;
 
 public partial class App : System.Windows.Application
 {
-    static App() => Appearance.ControlInteractionPolicy.Initialize();
+    static App()
+    {
+        // Native TextBox selection must paint behind glyphs for SelectionTextBrush to work.
+        AppContext.SetSwitch("Switch.System.Windows.Controls.Text.UseAdornerForTextboxSelectionRendering", false);
+        Appearance.ControlInteractionPolicy.Initialize();
+    }
 
     private Forms.NotifyIcon? _tray;
     private Icon? _trayIcon;
@@ -576,6 +581,12 @@ public partial class App : System.Windows.Application
     internal async Task RequestExitAsync()
     {
         if (Interlocked.Exchange(ref _exitStarted, 1) != 0) return;
+        if (MainWindow is MainWindow active && active.ViewModel.AllTransfers.Any(value => value.IsActive) &&
+            !ConfirmationWindow.Show(active, new ConfirmationDocument(Localization.Strings.Get("退出蓝联"),
+                Localization.Strings.Get("仍有文件任务，确定退出吗？"),
+                Localization.Strings.Get("正在进行的传输将中断。下次打开后，可由发送方手动恢复；不会自动重发。"),
+                Localization.Strings.Get("退出"))))
+        { Interlocked.Exchange(ref _exitStarted, 0); return; }
         ExitRequested = true;
         try
         {

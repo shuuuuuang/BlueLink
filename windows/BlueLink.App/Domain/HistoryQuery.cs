@@ -14,7 +14,7 @@ public static class HistoryQuery
         if (kind == HistoryKind.Text && (item.Kind != ChatItemKind.Text || !item.HasText)) return false;
         if (kind == HistoryKind.Images && item.Kind != ChatItemKind.Image && item.Attachments?.Any(a => a.IsImage) != true) return false;
         if (kind == HistoryKind.Files && item.Kind != ChatItemKind.File && item.Attachments?.Any(a => !a.IsImage) != true) return false;
-        if (kind == HistoryKind.Date && date is { } day && item.CreatedAt.LocalDateTime.Date != day.Date) return false;
+        if (date is { } day && item.CreatedAt.LocalDateTime.Date != day.Date) return false;
         var term = query.Trim();
         return term.Length == 0 || item.Text.Contains(term, StringComparison.OrdinalIgnoreCase) ||
             item.Attachments?.Any(a => a.FileName.Contains(term, StringComparison.OrdinalIgnoreCase)) == true;
@@ -24,7 +24,8 @@ public static class HistoryQuery
     {
         if (!string.IsNullOrEmpty(peerId) && !string.Equals(item.PeerId, peerId, StringComparison.OrdinalIgnoreCase)) return false;
         if (direction == "Outgoing" && !item.Outgoing || direction == "Incoming" && item.Outgoing) return false;
-        if (status == "Active" && !item.IsActive || status == "Completed" && !item.IsCompleted || status == "Failed" && !item.IsFailed) return false;
+        if (status == "Active" && !item.IsActive || status == "Completed" && !item.IsCompleted || status == "Incomplete" && !item.IsRetryableTerminal || status == "Failed" && item.Status != TransferStatus.Failed ||
+            status == "Rejected" && item.Status != TransferStatus.Rejected || status == "Canceled" && !item.IsCanceled) return false;
         return item.Name.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 }

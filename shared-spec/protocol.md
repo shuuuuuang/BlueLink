@@ -69,3 +69,12 @@ Per-device bidirectional FIFO scheduling, SAF proof binding, BLM1 encrypted spoo
 records, failure boundaries and full-file retry are specified in
 [`docs/BTX_1_1_PROTOCOL.md`](../docs/BTX_1_1_PROTOCOL.md#6-wpdmtp-文件通道2026-09-13).
 No network or driver-switch fallback is added.
+
+
+## Transfer attempt stream capability (bit 6)
+
+`TRANSFER_ATTEMPT_STREAMS = 1 << 6` is negotiated by the authenticated protocol greeting capability intersection. Existing transfer payloads, task IDs, attachment IDs and resume checkpoints are unchanged. When negotiated, every transfer Offer, Accept, Extent, ExtentAck, Finish, Complete, Reject, Failed, TransferControl and task-specific MTP control record uses an attempt-specific authenticated record `streamId` (at least 16). The listener allocates even IDs and the dialer odd IDs. The initiating Offer or MTP queue binds the task to the stream; replies echo that stream. A later Offer within that MTP queue uses the same stream.
+
+Stream IDs are never reused within a session. A retry allocates a fresh stream while retaining the logical task ID. Controls and completion records for a prior stream are ignored, and a replacement attempt cannot be admitted while the current worker still owns the task. Background workers capture their original stream across awaits and cancellation; delayed replies must never be retagged with a newer attempt's stream. Both directions share an 8192-task session capacity limit.
+
+Without the capability, original stream values and payloads remain compatible. A local same-task retry requires a new authenticated session, since legacy wire messages cannot distinguish a delayed control from a new attempt. Reconnect does not automatically replay the task. This restriction does not affect new files or message transmission.

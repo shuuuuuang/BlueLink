@@ -1,6 +1,7 @@
 package com.bluelink.android.ui.settings
 
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,8 +29,8 @@ internal fun FileStorageSettings(modifier: Modifier, settings: AppSettings, save
     val context = LocalContext.current
     var publishing by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
+    var cleanupPreview by remember { mutableStateOf<Long?>(null) }
     var cacheBusy by remember { mutableStateOf(false) }
-    var cacheResult by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     var duplicate by remember { mutableStateOf(false) }
     var receiveLimit by remember { mutableStateOf(false) }
@@ -71,17 +72,28 @@ internal fun FileStorageSettings(modifier: Modifier, settings: AppSettings, save
                     if (failed) R.string.storage_unavailable else R.string.storage_calculating), color = DeviceColors.Secondary, fontSize = 13.sp)
             }
             usage?.let { value ->
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LinearProgressIndicator(progress = { value.imageFraction }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                        color = DeviceColors.Blue, trackColor = MaterialTheme.colorScheme.outlineVariant)
-                    Text(stringResource(R.string.storage_breakdown, Formatter.formatShortFileSize(context, value.imageBytes),
-                        Formatter.formatShortFileSize(context, value.otherBytes)), fontSize = 12.sp, color = DeviceColors.Secondary)
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (category in com.bluelink.android.files.StorageCategory.entries) Row(Modifier.fillMaxWidth()) {
+                        Text(stringResource(when(category) {
+                            com.bluelink.android.files.StorageCategory.RECEIVED -> R.string.storage_category_files
+                            com.bluelink.android.files.StorageCategory.THUMBNAILS -> R.string.storage_category_thumbnails
+                            com.bluelink.android.files.StorageCategory.UPDATES -> R.string.storage_category_updates
+                            com.bluelink.android.files.StorageCategory.SNAPSHOTS -> R.string.storage_category_snapshots
+                            com.bluelink.android.files.StorageCategory.USB_STAGING -> R.string.storage_category_usb
+                            com.bluelink.android.files.StorageCategory.DRAFTS -> R.string.storage_category_drafts
+                            else -> R.string.storage_category_other
+                        }),Modifier.weight(1f),fontSize=12.sp,color=DeviceColors.Secondary)
+                        Text(if (category in value.unknown) stringResource(R.string.storage_not_counted) else
+                            Formatter.formatShortFileSize(context,value.bytes.getValue(category)),fontSize=12.sp,color=DeviceColors.Secondary)
+                    }
+                    if (value.partial || value.unknown.isNotEmpty()) Text(stringResource(R.string.storage_partial),fontSize=12.sp,color=DeviceColors.Secondary)
                 }
             }
             SettingsValueRow(stringResource(R.string.storage_manage), "", onClick = manageFiles)
             SettingsDivider()
-            SettingsValueRow(stringResource(R.string.clear_thumbnail_cache), if (cacheBusy) stringResource(R.string.cache_clearing) else "") { if (!cacheBusy) clearing = true }
-            if (cacheResult != 0) Text(stringResource(cacheResult), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp, color = DeviceColors.Secondary)
+            SettingsValueRow(stringResource(R.string.storage_clear_temporary), if (cacheBusy) stringResource(R.string.cache_clearing) else "") {
+                if (!cacheBusy) { clearing = true; cleanupPreview = null }
+            }
         }
         SettingsGroup(stringResource(R.string.mobile_storage_background)) {
             SettingsValueRow(stringResource(R.string.publish_directory), publishChoices.first { it.first == publishValue }.second) { publishing = true }
@@ -94,14 +106,36 @@ internal fun FileStorageSettings(modifier: Modifier, settings: AppSettings, save
             SettingsToggleRow(stringResource(R.string.storage_background), settings.keepBackgroundSessions) { save(settings.copy(keepBackgroundSessions = it)) }
         }
     }
-    if (clearing) com.bluelink.android.ui.components.BlueLinkConfirmation(stringResource(R.string.clear_thumbnail_cache),
-        stringResource(R.string.clear_thumbnail_question), stringResource(R.string.clear_thumbnail_note), stringResource(R.string.privacy_clear),
+    LaunchedEffect(clearing) {
+        if (clearing) try { cleanupPreview = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val app = context.applicationContext as com.bluelink.android.BlueLinkApplication
+            val pending = app.runtime.collectTemporaryFiles(preview = true)
+            val thumbnails = com.bluelink.android.files.LocalStorageInventory.scan(listOf(
+                com.bluelink.android.files.StorageLocation(java.io.File(context.cacheDir,"display-thumbnails"),com.bluelink.android.files.StorageCategory.THUMBNAILS)))
+            pending.bytes + thumbnails.bytes.values.sum()
+        } } catch (canceled: CancellationException) { throw canceled }
+        catch (error: Exception) { android.util.Log.w("BlueLinkStorage", "Temporary cleanup preview failed", error); clearing = false; Toast.makeText(context,R.string.cache_clear_failed,Toast.LENGTH_LONG).show() }
+    }
+    if (clearing && cleanupPreview == null) com.bluelink.android.ui.components.BlueLinkPrompt(
+        stringResource(R.string.storage_clear_temporary), { clearing = false }, footer = {
+            TextButton(onClick = { clearing = false }) { Text(stringResource(R.string.cancel)) }
+        }) { Text(stringResource(R.string.storage_calculating)) }
+    if (clearing && cleanupPreview != null) com.bluelink.android.ui.components.BlueLinkConfirmation(stringResource(R.string.storage_clear_temporary),
+        cleanupPreview?.let { stringResource(R.string.storage_reclaim_preview,Formatter.formatShortFileSize(context,it)) } ?: stringResource(R.string.storage_calculating),
+        stringResource(R.string.storage_cleanup_note), stringResource(R.string.privacy_clear),
         { clearing = false }, {
-            clearing = false; cacheBusy = true; cacheResult = 0
+            clearing = false; cacheBusy = true
             scope.launch {
-                try { com.bluelink.android.files.ThumbnailCache.clear(context); cacheResult = R.string.cache_cleared }
+                try {
+                    com.bluelink.android.files.ThumbnailCache.clear(context)
+                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        (context.applicationContext as com.bluelink.android.BlueLinkApplication).runtime.collectTemporaryFiles(preview = false)
+                    }
+                    usage = readStorageUsage(context)
+                    Toast.makeText(context, if(result.errors == 0) R.string.cache_cleared else R.string.cache_clear_failed, Toast.LENGTH_SHORT).show()
+                }
                 catch (canceled: CancellationException) { throw canceled }
-                catch (_: Exception) { cacheResult = R.string.cache_clear_failed }
+                catch (_: Exception) { Toast.makeText(context, R.string.cache_clear_failed, Toast.LENGTH_LONG).show() }
                 finally { cacheBusy = false }
             }
         })

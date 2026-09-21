@@ -89,7 +89,7 @@ fun DevicesScreen(
                 discover(); true
             })
         }) {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (projection.noResults) {
                     item("no-results") {
@@ -114,7 +114,8 @@ fun DevicesScreen(
                             items(projection.connected, key = { "connected-${it.peerId}" }) { summary ->
                                 val transfer = DeviceActions.transfer(summary.peerId, transfers)
                                 HistoryDeviceCard(summary, transfer, selectedPeerId == summary.peerId,
-                                    { openConversation(summary.peerId) }, { longPressConversation(summary) })
+                                    { openConversation(summary.peerId) }, { longPressConversation(summary) },
+                                    otherTransfers = (DeviceActions.transferCount(summary.peerId, transfers) - 1).coerceAtLeast(0))
                             }
                         }
                     }
@@ -232,7 +233,7 @@ private fun EmptyDeviceState(title: String, detail: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryDeviceCard(summary: ConversationSummary, transfer: TransferItem?, selected: Boolean,
-                              open: () -> Unit, longPress: () -> Unit) {
+                              open: () -> Unit, longPress: () -> Unit, otherTransfers: Int = 0) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val online = summary.availability == DeviceAvailability.CONNECTED
@@ -246,7 +247,7 @@ private fun HistoryDeviceCard(summary: ConversationSummary, transfer: TransferIt
             PlatformIcon(summary.platform, online || selected)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                DeviceNameWithUsb(summary.peerName, online && summary.usbReady)
+                DeviceNameWithUsb(summary.displayName, online && summary.usbReady,pinned=summary.isPinned)
                 val detail = when {
                     transfer != null -> deviceTransferDetail(transfer, context)
                     online && selected -> context.getString(R.string.device_current_conversation)
@@ -255,10 +256,17 @@ private fun HistoryDeviceCard(summary: ConversationSummary, transfer: TransferIt
                     summary.lastConnectedAt != null -> context.getString(R.string.device_last_connection, formatLastConnection(summary.lastConnectedAt, context))
                     else -> context.getString(R.string.device_offline_history)
                 }
-                Text(detail, fontSize = 11.sp, lineHeight = 20.sp, color = DeviceColors.Secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(detail, modifier = Modifier.weight(1f), fontSize = 11.sp, lineHeight = 20.sp,
+                        color = DeviceColors.Secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (otherTransfers > 0) Text(context.getString(R.string.device_other_transfers, otherTransfers),
+                        fontSize = 10.sp, color = DeviceColors.Secondary, modifier = Modifier.padding(start = 6.dp))
+                }
                 if (transfer != null) {
                     Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(progress = { transfer.progress.coerceIn(0f, 1f) }, color = DeviceColors.Blue,
+                    if (transfer.isProgressIndeterminate) LinearProgressIndicator(color = DeviceColors.Blue,
+                        trackColor = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth().height(4.dp))
+                    else LinearProgressIndicator(progress = { transfer.progress.coerceIn(0f, 1f) }, color = DeviceColors.Blue,
                         trackColor = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth().height(4.dp))
                 }
             }

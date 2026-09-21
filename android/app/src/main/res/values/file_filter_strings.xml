@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_filter_device">设备</string>
+    <string name="file_filter_title">筛选</string>
+    <string name="file_filter_reset">重置</string>
+    <string name="file_filter_unlimited">不限</string>
+    <string name="file_filter_invalid_dates">开始日期不能晚于结束日期</string>
+    <string name="file_filter_search_devices">搜索设备</string>
+    <string name="file_filter_sort_description">排序：%1$s，%2$s</string>
+    <string name="file_filter_count_description">筛选，已选 %d 项</string>
+    <plurals name="file_filter_view_results">
+        <item quantity="other">查看 %d 个文件</item>
+    </plurals>
+</resources>

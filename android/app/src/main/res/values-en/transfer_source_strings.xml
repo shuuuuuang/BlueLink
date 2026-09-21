@@ -1,0 +1,4 @@
+<resources>
+    <string name="transfer_source_identity_missing">This older task has no file fingerprint. Select the file again to send it.</string>
+    <string name="transfer_source_identity_changed">The file has changed. Select it again to send it.</string>
+</resources>

@@ -1,4 +1,4 @@
-﻿<ui:FluentWindow x:Class="BlueLink.MainWindow"
+<ui:FluentWindow x:Class="BlueLink.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:loc="clr-namespace:BlueLink.Localization"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -65,6 +65,8 @@
                             </MenuItem.Style>
                             <MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-connect-device}" Width="18" Height="18"/></MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="{Binding PinActionText}" Style="{StaticResource BlueLinkMenuItemStyle}" Click="ConversationPinMenu_Click"><MenuItem.Icon><ui:SymbolIcon Symbol="Pin24" FontSize="18"/></MenuItem.Icon></MenuItem>
+                        <MenuItem Header="{loc:Text '设备备注'}" Style="{StaticResource BlueLinkMenuItemStyle}" Click="ConversationNoteMenu_Click"><MenuItem.Icon><ui:SymbolIcon Symbol="Edit24" FontSize="18"/></MenuItem.Icon></MenuItem>
                         <MenuItem Header="{loc:Text '查看设备信息'}" Style="{StaticResource BlueLinkMenuItemStyle}" Click="ConversationInfoMenu_Click"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-info}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
                         <Separator Style="{StaticResource BlueLinkMenuSeparatorStyle}"/>
                         <MenuItem Header="{loc:Text '清空会话记录'}" Style="{StaticResource BlueLinkMenuItemStyle}" Click="ConversationClearMenu_Click" CommandParameter="danger"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-trash}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
@@ -82,12 +84,13 @@
   </Grid>
  </Border>
  <StackPanel Grid.Column="2" VerticalAlignment="Center">
-  <Grid HorizontalAlignment="Left"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <TextBlock Text="{Binding PeerName}" Foreground="{DynamicResource InkBrush}" FontWeight="Medium" FontSize="{StaticResource ClientFont13}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+  <Grid HorizontalAlignment="Left"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <ui:SymbolIcon Grid.Column="2" Symbol="Pin24" FontSize="13" Margin="5,0,0,0" Foreground="{DynamicResource MutedBrush}" Visibility="{Binding IsPinned, Converter={StaticResource BooleanToVisibilityConverter}}" AutomationProperties.Name="{loc:Text '已置顶'}"/>
+    <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource InkBrush}" FontWeight="Medium" FontSize="{StaticResource ClientFont13}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
     <Image x:Name="ConversationUsbReady" Grid.Column="1" Source="{DynamicResource FigmaIcon-usb-ready}" Width="16" Height="16" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding UsbReady, Converter={StaticResource BooleanToVisibilityConverter}}" ToolTip="{loc:Text 'USB 加速已就绪'}" AutomationProperties.Name="{loc:Text 'USB 加速已就绪'}"/>
   </Grid>
   <TextBlock x:Name="ConversationSecondaryText" Text="{Binding LastSeenText}" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
-  <ProgressBar x:Name="ConversationTransferProgress" Minimum="0" Maximum="1" Value="{Binding ActiveTransfer.Progress, Mode=OneWay}" Height="4" Margin="0,4,0,0" Foreground="{DynamicResource BlueBrush}" Background="{DynamicResource PanelE4E9F2Brush}" Visibility="{Binding HasActiveTransfer, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+  <ProgressBar x:Name="ConversationTransferProgress" Minimum="0" Maximum="1" Value="{Binding ActiveTransfer.Progress, Mode=OneWay}" IsIndeterminate="{Binding ActiveTransfer.IsProgressIndeterminate}" Height="4" Margin="0,4,0,0" Foreground="{DynamicResource BlueBrush}" Background="{DynamicResource PanelE4E9F2Brush}" Visibility="{Binding HasActiveTransfer, Converter={StaticResource BooleanToVisibilityConverter}}"/>
  </StackPanel>
  <Grid Grid.Column="3" VerticalAlignment="Center" Margin="10,0,0,0">
   <Ellipse x:Name="StateDot" Width="10" Height="10" Fill="{DynamicResource PanelAEB7C6Brush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
@@ -138,7 +141,7 @@
                     <Setter TargetName="ConversationCard" Property="BorderBrush" Value="{DynamicResource OfflineSelectedBorderBrush}"/>
                     <Setter TargetName="ConversationCard" Property="BorderThickness" Value="1.5"/>
                 </MultiDataTrigger>
-                <DataTrigger Binding="{Binding HasActiveTransfer}" Value="True"><Setter TargetName="ConversationCard" Property="MinHeight" Value="72"/><Setter TargetName="ConversationSecondaryText" Property="Text" Value="{Binding ActiveTransfer.DeviceStatusText}"/></DataTrigger>
+                <DataTrigger Binding="{Binding HasActiveTransfer}" Value="True"><Setter TargetName="ConversationCard" Property="MinHeight" Value="72"/><Setter TargetName="ConversationSecondaryText" Property="Text" Value="{Binding ActiveTransferSummary}"/></DataTrigger>
                 <DataTrigger Binding="{Binding ContextMenu.IsOpen, ElementName=ConversationCard}" Value="True"><Setter TargetName="ConversationCard" Property="Background" Value="{DynamicResource SoftBlueBrush}"/><Setter TargetName="ConversationCard" Property="BorderBrush" Value="{DynamicResource BlueBrush}"/></DataTrigger>
                 <DataTrigger Binding="{Binding HasUnread}" Value="True">
                     <Setter TargetName="UnreadBadge" Property="Visibility" Value="Visible"/>
@@ -158,12 +161,16 @@
                 <Button.ContextMenu><ContextMenu Style="{StaticResource BlueLinkContextMenuStyle}" Opened="FileContextMenu_Opened">
 <MenuItem Tag="open" Click="AttachmentOpenMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-open}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="copy" Click="AttachmentCopyMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="copy-name" Click="FileNameCopy_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="message-select" Click="MessageMultiSelectMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><ui:SymbolIcon Symbol="TaskListLtr24" FontSize="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="locate" Click="AttachmentLocateMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-folder}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="save" Click="AttachmentSaveAsMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-download}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="info" Click="AttachmentInfoMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-details}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="pause" Click="AttachmentPause_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-pause}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="resume" Click="AttachmentResume_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="retry" Click="RetryTransfer_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="bluetooth" Click="TransferBluetooth_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="reselect" Click="TransferReselect_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-folder}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <Separator Tag="active" Style="{StaticResource BlueLinkMenuSeparatorStyle}"/>
 <MenuItem Tag="cancel" Click="AttachmentCancel_Click" Style="{StaticResource BlueLinkMenuItemStyle}" CommandParameter="danger"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-cancel}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="failure" Click="TransferFailure_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-alert}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
@@ -190,13 +197,13 @@
                             </StackPanel>
                             <Grid x:Name="FileProgress" Grid.Column="2" Width="40" Height="40" VerticalAlignment="Center" Visibility="{Binding ShowProgress, Converter={StaticResource BooleanToVisibilityConverter}}" ToolTip="{Binding ProgressText}">
                                 <Ellipse Width="32" Height="32" Stroke="{DynamicResource PanelE4E9F2Brush}" StrokeThickness="4"/>
-                                <ui:ProgressRing Width="36" Height="36" IsIndeterminate="False" Progress="{Binding ProgressPercent, Mode=OneWay}" Foreground="{DynamicResource BlueBrush}" Background="{DynamicResource PanelE4E9F2Brush}"/>
-                                <TextBlock Text="{Binding Progress, StringFormat={}{0:P0}}" FontSize="9" Foreground="{DynamicResource InkBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ui:ProgressRing Width="36" Height="36" IsIndeterminate="{Binding IsProgressIndeterminate}" Progress="{Binding ProgressPercent, Mode=OneWay}" Foreground="{DynamicResource BlueBrush}" Background="{DynamicResource PanelE4E9F2Brush}"/>
+                                <TextBlock Text="{Binding ProgressLabel}" FontSize="9" Foreground="{DynamicResource InkBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
                             <Image x:Name="PausedReceiveIndicator" Grid.Column="2" Source="/BlueLink;component/Assets/Figma/paused-receive.png" Width="40" Height="40" Visibility="Collapsed" ToolTip="{Binding StateText}"/>
                         </Grid>
                         <Border x:Name="ImageProgress" Width="40" Height="40" Background="#8C0A1A29" CornerRadius="20" Visibility="Collapsed" ToolTip="{Binding ProgressText}">
-                            <Grid><Ellipse Width="30" Height="30" Stroke="#55FFFFFF" StrokeThickness="3"/><ui:ProgressRing Width="34" Height="34" IsIndeterminate="False" Progress="{Binding ProgressPercent, Mode=OneWay}" Foreground="White" Background="#55FFFFFF"/><TextBlock Text="{Binding Progress, StringFormat={}{0:P0}}" FontSize="10" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
+                            <Grid><Ellipse Width="30" Height="30" Stroke="#55FFFFFF" StrokeThickness="3"/><ui:ProgressRing Width="34" Height="34" IsIndeterminate="{Binding IsProgressIndeterminate}" Progress="{Binding ProgressPercent, Mode=OneWay}" Foreground="White" Background="#55FFFFFF"/><TextBlock Text="{Binding ProgressLabel}" FontSize="10" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                         </Border>
                     </Grid>
                 </Border>
@@ -210,6 +217,9 @@
                     <MultiDataTrigger.Conditions><Condition Binding="{Binding Visibility, ElementName=Thumbnail}" Value="Visible"/><Condition Binding="{Binding ShowProgress}" Value="True"/></MultiDataTrigger.Conditions>
                     <Setter TargetName="ImageProgress" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
+                <DataTrigger Binding="{Binding Visibility, ElementName=Thumbnail}" Value="Visible">
+                    <Setter TargetName="AttachmentBorder" Property="CornerRadius" Value="14"/>
+                </DataTrigger>
                 <DataTrigger Binding="{Binding Source, ElementName=Thumbnail}" Value="{x:Null}">
                     <Setter TargetName="Thumbnail" Property="Visibility" Value="Collapsed"/><Setter TargetName="FileCard" Property="Visibility" Value="Visible"/><Setter TargetName="ImageProgress" Property="Visibility" Value="Collapsed"/><Setter TargetName="AttachmentBorder" Property="BorderThickness" Value="1"/>
                 </DataTrigger>
@@ -230,11 +240,22 @@
                     <Border.Visibility><MultiBinding Converter="{StaticResource MessageTimeGapConverter}"><Binding/><Binding RelativeSource="{RelativeSource PreviousData}"/></MultiBinding></Border.Visibility>
                     <TextBlock Text="{Binding Time}" Foreground="{DynamicResource MutedBrush}" FontSize="10.5"/>
                 </Border>
+            <DockPanel x:Name="MessageSelectionRow" LastChildFill="True">
+                <Grid DockPanel.Dock="Left" Margin="8,0,0,0" VerticalAlignment="Center" Visibility="{Binding DataContext.MessageSelectionMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <CheckBox x:Name="MessageBatchCheckBox" Width="24" MinWidth="0" Padding="0" AutomationProperties.Name="{loc:Text '选择消息'}" Focusable="False" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}">
+                        <CheckBox.Resources><SolidColorBrush x:Key="CheckBoxCheckGlyphForeground" Color="Transparent"/><SolidColorBrush x:Key="CheckBoxForegroundUncheckedDisabled" Color="Transparent"/></CheckBox.Resources>
+                    </CheckBox>
+                    <Grid Width="{DynamicResource CheckBoxWidth}" Height="{DynamicResource CheckBoxHeight}" HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False">
+                        <ui:SymbolIcon x:Name="MessageBatchCheckMark" Symbol="Checkmark48" FontSize="{DynamicResource CheckBoxIconSize}" FontWeight="Bold" Foreground="{DynamicResource CheckBoxCheckGlyphForeground}" HorizontalAlignment="Center" VerticalAlignment="Center" Focusable="False" Visibility="{Binding IsChecked, ElementName=MessageBatchCheckBox, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Grid>
+                </Grid>
             <Grid x:Name="MessageContextHost" Margin="8,8,0,10" PreviewMouseRightButtonDown="PreserveSelectionOnRightClick">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="48"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Grid.ContextMenu><ContextMenu Style="{StaticResource BlueLinkContextMenuStyle}" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                    <MenuItem Header="{loc:Text '复制文本'}" Click="MessageCopyMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}" Visibility="{Binding HasText, Converter={StaticResource BooleanToVisibilityConverter}}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem><Separator Style="{StaticResource BlueLinkMenuSeparatorStyle}"/>
+                    <MenuItem Header="{loc:Text '复制文本'}" Click="MessageCopyMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}" Visibility="{Binding HasText, Converter={StaticResource BooleanToVisibilityConverter}}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="{loc:Text '多选'}" Click="MessageMultiSelectMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><ui:SymbolIcon Symbol="TaskListLtr24" FontSize="18" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+                    <Separator Style="{StaticResource BlueLinkMenuSeparatorStyle}"/>
                     <MenuItem Header="{loc:Text '删除本机记录'}" Click="MessageDeleteMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}" CommandParameter="danger"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-trash}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
                 </ContextMenu></Grid.ContextMenu>
                 <Border x:Name="Avatar" Width="36" Height="36" CornerRadius="10" Background="{DynamicResource SoftBlueBrush}" VerticalAlignment="Top" HorizontalAlignment="Left">
@@ -265,13 +286,22 @@
                     <InlineUIContainer BaselineAlignment="Center"><Image x:Name="MessageStatusIcon" Width="16" Height="16" Margin="0,0,4,0" Visibility="Collapsed"/></InlineUIContainer><Run Text="{Binding StatusText, Mode=OneWay}"/>
                 </TextBlock>
             </Grid>
+            </DockPanel>
             </StackPanel>
             <DataTemplate.Triggers>
+                <MultiDataTrigger><MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding DataContext.MessageSelectionMode, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True"/>
+                    <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"/>
+                </MultiDataTrigger.Conditions><Setter TargetName="MessageSelectionRow" Property="Background" Value="{DynamicResource BatchSelectedRowBrush}"/></MultiDataTrigger>
                 <DataTrigger Binding="{Binding Outgoing}" Value="True">
                     <Setter TargetName="Avatar" Property="Visibility" Value="Collapsed"/><Setter TargetName="Bubble" Property="Grid.Column" Value="0"/><Setter TargetName="Bubble" Property="Grid.ColumnSpan" Value="2"/>
                     <Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Bubble" Property="Background" Value="{DynamicResource BlueBrush}"/><Setter TargetName="Bubble" Property="CornerRadius" Value="14,14,4,14"/>
-                    <Setter TargetName="MessageText" Property="Foreground" Value="{DynamicResource OnAccentBrush}"/><Setter TargetName="MessageMeta" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="MessageText" Property="Foreground" Value="{DynamicResource OnAccentBrush}"/>
+                    <Setter TargetName="MessageText" Property="SelectionBrush" Value="{StaticResource MessageTextSelectionBrush}"/>
+                    <Setter TargetName="MessageText" Property="SelectionTextBrush" Value="{StaticResource MessageTextSelectionInkBrush}"/>
+                    <Setter TargetName="MessageText" Property="SelectionOpacity" Value="1"/><Setter TargetName="MessageText" Property="IsInactiveSelectionHighlightEnabled" Value="True"/><Setter TargetName="MessageMeta" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding DataContext.MessageSelectionMode, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True"><Setter TargetName="MessageContextHost" Property="Margin" Value="4,8,14,10"/><Setter TargetName="MessageSelectionRow" Property="Margin" Value="-6,0,-1,0"/></DataTrigger>
                 <DataTrigger Binding="{Binding HasText}" Value="False"><Setter TargetName="Bubble" Property="Padding" Value="0"/><Setter TargetName="Bubble" Property="Background" Value="Transparent"/><Setter TargetName="MessageMeta" Property="Visibility" Value="Collapsed"/></DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="{x:Static domain:MessageStatus.LocalQueued}"><Setter TargetName="MessageStatusIcon" Property="Source" Value="{DynamicResource FigmaIcon-message-waiting}"/><Setter TargetName="MessageStatusIcon" Property="Visibility" Value="Visible"/></DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="{x:Static domain:MessageStatus.Sending}"><Setter TargetName="MessageMeta" Property="Foreground" Value="{DynamicResource BlueBrush}"/><Setter TargetName="MessageStatusIcon" Property="Source" Value="{DynamicResource FigmaIcon-message-sending}"/><Setter TargetName="MessageStatusIcon" Property="Visibility" Value="Visible"/></DataTrigger>
@@ -581,7 +611,7 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <Border x:Name="WorkspaceHeader" Height="72" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderEEF1F5Brush}" BorderThickness="0,0,0,1">
-                    <Grid Margin="16,0,14,0">
+                    <Grid><Grid x:Name="WorkspaceHeaderContent" Margin="16,0,14,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -609,6 +639,11 @@
                             </RadioButton>
                         </StackPanel>
                     </Grid>
+                    <Grid x:Name="MessageSelectionHeader" Visibility="Collapsed" Margin="20,0,14,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="MessageBatchCount" Foreground="{DynamicResource InkBrush}" ToolTip="{loc:Text '按住 Shift 单击可连续选择'}" VerticalAlignment="Center" FontSize="16"/>
+                        <ui:Button Grid.Column="1" Content="{loc:Text '取消'}" Appearance="Transparent" Click="MessageBatchDone_Click" ToolTip="Esc"/>
+                    </Grid></Grid>
                 </Border>
                 <Border x:Name="UsbConversationNotice" Grid.Row="1" Background="{DynamicResource SoftBlueBrush}" CornerRadius="8" Padding="10,10" Margin="14,10" Visibility="{Binding HasActiveUsbNotice, Converter={StaticResource BooleanToVisibilityConverter}}"><TextBlock Text="{Binding ActiveUsbNotice}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}"/></Border>
                 <Border Grid.Row="2" Background="{DynamicResource PanelF8FAFDBrush}" Padding="14,0,14,0" Visibility="{Binding ShowMessageSurface, Converter={StaticResource BooleanToVisibilityConverter}}" AllowDrop="True" PreviewDragEnter="ChatSurface_PreviewDragEnter" PreviewDragOver="ChatSurface_PreviewDragOver" PreviewDragLeave="ChatSurface_PreviewDragLeave" PreviewDrop="ChatSurface_PreviewDrop">
@@ -641,7 +676,7 @@
                                 <Button Grid.Column="2" Content="{loc:Text '取消'}" Click="CancelConnection_Click" Padding="13,0" IsEnabled="{Binding CanCancelConnection}"/>
                             </Grid>
                         </Border>
-                        <ListBox x:Name="MessageList" Grid.Row="2" ItemsSource="{Binding MessagesView}" ItemTemplate="{StaticResource MessageTemplate}" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox x:Name="MessageList" Padding="0" SelectionChanged="MessageBatchSelection_Changed" VirtualizingPanel.ScrollUnit="Pixel" Grid.Row="2" ItemsSource="{Binding MessagesView}" ItemTemplate="{StaticResource MessageTemplate}" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem" BasedOn="{StaticResource TransparentListItemStyle}">
                                     <Style.Resources>
@@ -667,21 +702,28 @@
                             <ui:Button.Effect><DropShadowEffect Color="#0D2652" BlurRadius="16" ShadowDepth="6" Opacity="0.22"/></ui:Button.Effect>
                         </ui:Button>
 
-                        <Border x:Name="MessageComposer" Grid.Row="3" Background="{DynamicResource SurfaceBrush}" Height="120" Margin="-14,0" BorderBrush="{DynamicResource BorderEEF1F5Brush}" BorderThickness="0,1,0,0" Padding="14,15,14,19">
-                            <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="10,10">
+                        <Border x:Name="MessageBatchPanel" Margin="-14,0" Grid.Row="3" Visibility="Collapsed" Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+                            <WrapPanel x:Name="MessageBatchControls" HorizontalAlignment="Right">
+                                <ui:Button x:Name="MessageBatchCopy" MinHeight="36" Padding="14,0" Content="{loc:Text '复制'}" Click="MessageBatchCopy_Click" Margin="6,0" MinWidth="88" ToolTip="Ctrl+C"/>
+                                <ui:Button x:Name="MessageBatchDelete" MinHeight="36" Padding="14,0" Content="{loc:Text '删除'}" Click="MessageBatchDelete_Click" Margin="6,0" MinWidth="88" Foreground="{DynamicResource DangerBrush}"/>
+                            </WrapPanel>
+                        </Border>
+                        <Border x:Name="MessageComposer" Grid.Row="3" Background="{DynamicResource SurfaceBrush}" Height="120" MinHeight="120" Margin="-14,0" BorderBrush="{DynamicResource BorderEEF1F5Brush}" BorderThickness="0,1,0,0" Padding="14,0,14,8">
+                            <Grid><Grid.RowDefinitions><RowDefinition Height="8"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                            <Border Background="Transparent" Cursor="SizeNS" Focusable="True" MouseLeftButtonDown="ComposerResize_Down" MouseMove="ComposerResize_Move" MouseLeftButtonUp="ComposerResize_Up" KeyDown="ComposerResize_Key" ToolTip="{loc:Text '拖动调整输入框高度'}" AutomationProperties.Name="{loc:Text '拖动调整输入框高度'}"><Border Width="32" Height="3" CornerRadius="2" Background="{DynamicResource BorderBrush}"/></Border>
+                            <Border Grid.Row="1" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="10,6">
                                 <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="32"/></Grid.RowDefinitions>
-                                    <ui:TextBox x:Name="MessageInput" PlaceholderText="{Binding ComposerPlaceholder}" IsEnabled="{Binding IsConnected}" BorderThickness="0" Background="Transparent" Padding="2,0" FontSize="{StaticResource ClientFont13}" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top" MaxLength="16000" KeyDown="MessageInput_KeyDown" AutomationProperties.Name="{loc:Text '消息输入框'}">
-                                        <ui:TextBox.Resources>
-                                            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="Transparent"/>
-                                            <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent"/>
-                                            <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent"/>
-                                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent"/>
-                                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent"/>
-                                            <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="Transparent"/>
-                                        </ui:TextBox.Resources>
-                                    </ui:TextBox>
+                                    <Grid Grid.Row="0">
+                                        <ui:RichTextBox x:Name="MessageInput" MinHeight="20" BorderThickness="0" Background="Transparent" Padding="2,0" FontSize="{StaticResource ClientFont13}" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding CanEditDraft}" IsDocumentEnabled="True" AcceptsReturn="True" LostKeyboardFocus="DraftInput_LostFocus" TextChanged="Composer_TextChanged" PreviewKeyDown="MessageInput_PreviewKeyDown" AutomationProperties.Name="{loc:Text '消息输入框'}"/>
+                                        <Border Padding="{Binding Padding, ElementName=MessageInput}" IsHitTestVisible="False" VerticalAlignment="Top">
+                                            <TextBlock x:Name="ComposerPlaceholder" Text="{Binding ComposerPlaceholder}" Foreground="{DynamicResource MutedBrush}"
+                                                       FontFamily="{Binding FontFamily, ElementName=MessageInput}"
+                                                       FontSize="{Binding FontSize, ElementName=MessageInput}"/>
+                                        </Border>
+                                    </Grid>
                                     <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
-                                        <ui:Button Click="File_Click" IsEnabled="{Binding IsConnected}" Width="32" Height="32" MinHeight="0" Padding="6" Appearance="Transparent" ToolTip="{loc:Text '发送文件'}" AutomationProperties.Name="{loc:Text '发送文件'}"><Image Source="{DynamicResource FigmaIcon-attachment}" Width="20" Height="20"/></ui:Button>
+                                        <ui:Button Click="File_Click" IsEnabled="{Binding CanEditDraft}" Width="32" Height="32" MinHeight="0" Padding="6" Appearance="Transparent" ToolTip="{loc:Text '添加附件'}" AutomationProperties.Name="{loc:Text '添加附件'}"><Image Source="{DynamicResource FigmaIcon-attachment}" Width="20" Height="20"/></ui:Button>
                                         <TextBlock Grid.Column="1" Text="{Binding ComposerHint}" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="10,0" VerticalAlignment="Center"/>
                                         <ui:Button Grid.Column="2" Content="{loc:Text '发送'}" Click="Send_Click" IsEnabled="{Binding IsConnected}" Height="{StaticResource ClientControlHeight}" CornerRadius="10" AutomationProperties.Name="{loc:Text '发送'}">
                                             <ui:Button.Style><Style TargetType="ui:Button" BasedOn="{StaticResource HomeSendButton}"><Style.Triggers>
@@ -693,6 +735,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
+                            </Grid>
                         </Border>
                         <StackPanel Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsConversationEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <Border Width="72" Height="72" CornerRadius="36" Background="{DynamicResource SoftBlueBrush}" HorizontalAlignment="Center"><Image Source="/BlueLink;component/Assets/Figma/message-empty.png" Width="32" Height="32"/></Border>
@@ -701,29 +744,25 @@
                         </StackPanel>
                         <Grid x:Name="FileDropOverlay" Grid.RowSpan="4" Panel.ZIndex="30" Visibility="Collapsed" IsHitTestVisible="False" Margin="-14,0" Background="{DynamicResource PanelF8FAFDBrush}">
                             <Rectangle x:Name="FileDropOutline" Fill="{DynamicResource SoftBlueBrush}" Stroke="{DynamicResource BlueBrush}" StrokeThickness="2" StrokeDashArray="3,3" RadiusX="14" RadiusY="14" Margin="12"/>
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Image x:Name="FileDropIcon" Source="{DynamicResource FigmaIcon-drop-send}" Width="54" Height="54" HorizontalAlignment="Center"/>
-                                <TextBlock x:Name="FileDropTitle" Text="{loc:Text '释放以发送文件'}" Margin="14,16,14,0" FontSize="{StaticResource ClientFont22}" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="FileDropDetail" Text="{loc:Text '文件将通过当前加密会话传输'}" Margin="14,10,14,0" FontSize="{StaticResource ClientFont14}" Foreground="{DynamicResource MutedBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
-                            </StackPanel>
+                            <Grid x:Name="FileDropBody" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,10" MaxWidth="600">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="0"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Image x:Name="FileDropIcon" Grid.ColumnSpan="2" Source="{DynamicResource FigmaIcon-drop-send}" Width="54" Height="54" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="10,0,0,0">
+                                    <TextBlock x:Name="FileDropTitle" Text="{loc:Text '释放以发送文件'}" Margin="0,16,0,0" FontSize="{StaticResource ClientFont22}" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="FileDropDetail" Text="{loc:Text '文件将通过当前加密会话传输'}" Margin="0,10,0,0" FontSize="{StaticResource ClientFont14}" Foreground="{DynamicResource MutedBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Border>
 
                 <Grid x:Name="TransferPanel" Grid.Row="2" Visibility="{Binding ShowFiles, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource PanelF5F7FBBrush}">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="32"/><RowDefinition Height="*"/><RowDefinition Height="52"/></Grid.RowDefinitions>
-                    <Border x:Name="FullTransferContent" Background="{DynamicResource SurfaceBrush}" Padding="12,10">
-                        <Grid x:Name="FileToolbar" SizeChanged="FileToolbar_SizeChanged"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="148"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
-                            <StackPanel x:Name="FileStatusFilters" Orientation="Horizontal" VerticalAlignment="Center">
-                                <RadioButton Content="{loc:Text '全部状态'}" Tag="All" GroupName="TransferFilter" IsChecked="True" Checked="TransferFilter_Changed" Style="{StaticResource SegmentedRadioButtonStyle}" Margin="0,0,4,0"/>
-                                <RadioButton Content="{loc:Text '进行中'}" Tag="Active" GroupName="TransferFilter" Checked="TransferFilter_Changed" Style="{StaticResource SegmentedRadioButtonStyle}" Margin="0,0,4,0"/>
-                                <RadioButton Content="{loc:Text '完成'}" Tag="Completed" GroupName="TransferFilter" Checked="TransferFilter_Changed" Style="{StaticResource SegmentedRadioButtonStyle}" Margin="0,0,4,0"/>
-                                <RadioButton Content="{loc:Text '失败'}" Tag="Failed" GroupName="TransferFilter" Checked="TransferFilter_Changed" Style="{StaticResource SegmentedRadioButtonStyle}"/>
-                            </StackPanel>
-                            <ComboBox x:Name="FileStatusFilter" FontSize="12" Width="140" Height="{StaticResource ClientControlHeight}" Visibility="Collapsed" SelectedValuePath="Tag" SelectedValue="All" SelectionChanged="FileStatus_Changed" AutomationProperties.Name="{loc:Text '文件状态'}">
-                                <ComboBoxItem Content="{loc:Text '全部状态'}" Tag="All"/><ComboBoxItem Content="{loc:Text '进行中'}" Tag="Active"/><ComboBoxItem Content="{loc:Text '完成'}" Tag="Completed"/><ComboBoxItem Content="{loc:Text '失败'}" Tag="Failed"/>
-                            </ComboBox>
-                            <Border x:Name="FileSearchHost" Grid.Column="1" Margin="10,0,10,0" MinWidth="184" Height="{StaticResource ClientControlHeight}" CornerRadius="8">
+                    <Border x:Name="FullTransferContent" Background="{DynamicResource SurfaceBrush}" Padding="12,8">
+                        <StackPanel>
+                            <Grid x:Name="FileToolbar"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Border x:Name="FileSearchHost" Grid.Column="0" Margin="0" MinWidth="184" Height="{StaticResource ClientControlHeight}" CornerRadius="8">
                                 <Border.Style><Style TargetType="Border"><Setter Property="BorderThickness" Value="1"/><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource FileSearchActiveBorderBrush}"/><Setter Property="BorderThickness" Value="1.5"/></Trigger><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource FileSearchActiveBorderBrush}"/><Setter Property="BorderThickness" Value="1.5"/></Trigger></Style.Triggers></Style></Border.Style>
                                 <Grid>
                                     <ui:TextBox x:Name="FileSearchInput" IconPlacement="Right" MinHeight="0" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent" FontSize="{StaticResource ClientFont13}" PlaceholderText="{loc:Text '搜索文件名'}" AutomationProperties.Name="{loc:Text '搜索文件名'}" TextChanged="FileQuery_Changed">
@@ -733,38 +772,71 @@
                                     <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" HorizontalAlignment="Right" Margin="0,0,36,0" IsHitTestVisible="False"/>
                                 </Grid>
                             </Border>
-                            <ComboBox x:Name="FileDeviceFilter" FontSize="12" Grid.Column="2" Height="{StaticResource ClientControlHeight}" Margin="0,0,10,0" SelectionChanged="FileDevice_Changed" DropDownOpened="FileDevices_Opened" AutomationProperties.Name="{loc:Text '文件设备范围'}"/>
-                            <ComboBox x:Name="FileDirectionFilter" FontSize="12" Grid.Column="3" Height="{StaticResource ClientControlHeight}" SelectedIndex="0" SelectionChanged="FileDirection_Changed" AutomationProperties.Name="{loc:Text '文件传输方向'}"><ComboBoxItem Content="{loc:Text '全部方向'}" Tag="All"/><ComboBoxItem Content="{loc:Text '发送'}" Tag="Outgoing"/><ComboBoxItem Content="{loc:Text '接收'}" Tag="Incoming"/></ComboBox>
-                        </Grid>
+
+
+                            </Grid>
+
+                        </StackPanel>
                     </Border>
+                    <Grid x:Name="FileSelectionHeader" Visibility="Collapsed" Margin="16,8" MinHeight="40">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="FileSelectionCount" Foreground="{DynamicResource InkBrush}" ToolTip="{loc:Text '按住 Shift 单击可连续选择'}" VerticalAlignment="Center" FontSize="14"/>
+                        <ui:Button x:Name="FileSelectModeButton" Grid.Column="2" Content="{loc:Text '取消'}" Appearance="Transparent" Click="FileSelectMode_Click" ToolTip="Esc"/>
+                    </Grid>
                     <Border x:Name="FileColumnsHeaderBackground" Grid.Row="1" Background="{DynamicResource PanelF8FAFDBrush}">
-                    <Grid x:Name="FileColumnsHeader" Margin="12,0"><Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width="2.4*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width=".9*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width="1.1*"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{loc:Text '文件名'}" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{loc:Text '大小'}" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="{loc:Text '来源 → 目标'}" VerticalAlignment="Center"/><TextBlock Grid.Column="3" Text="{loc:Text '状态'}" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="4" Text="{loc:Text '进度'}" VerticalAlignment="Center"/><TextBlock Grid.Column="5" Text="{loc:Text '操作'}" VerticalAlignment="Center"/><TextBlock Grid.Column="6" Text="{loc:Text '时间'}" VerticalAlignment="Center"/>
-                        <Grid.Resources><Style TargetType="TextBlock"><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></Style></Grid.Resources>
+                    <Grid x:Name="FileColumnsHeader" Margin="12,0,26,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="2.4*"/>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width=".9*"/>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1.1*"/>
+                        </Grid.ColumnDefinitions>
+                        <local:FileTableHeader x:Name="FileNameHeader" Grid.Column="0" SortKey="Name" FilterColumn="Kind" SortRequested="FileHeaderSort_Click" FilterRequested="FileColumnFilter_Click"/>
+                        <local:FileTableHeader x:Name="FileSizeHeader" Grid.Column="1" SortKey="Size" SortRequested="FileHeaderSort_Click"/>
+                        <local:FileTableHeader x:Name="FileRouteHeader" Grid.Column="2" FilterColumn="Route" FilterRequested="FileColumnFilter_Click"/>
+                        <local:FileTableHeader x:Name="FileStatusHeader" Grid.Column="3" FilterColumn="Status" FilterRequested="FileColumnFilter_Click"/>
+                        <TextBlock Grid.Column="4" Text="{loc:Text '进度'}" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="5" Text="{loc:Text '操作'}" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"/>
+                        <local:FileTableHeader x:Name="FileTimeHeader" Grid.Column="6" SortKey="Time" FilterColumn="Date" SortRequested="FileHeaderSort_Click" FilterRequested="FileColumnFilter_Click"/>
+                        <Grid.Resources>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="11"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                            </Style>
+                        </Grid.Resources>
                     </Grid>
                     </Border>
-                    <ListBox x:Name="TransferList" Grid.Row="2" BorderThickness="0" Background="{DynamicResource SurfaceBrush}" Padding="0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.ScrollChanged="TransferList_ScrollChanged">
-                        <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource TransparentListItemStyle}"><EventSetter Event="Loaded" Handler="TransferRow_Loaded"/></Style></ListBox.ItemContainerStyle>
+                    <ListBox VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" x:Name="TransferList" SelectionChanged="FileSelection_Changed" PreviewMouseLeftButtonDown="FileBatch_MouseDown" Grid.Row="2" BorderThickness="0" Background="{DynamicResource SurfaceBrush}" Padding="0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.ScrollChanged="TransferList_ScrollChanged">
+                        <ListBox.Resources><Style x:Key="FileScrollViewerStyle" TargetType="ScrollViewer" BasedOn="{StaticResource UiScrollViewer}"><Setter Property="Padding" Value="0,0,14,0"/></Style><Style TargetType="ScrollViewer" BasedOn="{StaticResource FileScrollViewerStyle}"/><Style TargetType="ui:PassiveScrollViewer" BasedOn="{StaticResource FileScrollViewerStyle}"/><SolidColorBrush x:Key="ListBoxItemSelectedBackgroundThemeBrush" Color="Transparent"/><SolidColorBrush x:Key="MenuBarItemBackgroundSelected" Color="Transparent"/></ListBox.Resources>
+                        <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource TransparentListItemStyle}"/></ListBox.ItemContainerStyle>
                         <ListBox.GroupStyle><GroupStyle>
-                            <GroupStyle.ContainerStyle><Style TargetType="GroupItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="Loaded" Handler="TransferGroup_Loaded"/></Style></GroupStyle.ContainerStyle>
+                            <GroupStyle.ContainerStyle><Style TargetType="GroupItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></GroupStyle.ContainerStyle>
                             <GroupStyle.HeaderTemplate><DataTemplate>
                             <ToggleButton IsChecked="True" Click="TransferGroup_Click" Height="36" Background="{DynamicResource PanelF8FAFDBrush}" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderEEF1F5Brush}" Padding="12,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalContentAlignment="Center">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Image x:Name="FileGroupChevron" Source="{DynamicResource FigmaIcon-chevron}" Width="16" Height="16" RenderTransformOrigin="0.5,0.5"><Image.Style><Style TargetType="Image"><Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="0"/></Setter.Value></Setter><Style.Triggers><DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}" Value="False"><Setter Property="RenderTransform"><Setter.Value><RotateTransform Angle="-90"/></Setter.Value></Setter></DataTrigger></Style.Triggers></Style></Image.Style></Image><TextBlock Text="{Binding Name}" Margin="8,0"/><TextBlock Text="{Binding ItemCount, StringFormat={}({0})}"/></StackPanel>
                             </ToggleButton>
                         </DataTemplate></GroupStyle.HeaderTemplate></GroupStyle></ListBox.GroupStyle>
-                        <ListBox.ItemTemplate><DataTemplate><Border x:Name="FileTableRow" MinHeight="46" Padding="12,9" CornerRadius="0">
-                            <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderEEF1F5Brush}"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Background" Value="{DynamicResource SelectedFileRowBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                        <ListBox.ItemTemplate><DataTemplate><Border x:Name="FileTableRow" Margin="-6,0,-1,0" PreviewMouseRightButtonDown="PreserveSelectionOnRightClick" MinHeight="46" Padding="12,9" CornerRadius="0">
+                            <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderEEF1F5Brush}"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding DataContext.FileSelectionMode, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True"/>
+                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"/>
+                            </MultiDataTrigger.Conditions><Setter Property="Background" Value="{DynamicResource BatchSelectedRowBrush}"/></MultiDataTrigger></Style.Triggers></Style></Border.Style>
                             <Border.ContextMenu><ContextMenu Style="{StaticResource BlueLinkContextMenuStyle}" Opened="FileContextMenu_Opened">
 <MenuItem Tag="open" Click="TransferOpenMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-open}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="copy" Click="TransferCopy_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="copy-name" Click="FileNameCopy_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-copy}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="select-many" Click="FileSelectMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><ui:SymbolIcon Symbol="TaskListLtr24" FontSize="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="locate" Click="TransferLocateMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-folder}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="save" Click="TransferSaveAsMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-download}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="info" Click="TransferInfoMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-details}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="pause" Click="PauseTransfer_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-pause}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="resume" Click="ResumeTransfer_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="retry" Click="RetryTransfer_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="bluetooth" Click="TransferBluetooth_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-play}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
+<MenuItem Tag="reselect" Click="TransferReselect_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-folder}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <Separator Tag="active" Style="{StaticResource BlueLinkMenuSeparatorStyle}"/>
 <MenuItem Tag="cancel" Click="CancelTransfer_Click" Style="{StaticResource BlueLinkMenuItemStyle}" CommandParameter="danger"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-cancel}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 <MenuItem Tag="failure" Click="TransferFailure_Click" Style="{StaticResource BlueLinkMenuItemStyle}"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-alert}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
@@ -772,16 +844,18 @@
 <MenuItem Tag="delete" Click="TransferDeleteMenu_Click" Style="{StaticResource BlueLinkMenuItemStyle}" CommandParameter="danger"><MenuItem.Icon><Image Source="{DynamicResource FigmaIcon-menu-trash}" Width="18" Height="18"/></MenuItem.Icon></MenuItem>
 </ContextMenu></Border.ContextMenu>
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width="2.4*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width=".9*"/><ColumnDefinition Width="1*"/><ColumnDefinition Width="1.1*"/></Grid.ColumnDefinitions>
-                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="22"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Image Source="{Binding FileIcon, Converter={StaticResource FileTypeIconConverter}}" RenderOptions.BitmapScalingMode="HighQuality" Width="20" Height="20"/><TextBlock Grid.Column="1" local:HighlightedText.Text="{Binding Name}" local:HighlightedText.Query="{Binding DataContext.FileSearchQuery, RelativeSource={RelativeSource AncestorType=ListBox}}" local:HighlightedText.Brush="{DynamicResource BlueBrush}" ToolTip="{Binding Name}" Margin="8,0,10,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></Grid>
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="22"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <CheckBox Margin="0,0,8,0" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}" AutomationProperties.Name="{Binding Name}" Visibility="{Binding DataContext.FileSelectionMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <Image Grid.Column="1" Source="{Binding FileIcon, Converter={StaticResource FileTypeIconConverter}}" RenderOptions.BitmapScalingMode="HighQuality" Width="20" Height="20"/><TextBlock Grid.Column="2" local:HighlightedText.Text="{Binding Name}" local:HighlightedText.Query="{Binding DataContext.FileSearchQuery, RelativeSource={RelativeSource AncestorType=ListBox}}" local:HighlightedText.Brush="{DynamicResource BlueBrush}" ToolTip="{Binding Name}" Margin="8,0,10,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding SizeText}" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="2" Text="{Binding RouteText}" ToolTip="{Binding RouteText}" Margin="0,0,10,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="3" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" VerticalAlignment="Center"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource BlueBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsCompleted}" Value="True"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger><DataTrigger Binding="{Binding IsFailed}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
-                                <TextBlock Grid.Column="4" Text="{Binding Progress, StringFormat={}{0:P0}}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" VerticalAlignment="Center"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource BlueBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsCanceled}" Value="True"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></DataTrigger><DataTrigger Binding="{Binding IsCompleted}" Value="True"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger><DataTrigger Binding="{Binding IsFailed}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                                <TextBlock Grid.Column="4" Text="{Binding ProgressLabel}" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
                                     <ui:Button Content="{loc:Text '打开'}" Click="TransferOpen_Click" Appearance="Transparent" Padding="0" MinHeight="28" Visibility="{Binding CanOpen, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="{DynamicResource BlueBrush}" Style="{StaticResource LinkButtonStyle}"/>
                                     <ui:Button Click="PauseTransfer_Click" Appearance="Transparent" Padding="3" Width="28" Height="28" MinHeight="0" ToolTip="{Binding PauseActionText}" AutomationProperties.Name="{Binding PauseActionText}" Visibility="{Binding ShowPauseAction, Converter={StaticResource BooleanToVisibilityConverter}}"><Image Source="{DynamicResource FigmaIcon-pause}" Width="20" Height="20"/></ui:Button>
                                     <ui:Button Content="{loc:Text '继续'}" Click="ResumeTransfer_Click" Appearance="Transparent" Padding="0" MinHeight="28" Visibility="{Binding CanResume, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource LinkButtonStyle}"/>
-                                    <ui:Button Content="{loc:Text '重试'}" Click="RetryTransfer_Click" Appearance="Transparent" Padding="0" MinHeight="28" Visibility="{Binding CanRetry, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource LinkButtonStyle}"/>
+                                    <ui:Button Content="{Binding RetryActionText}" Click="RetryTransfer_Click" Appearance="Transparent" Padding="0" MinHeight="28" Visibility="{Binding CanRetry, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource LinkButtonStyle}"/>
                                 </StackPanel>
                                 <TextBlock Grid.Column="6" Text="{Binding TimeText}" VerticalAlignment="Center"/>
                                 <Grid.Resources><Style TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource InkBrush}"/></Style></Grid.Resources>
@@ -794,15 +868,24 @@
                         <TextBlock x:Name="FileEmptyDetail" Text="{loc:Text '通过消息发送或接收文件后，记录会显示在这里。'}" FontSize="{StaticResource ClientFont14}" Foreground="{DynamicResource MutedBrush}" Margin="0,10,0,0" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="600"/>
                     </StackPanel>
                     <Border x:Name="FileFooter" Grid.Row="3" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderEEF1F5Brush}" BorderThickness="0,1,0,0" Padding="12,0">
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid><Grid x:Name="FileFooterDefault"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <Grid VerticalAlignment="Center" HorizontalAlignment="Left" Margin="0,0,10,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <TextBlock x:Name="ReceiveDirectoryLabel" Text="{loc:Text '接收目录：'}" FontSize="11" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="ReceiveDirectoryPath" Grid.Column="1" Text="{Binding Settings.DownloadDirectory}" ToolTip="{Binding Settings.DownloadDirectory}" MaxWidth="360" TextTrimming="CharacterEllipsis" FontSize="11" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
                                 <ui:Button x:Name="ChangeReceiveDirectoryButton" Grid.Column="2" Content="{loc:Text '更改'}" Appearance="Transparent" Click="ChangeReceiveDirectory_Click" Padding="10,0" MinHeight="28" Foreground="{DynamicResource BlueBrush}" VerticalAlignment="Center" Style="{StaticResource LinkButtonStyle}"/>
                             </Grid>
-                            <TextBlock x:Name="FileCountText" Grid.Column="1" Text="{loc:Text '0 个文件'}" FontSize="11" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                            <ui:Button x:Name="FileMoreButton" Grid.Column="1" Content="{loc:Text '加载更多'}" Visibility="Collapsed" Click="FileMore_Click" HorizontalAlignment="Center" Margin="10,0"/><TextBlock x:Name="FileCountText" Grid.Column="2" Text="{loc:Text '0 个文件'}" FontSize="11" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
                         </Grid>
+                        <WrapPanel x:Name="FileBatchPanel" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <WrapPanel x:Name="FileBatchActions">
+                                <ui:Button x:Name="FileBatchCopy" MinHeight="36" Padding="14,0" Content="{loc:Text '复制文件'}" Tag="Copy" Click="FileBatch_Click" Margin="4,0"/>
+                                <ui:Button x:Name="FileBatchRetry" MinHeight="36" Padding="14,0" Content="{loc:Text '重试'}" Icon="{ui:SymbolIcon ArrowClockwise24}" Tag="Retry" Click="FileBatch_Click" Margin="4,0"/>
+                                <ui:Button x:Name="FileBatchCancel" MinHeight="36" Padding="14,0" Content="{loc:Text '取消传输'}" Tag="Cancel" Click="FileBatch_Click" Margin="4,0"/>
+                                <ui:Button x:Name="FileBatchDelete" MinHeight="36" Padding="14,0" Content="{loc:Text '删除所选记录'}" Tag="DeleteRecords" Click="FileBatch_Click" Margin="4,0" Foreground="{DynamicResource DangerBrush}"/>
+                            </WrapPanel>
+                        </WrapPanel></Grid>
                     </Border>
+
                 </Grid>
                 <Grid Grid.Row="2" Background="{DynamicResource SurfaceBrush}" Visibility="{Binding ShowConversationPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid.RowDefinitions>

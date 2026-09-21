@@ -14,6 +14,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 public final class TransferReceiver implements AutoCloseable {
+    private static final java.util.Set<Path> PARTIAL_OWNERS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private boolean ownsPartial;
     private final Path target;
     private final Path partial;
     private final Path metadata;
@@ -42,13 +44,23 @@ public final class TransferReceiver implements AutoCloseable {
         this.wholeFileHash = wholeFileHash.clone();
         int count = Math.toIntExact((fileSize + extentSize - 1) / extentSize);
         Files.createDirectories(target.getParent());
-        byte[] restored = resumeBitmap != null ? resumeBitmap : loadResume(count);
-        this.extents = restored == null ? new ExtentMap(count) : ExtentMap.decode(count, restored);
-        this.channel = restored == null
-                ? FileChannel.open(partial, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.READ, StandardOpenOption.WRITE)
-                : FileChannel.open(partial, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
-        if (channel.size() > fileSize) channel.truncate(fileSize);
+        if (!PARTIAL_OWNERS.add(partial)) throw new IOException("Previous receiver is still closing");
+        ownsPartial = true;
+        FileChannel opened = null;
+        try {
+            byte[] restored = resumeBitmap != null ? resumeBitmap : loadResume(count);
+            this.extents = restored == null ? new ExtentMap(count) : ExtentMap.decode(count, restored);
+            opened = restored == null
+                    ? FileChannel.open(partial, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.READ, StandardOpenOption.WRITE)
+                    : FileChannel.open(partial, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
+            if (opened.size() > fileSize) opened.truncate(fileSize);
+            this.channel = opened;
+        } catch (IOException | RuntimeException error) {
+            if (opened != null) try { opened.close(); } catch (IOException closeError) { error.addSuppressed(closeError); }
+            PARTIAL_OWNERS.remove(partial); ownsPartial = false;
+            throw error;
+        }
     }
 
     public synchronized void accept(int index, byte[] data, byte[] expectedHash) throws IOException {
@@ -104,7 +116,10 @@ public final class TransferReceiver implements AutoCloseable {
 
     public ExtentMap extentMap() { return extents; }
     public long contiguousCommittedOffset() { return Math.min(fileSize, (long) extents.contiguousCount() * extentSize); }
-    @Override public synchronized void close() throws IOException { if (channel.isOpen()) channel.close(); }
+    @Override public synchronized void close() throws IOException {
+        if (channel.isOpen()) channel.close();
+        if (ownsPartial) { PARTIAL_OWNERS.remove(partial); ownsPartial = false; }
+    }
 
     public static byte[] sha256(byte[] data) {
         try { return MessageDigest.getInstance("SHA-256").digest(data); }

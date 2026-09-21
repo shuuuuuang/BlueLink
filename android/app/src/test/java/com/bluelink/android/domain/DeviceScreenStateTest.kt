@@ -102,4 +102,14 @@ class DeviceScreenStateTest {
         assertTrue(DeviceScreenState.project(listOf(removed), listOf(visible), BluetoothAccessState.OFF, "").nearby.isEmpty())
     }
 
+    @Test fun pinsPreserveExistingOrderAndRemainWithinConnectionGroups() {
+        val second = phone.copy(peerId = "second", lastActivityAt = 1)
+        val pinned = phone.copy(peerId = "pinned", isPinned = true, localNote = "旅行备用")
+        val state = DeviceScreenState.project(listOf(office, phone, second, pinned), emptyList(), BluetoothAccessState.READY, "")
+        assertEquals(listOf(office), state.connected)
+        assertEquals(listOf(pinned, phone, second), state.offline)
+        val search = DeviceScreenState.project(listOf(pinned), emptyList(), BluetoothAccessState.OFF, "备用")
+        assertEquals(listOf(pinned), search.offline)
+    }
+
 }

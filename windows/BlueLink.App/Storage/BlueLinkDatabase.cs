@@ -34,11 +34,13 @@ public sealed partial class BlueLinkDatabase
         EnsurePeerTransportColumn(connection);
         EnsurePeerUsbColumn(connection);
         InitializeIdentityHints(connection);
-        ApplyIdentityAssociations(connection, identityStore);
+        ApplyIdentityAssociations(connection, identityStore, AssociateComposerDrafts);
         connection.Execute($"PRAGMA user_version={SchemaVersion};");
         EnsureDefaultSettings(connection);
         if (_portableRoot is not null) RelocatePortablePaths(connection, _portableRoot);
         ImportLegacyTrust(connection, identityStore.TrustedIdentities);
+        // Old process-local queues require a fresh explicit send; never replay them on reconnect.
+        connection.Execute("UPDATE message SET status='Failed' WHERE direction='Outgoing' AND UPPER(REPLACE(status,'_','')) IN ('SENDING','LOCALQUEUED');");
     }, token);
 
     public Task<BlueLinkSettings> LoadSettingsAsync(CancellationToken token = default) => Run(() =>
@@ -71,7 +73,8 @@ public sealed partial class BlueLinkDatabase
             Get(values, "duplicate_file_policy", defaults.DuplicateFilePolicy) is "ask" or "overwrite" ? Get(values, "duplicate_file_policy", defaults.DuplicateFilePolicy) : "rename",
             Bool(values, "message_notifications", defaults.MessageNotifications),
             Bool(values, "connection_notifications", defaults.ConnectionNotifications),
-            Bool(values, "transfer_notifications", defaults.TransferNotifications));
+            Bool(values, "transfer_notifications", defaults.TransferNotifications),
+            Domain.ComposerShortcuts.Normalize(Get(values, "send_shortcut", defaults.SendShortcut)));
     }, token);
 
     public Task SaveSettingsAsync(BlueLinkSettings settings, CancellationToken token = default) => Run(() =>
@@ -121,17 +124,27 @@ public sealed partial class BlueLinkDatabase
         return result;
     }, token);
 
-    public Task UpsertConversationAsync(StoredConversation value, CancellationToken token = default) => Run(() =>
+    public Task UpdateDraftAsync(string peerId, string text, CancellationToken token = default) => Run(() =>
+    {
+        using var connection = Open();
+        using var statement = connection.Prepare("UPDATE conversation SET draft=? WHERE peer_id=? COLLATE NOCASE");
+        statement.Bind(1, text).Bind(2, peerId).ExecuteNonQuery();
+    }, token);
+
+    public Task UpsertConversationMetadataAsync(StoredConversation value, CancellationToken token = default) =>
+        UpsertConversationAsync(value, token, preserveExistingDraft: true);
+
+    public Task UpsertConversationAsync(StoredConversation value, CancellationToken token = default, bool preserveExistingDraft = false) => Run(() =>
     {
         using var connection = Open();
         using var statement = connection.Prepare("""
             INSERT INTO conversation(conversation_id, peer_id, last_activity_at, unread_count, draft)
             VALUES(?,?,?,?,?)
             ON CONFLICT(conversation_id) DO UPDATE SET last_activity_at=excluded.last_activity_at,
-              unread_count=excluded.unread_count, draft=excluded.draft
+              unread_count=excluded.unread_count, draft=CASE WHEN ? THEN conversation.draft ELSE excluded.draft END
             """);
         statement.Bind(1, value.ConversationId).Bind(2, value.PeerId).Bind(3, value.LastActivityAt)
-            .Bind(4, value.UnreadCount).Bind(5, value.Draft).ExecuteNonQuery();
+            .Bind(4, value.UnreadCount).Bind(5, value.Draft).Bind(6, preserveExistingDraft ? 1 : 0).ExecuteNonQuery();
     }, token);
 
     public Task<IReadOnlyList<StoredConversation>> LoadConversationsAsync(CancellationToken token = default) => Run<IReadOnlyList<StoredConversation>>(() =>
@@ -191,6 +204,19 @@ public sealed partial class BlueLinkDatabase
         using var connection = Open();
         using var statement = connection.Prepare("SELECT attachment_id, message_id, transfer_id, file_name, mime_type, size_bytes, sha256, local_path, preview_path, state FROM attachment WHERE message_id=? ORDER BY rowid");
         statement.Bind(1, messageId);
+        while (statement.Read()) result.Add(new(
+            statement.GetString(0), statement.GetString(1), NullableString(statement, 2), statement.GetString(3),
+            statement.GetString(4), statement.GetInt64(5), statement.IsNull(6) ? null : statement.GetBlob(6),
+            NullableString(statement, 7), NullableString(statement, 8), statement.GetString(9)));
+        return result;
+    }, token);
+
+    public Task<IReadOnlyList<StoredAttachment>> LoadConversationAttachmentsAsync(string conversationId, CancellationToken token = default) => Run<IReadOnlyList<StoredAttachment>>(() =>
+    {
+        var result = new List<StoredAttachment>();
+        using var connection = Open();
+        using var statement = connection.Prepare("SELECT attachment_id, message_id, transfer_id, file_name, mime_type, size_bytes, sha256, local_path, preview_path, state FROM attachment WHERE message_id IN (SELECT message_id FROM message WHERE conversation_id=?) ORDER BY rowid");
+        statement.Bind(1, conversationId);
         while (statement.Read()) result.Add(new(
             statement.GetString(0), statement.GetString(1), NullableString(statement, 2), statement.GetString(3),
             statement.GetString(4), statement.GetInt64(5), statement.IsNull(6) ? null : statement.GetBlob(6),
@@ -430,6 +456,7 @@ public sealed partial class BlueLinkDatabase
         ["message_notifications"] = Value(value.MessageNotifications),
         ["connection_notifications"] = Value(value.ConnectionNotifications),
         ["transfer_notifications"] = Value(value.TransferNotifications),
+        ["send_shortcut"] = Domain.ComposerShortcuts.Normalize(value.SendShortcut),
         ["scan_on_startup"] = Value(value.ScanOnStartup),
         ["keep_background_sessions"] = Value(value.KeepBackgroundSessions),
         ["auto_download_files"] = Value(value.AutoDownloadFiles),

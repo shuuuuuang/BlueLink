@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using BlueLink.Domain;
@@ -80,6 +80,7 @@ public sealed partial class PeerSession
     }
     private async Task FailDroppedMtpAsync(Guid id)
     {
+        using var captured = _transferStreams.Capture(id);
         const string reason = "USB 文件通道已断开，请重试传输";
         try
         {
@@ -128,6 +129,15 @@ public sealed partial class PeerSession
         {
             switch (packet.Op)
             {
+                case "switch":
+                    if (!_negotiation.Supports(BtxCapability.TransferAttemptStreams)) break;
+                    if (job.Outgoing || _incoming.ContainsKey(id) || _offerDecisions.ContainsKey(id) || _pendingOffers.ContainsKey(id) || job.ImportStarted)
+                        return SendMtp(new("switch-denied") { Id = packet.Id, Epoch = job.Epoch });
+                    job.SwitchAccepted = true; job.Stop.Cancel(); job.Done.TrySetResult();
+                    _ = AcknowledgeQueuedSwitchAsync(job);
+                    break;
+                case "switched": job.Route.Resolve(true); break;
+                case "switch-denied": job.Route.Resolve(false); break;
                 case "blob":
                     if (job.Outgoing || !job.Active || job.ImportStarted) throw new InvalidDataException("Unexpected USB file");
                     job.ImportStarted = true;
@@ -142,6 +152,40 @@ public sealed partial class PeerSession
         }
         return Task.CompletedTask;
     }
+    private async Task AcknowledgeQueuedSwitchAsync(MtpJob job)
+    {
+        try
+        {
+            await job.Stopped.Task;
+            await SendMtp(new("switched") { Id = job.Offer.Id.ToString(), Epoch = job.Epoch });
+        }
+        catch (Exception error) { SessionLog.Write("WPD", "确认排队任务已释放失败", error); }
+    }
+
+    internal async Task SwitchQueuedToBluetoothAsync(TransferItem template)
+    {
+        if (!_negotiation.Supports(BtxCapability.TransferAttemptStreams) || !_mtpJobs.TryGetValue(template.Id, out var job) ||
+            !job.Outgoing || !template.CanSwitchToBluetooth || string.IsNullOrWhiteSpace(template.LocalPath))
+            throw new InvalidOperationException("任务已开始传输，无法切换通道。");
+        using var captured = _transferStreams.Capture(template.Id);
+        EnsureTrusted(_keys!);
+        var decision = job.Route.Request() ?? throw new InvalidOperationException("任务已开始传输，无法切换通道。");
+        bool accepted;
+        try
+        {
+            await SendMtp(new("switch") { Id = template.Id.ToString(), Epoch = job.Epoch });
+            accepted = await decision.WaitAsync(TimeSpan.FromSeconds(30), _cancellation.Token);
+        }
+        catch { job.Route.Resolve(true); job.Stop.Cancel(); throw; }
+        if (!accepted) throw new InvalidOperationException("对端已开始传输，无法切换通道。");
+        job.Stop.Cancel();
+        if (_outgoing.TryGetValue(template.Id, out var outgoing)) outgoing.Fail(new OperationCanceledException("改用蓝牙"));
+        await Attempts.WhenReleased(template.Id).WaitAsync(TimeSpan.FromSeconds(30), _cancellation.Token);
+        EnsureTrusted(_keys!);
+        var retry = template.Snapshot(); retry.Status = TransferStatus.Canceled; retry.QueuedForUsb = false;
+        await RetryFileAsync(template.LocalPath, retry, forceBluetooth: true);
+    }
+
     private async Task ServeMtpRequestAsync(MtpJob job)
     {
         try
@@ -167,10 +211,10 @@ public sealed partial class PeerSession
                 job.Progress.Item.Status = error is OperationCanceledException ? TransferStatus.Canceled : TransferStatus.Failed;
                 job.Progress.Item.FailureDetail = "USB 文件通道已结束，请重试";
                 _onTransfer(job.Progress.Item);
-                await TrySendFailureAsync(job.Offer.Id, job.Progress.Item.FailureDetail);
+                if (!job.SwitchAccepted) await TrySendFailureAsync(job.Offer.Id, job.Progress.Item.FailureDetail);
             }
         }
-        finally { _mtpJobs.TryRemove(job.Offer.Id, out _); job.Stop.Cancel(); }
+        finally { _mtpJobs.TryRemove(job.Offer.Id, out _); job.Stop.Cancel(); job.Stopped.TrySetResult(); }
     }
     private async Task RunMtpOutgoingAsync(FileOffer offer, OutgoingTransfer state, Func<CancellationToken, Task> send, Action? onQueued)
     {
@@ -180,11 +224,14 @@ public sealed partial class PeerSession
         if (!_mtpJobs.TryAdd(offer.Id, job)) throw new IOException("Duplicate USB transfer");
         try
         {
+            state.Progress.Item.QueuedForUsb = _negotiation.Supports(BtxCapability.TransferAttemptStreams);
             state.Progress.Report(TransferStatus.Queued, 0);
             SessionLog.Write("WPD", $"文件进入 USB/WPD 发送队列，id={offer.Id:N}，bytes={offer.Size}");
             await SendMtp(new("queue") { Id = offer.Id.ToString(), Epoch = job.Epoch, Offer = Convert.ToBase64String(TransferWire.EncodeOffer(offer)) });
             var queuedTransfer = binding.Queue.RunAsync(async token =>
             {
+                await job.Route.StartAsync(token);
+                state.Progress.Item.QueuedForUsb = false;
                 await state.Progress.WaitAsync(token);
                 job.Active = true;
                 SessionLog.Write("WPD", $"USB/WPD 发送队列开始，id={offer.Id:N}");
@@ -198,7 +245,7 @@ public sealed partial class PeerSession
         {
             try { await SendMtp(new("end") { Id = offer.Id.ToString(), Epoch = job.Epoch }); } catch { }
             _mtpJobs.TryRemove(offer.Id, out _);
-            job.Stop.Cancel();
+            job.Stop.Cancel(); job.Stopped.TrySetResult();
         }
     }
     private async Task SendMtpBlobAsync(Guid id, Stream source, CancellationToken token)
@@ -208,6 +255,7 @@ public sealed partial class PeerSession
         var name = Guid.NewGuid().ToString("N") + ".blm";
         Directory.CreateDirectory(OutgoingDirectory);
         var local = Path.Combine(OutgoingDirectory, name);
+        Storage.OwnedTemporaryFiles.Register(local, id);
         try
         {
             await using (var output = new FileStream(local, FileMode.CreateNew, FileAccess.Write, FileShare.None, 256 * 1024, true))
@@ -223,6 +271,7 @@ public sealed partial class PeerSession
         {
             CryptographicOperations.ZeroMemory(key);
             try { File.Delete(local); } catch { }
+            finally { Storage.OwnedTemporaryFiles.Release(local); }
             // Android removes consumed blobs; cleanup on failure is best-effort, strictly inside this session directory.
             try { await WpdFileHost.ExecuteAsync(job.Binding, device => device.DeleteBlob(job.Binding.FolderId, name), () => { }, _cancellation.Token); } catch { }
         }
@@ -264,6 +313,7 @@ public sealed partial class PeerSession
         {
             if (key is not null) CryptographicOperations.ZeroMemory(key);
             if (local is not null) try { File.Delete(local); } catch { }
+            finally { Storage.OwnedTemporaryFiles.Release(local); }
         }
     }
     private void MtpProgress(MtpJob job, long encodedBytes, ref long last)
@@ -289,7 +339,9 @@ public sealed partial class PeerSession
         public TransferPauseController Progress { get; } = progress;
         public WpdBinding Binding { get; } = binding;
         public string Epoch { get; } = epoch;
-        public bool Outgoing, Active, ImportStarted;
+        public QueuedRouteGate Route { get; } = new();
+        public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Outgoing, Active, ImportStarted, SwitchAccepted;
         public Task? ImportTask;
         public CancellationTokenSource Stop { get; } = CancellationTokenSource.CreateLinkedTokenSource(token);
         public TaskCompletionSource Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

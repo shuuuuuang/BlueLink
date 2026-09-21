@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_review_title">分享至藍聯</string>
+    <string name="share_choose_conversation">選擇對話</string>
+    <string name="share_trusted_only">僅顯示受信任的對話</string>
+    <string name="share_no_conversations">暫無受信任對話，請先連線裝置</string>
+    <string name="share_content_label">分享內容</string>
+    <string name="share_files_summary">%1$d 個檔案 · %2$s</string>
+    <string name="share_pick_note">選擇對話後即可傳送，也可以先保留。</string>
+    <string name="share_review_note">核對對話與內容後傳送。</string>
+    <string name="share_keep_later">稍後傳送</string>
+    <string name="share_submitting">正在提交…</string>
+    <string name="share_text_sent">文字已傳送</string>
+</resources>

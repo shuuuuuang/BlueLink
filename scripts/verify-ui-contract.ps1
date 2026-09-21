@@ -124,7 +124,7 @@ Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'AttachmentDeleteMenu_Cli
 Assert-NotContains 'windows\BlueLink.App\MainWindow.xaml' 'TransferColumn|TransferGapColumn|CollapsedTransferRail' 'Home removes the legacy third-column transfer rail'
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'ShowConversationPlaceholder' 'Home exposes the no-conversation state'
 Assert-Contains 'windows\BlueLink.App\MainWindow.Home.cs' 'ShowGlobalFiles' 'Home exposes global files independently of a conversation'
-Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="FileDeviceFilter"' 'File workspace exposes real device scope filtering'
+Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="FileRouteHeader"' 'File workspace exposes real device scope filtering'
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="FileSearchInput"' 'File workspace exposes filename search'
 Assert-NotContains 'windows\BlueLink.App\MainWindow.xaml' 'ClearCompletedTransfers_Click' 'Transfer panel omits clear-completed action'
 Assert-Contains 'windows\BlueLink.App\MainWindow.xaml' 'x:Name="MessageList"[\s\S]*BasedOn="\{StaticResource TransparentListItemStyle\}"[\s\S]*Margin" Value="0"' 'Chat items do not reserve an unconditional scrollbar gutter'
@@ -137,7 +137,8 @@ Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'RotateRight_Clic
 Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'Locate_Click|SaveAs_Click|PreviewFileActions|Esc 关闭' 'Image preview omits duplicate file actions and Escape hint'
 Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'OpenOriginal' 'Image preview omits open-original action'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="TitleBarFileName"' 'Image preview title bar hosts the actual file name'
-Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'FileDetailText|ToggleMaximize_Click|FullscreenButton' 'Image preview omits metadata row and custom fullscreen action'
+Assert-NotContains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'FileDetailText|ToggleMaximize_Click|CopyFileNameButton|PreviewImageBounds' 'Image preview omits duplicate metadata, copy-name action and image outline'
+Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="FullScreenButton"' 'Image preview exposes the requested fullscreen toggle beside close'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="ImageSurface"' 'Image preview uses an unconstrained transform surface'
 Assert-Contains 'windows\BlueLink.App\ImagePreviewWindow.xaml' 'x:Name="ImageTransform"' 'Image preview uses one testable transform matrix'
 

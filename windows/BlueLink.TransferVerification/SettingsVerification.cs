@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using BlueLink.Domain;
 using BlueLink.Legal;
 using BlueLink.Security;
@@ -63,6 +63,19 @@ internal sealed class SettingsVerification
             var database = new BlueLinkDatabase(root, root);
             await database.InitializeAsync(store);
             var settings = await database.LoadSettingsAsync();
+            Check(settings.SendShortcut == "enter", "new installations default to Enter send");
+            using (var legacy = new NativeSqliteConnection(database.DatabasePath))
+                legacy.Execute("DELETE FROM app_setting WHERE key='send_shortcut'");
+            Check((await database.LoadSettingsAsync()).SendShortcut == "enter", "legacy settings without shortcut remain readable");
+            await database.InitializeAsync(store);
+            Check((await database.LoadSettingsAsync()).SendShortcut == "enter", "default migration restores missing shortcut");
+            using (var invalid = new NativeSqliteConnection(database.DatabasePath))
+                invalid.Execute("UPDATE app_setting SET value='unknown' WHERE key='send_shortcut'");
+            Check((await database.LoadSettingsAsync()).SendShortcut == "enter", "unknown stored shortcut falls back to Enter");
+            await database.SaveSettingsAsync(settings with { SendShortcut = "ctrl-enter" });
+            Check((await new BlueLinkDatabase(root, root).LoadSettingsAsync()).SendShortcut == "ctrl-enter", "Ctrl+Enter persists across reopening");
+            await database.SaveSettingsAsync(settings with { SendShortcut = "unknown" });
+            Check((await database.LoadSettingsAsync()).SendShortcut == "enter", "invalid saved shortcut is normalized");
             Check(settings.DuplicateFilePolicy == "rename" && settings.AutoDownloadFiles && settings.AllowDiscovery && settings.ReconnectAfterDisconnect,
                 "aligned defaults preserve automatic receiving and safely rename duplicate files");
             Check(BlueLink.Domain.AutoConnectionPolicy.ShouldConnect(true, false, false, true, false) &&
@@ -103,7 +116,7 @@ internal sealed class SettingsVerification
             await database.InitializeAsync(store);
             await database.RevokePeerTrustAsync(peerId.ToLowerInvariant());
             Check((await database.LoadPeersAsync()).Single().IdentityPublicKey is null &&
-                  (await database.LoadPeersAsync()).Single().TrustState == StoredTrustState.Unknown,
+                  (await database.LoadPeersAsync()).Single().TrustState == StoredTrustState.Removed,
                 "single-peer revocation clears both key and permission regardless of peer ID case");
             Check(settings.LocalDeviceName == "", "existing database gains an empty local-name default");
             var addresses = (await database.LoadPeersAsync()).Single() with { TransportAddress = "bluetooth-original", UsbTransportAddress = "usb-interface" };

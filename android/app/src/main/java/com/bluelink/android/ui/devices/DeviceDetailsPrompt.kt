@@ -31,11 +31,13 @@ internal fun DeviceDetailsPrompt(conversation: ConversationSummary, dismiss: () 
             }
             Column(Modifier.weight(1f).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PromptField(context.getString(R.string.content_device_name), conversation.peerName)
+                if (conversation.localNote.isNotEmpty()) PromptField(context.getString(R.string.peer_note),conversation.localNote)
                 PromptField(context.getString(R.string.content_device_type), when (conversation.platform) {
                     PeerPlatform.ANDROID -> context.getString(R.string.content_android_phone)
                     PeerPlatform.WINDOWS -> context.getString(R.string.content_windows_pc)
                     PeerPlatform.UNKNOWN -> context.getString(R.string.content_other_device)
                 })
+                PromptField(context.getString(R.string.content_protocol), "BTX/1.1")
                 PromptField(context.getString(R.string.content_system_version), context.getString(R.string.content_peer_not_provided))
                 PromptField(context.getString(R.string.content_device_id), conversation.peerId.let { id ->
                     if (id.matches(Regex("[0-9a-fA-F]{32}"))) id.uppercase().chunked(4).joinToString(":") else id

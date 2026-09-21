@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="text_preview_title">檔案預覽</string>
+    <string name="text_preview_binary">此檔案不是可識別的文字，請使用其他應用程式開啟。</string>
+    <string name="text_preview_unreadable">無法預覽此檔案。可切換原文或使用其他應用程式開啟。</string>
+    <string name="text_preview_rendered">預覽</string>
+    <string name="text_preview_source">原文</string>
+    <string name="text_preview_copy">複製內容</string>
+    <string name="text_preview_truncated">檔案較大，僅預覽前 256 KiB；複製也僅包含預覽內容。</string>
+    <string name="text_preview_empty">空文字檔案</string>
+    <string name="text_preview_contents">目錄</string>
+    <string name="text_preview_no_headings">此文件沒有標題</string>
+    <string name="text_preview_untitled_heading">未命名標題</string>
+    <string name="text_preview_limit_info">查看預覽限制</string>
+</resources>

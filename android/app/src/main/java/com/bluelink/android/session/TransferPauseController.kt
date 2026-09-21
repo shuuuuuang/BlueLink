@@ -39,7 +39,7 @@ internal class TransferPauseController(private val notify: (TransferItem) -> Uni
             remotePaused -> TransferStatus.REMOTE_PAUSED
             else -> update.status
         }
-        val projected = update.copy(status = status)
+        val projected = update.copy(status = status, sourceSha256 = update.sourceSha256 ?: item?.sourceSha256)
         item = projected
         notify(projected)
     }

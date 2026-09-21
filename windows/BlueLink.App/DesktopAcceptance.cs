@@ -20,8 +20,8 @@ internal static partial class DesktopAcceptance
         "toast-info", "toast-success", "toast-warning", "toast-error", "toast-stacked",
         "first-use", "zero-connected", "bluetooth-off", "connected", "connected-empty", "offline-empty", "nearby-empty",
         "refresh-scanning", "refresh-complete", "refresh-interactive", "connect-loading", "connect-failed", "connect-success",
-        "message-empty", "message-statuses", "drop-send", "drop-blocked",
-        "files-device-transfer", "files-device-transfer-paused", "files-current", "files-global", "files-offline", "files-bluetooth-off", "message-history", "search-results", "search-empty"
+        "message-empty", "message-statuses", "drop-send", "drop-blocked", "drop-composer", "drop-composer-limit",
+        "files-stage-progress", "files-device-transfer", "files-device-transfer-paused", "files-current", "files-global", "files-offline", "files-bluetooth-off", "message-history", "search-results", "search-empty"
     };
 
     static DesktopAcceptance()
@@ -92,6 +92,7 @@ internal static partial class DesktopAcceptance
                 _ = window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
                     window.ShowMessageSearch(scene == "search-results" ? "需求文档" : "安装手册")));
             if (scene is "drop-send" or "drop-blocked") window.ShowFileDropFeedback(1);
+            if (scene is "drop-composer" or "drop-composer-limit") window.ShowFileDropFeedback(scene == "drop-composer" ? 1 : 11, composer: true);
             if (scene.StartsWith("security-", StringComparison.Ordinal) && new WindowInteropHelper(window).Handle != IntPtr.Zero)
                 _ = window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => ShowSecurityFixture(window, directory, scene)));
             if (scene.StartsWith("toast-", StringComparison.Ordinal)) ApplyToastFixture(window, scene);
@@ -181,6 +182,22 @@ public sealed partial class MainViewModel
         RaiseBluetoothStatus();
         if (scene is not ("first-use" or "files-global")) await SelectConversationAsync(peers[0].PeerId);
         if (_activeSessionId is { } sessionId) await LoadHistoryAsync(peers[0].PeerId, sessionId);
+        if (scene == "files-stage-progress")
+        {
+            var session = Sessions.First(value => value.PeerId == peers[0].PeerId);
+            var stages = AllTransfers.Where(value => value.PeerId == peers[0].PeerId && !value.Outgoing && value.LocalPath is null)
+                .OrderBy(value => value.CreatedAt).ToArray();
+            for (var index = 0; index < stages.Length; index++)
+            {
+                var transfer = stages[index].Snapshot();
+                transfer.Status = index == 0 ? TransferStatus.Committing : TransferStatus.Verifying;
+                transfer.CompletedBytes = transfer.TotalBytes;
+                transfer.FailureDetail = null;
+                OnSessionTransfer(session, transfer);
+            }
+            OnSessionTransfer(session, new TransferItem { Id = Guid.NewGuid(), Name = "QA 等待发送.zip", TotalBytes = 4096,
+                Outgoing = true, PeerId = session.PeerId, Status = TransferStatus.Queued, QueuedForUsb = true, LocalPath = Path.Combine(DataDirectory, "QA-source.zip") });
+        }
         if (scene == "refresh-scanning")
         {
             IsScanning = true;

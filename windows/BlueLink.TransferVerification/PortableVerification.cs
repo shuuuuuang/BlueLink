@@ -14,9 +14,13 @@ internal static class PortableVerification
         await database.InitializeAsync(identity);
         var settings = await database.LoadSettingsAsync();
         Check(database.DatabasePath.StartsWith(AppStoragePaths.ProgramDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "database stays inside portable directory");
-        using var service = new UpdateService(Path.Combine(AppStoragePaths.UserDirectory, "Cache", "Updates"), new UpdateTestSource());
-        try { await service.CheckAsync(UpdateService.CurrentVersion, CancellationToken.None); throw new Exception("Portable must not fetch an installer"); }
-        catch (InvalidOperationException error) when (error.Message == UpdateService.PortableUpdateNotice) { Check(true, "portable update cannot download an installer"); }
+        using var service = new UpdateService(Path.Combine(AppStoragePaths.UserDirectory, "Cache", "Updates"), new UpdateTestSource { Portable = true });
+        var release = await service.CheckAsync(UpdateService.CurrentVersion, CancellationToken.None);
+        Check(release is { IsPortable: true } && release.FileName.EndsWith("-Portable.zip"), "portable checks select ZIP update");
+        var package = await service.DownloadAsync(release!, null, CancellationToken.None);
+        Check(File.Exists(package.Path), "portable ZIP downloads inside the application");
+        try { await using var lease = await service.AcquireVerifiedPackageAsync(package, CancellationToken.None); throw new Exception("Portable must not execute an installer"); }
+        catch (InvalidOperationException error) when (error.Message == UpdateService.PortableUpdateNotice) { Check(true, "portable update cannot execute an installer"); }
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { AppStoragePaths.ProgramDirectory, AppStoragePaths.UserDirectory, database.DatabasePath, settings.DownloadDirectory, Architecture = RuntimeInformation.ProcessArchitecture.ToString() }));
     }
 

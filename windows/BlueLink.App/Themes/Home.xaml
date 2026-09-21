@@ -2,6 +2,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                     xmlns:local="clr-namespace:BlueLink">
+    <SolidColorBrush x:Key="MessageTextSelectionBrush" Color="#BFE9FF"/>
+    <SolidColorBrush x:Key="MessageTextSelectionInkBrush" Color="#10213C"/>
     <local:HomePeerSelectionConverter x:Key="HomePeerSelection"/>
     <FontFamily x:Key="HomeFont">/BlueLink;component/Assets/Fonts/#Noto Sans SC</FontFamily>
     <BitmapImage x:Key="HomeMessageSelectedIcon" UriSource="/BlueLink;component/Assets/Figma/message-selected.png"/>

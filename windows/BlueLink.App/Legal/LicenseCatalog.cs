@@ -18,6 +18,8 @@ public static class LicenseCatalog
 {
     public static IReadOnlyList<LicenseEntry> All { get; } = Array.AsReadOnly<LicenseEntry>(
     [
+        new("SkiaSharp 4.152.1", "MIT License", "SkiaSharp.txt"),
+        new("SkiaSharp 第三方组件", "Third-party notices", "SkiaSharp-ThirdPartyNotices.txt"),
         new("WPF-UI 4.3.0", "MIT License", "WPF-UI.txt"),
         new("WPF-UI.Abstractions 4.3.0", "MIT License", "WPF-UI-Abstractions.txt"),
         new("WPF-UI 第三方组件", "Third-party notices", "WPF-UI-ThirdPartyNotices.txt"),

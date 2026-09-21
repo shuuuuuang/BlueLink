@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_review_title">Share to BlueLink</string>
+    <string name="share_choose_conversation">Choose a conversation</string>
+    <string name="share_trusted_only">Trusted conversations only</string>
+    <string name="share_no_conversations">Connect a trusted device to get started</string>
+    <string name="share_content_label">Shared content</string>
+    <string name="share_files_summary">Files: %1$d · %2$s</string>
+    <string name="share_pick_note">Choose a conversation to send, or keep this for later.</string>
+    <string name="share_review_note">Review the conversation and content before sending.</string>
+    <string name="share_keep_later">Keep for later</string>
+    <string name="share_submitting">Submitting…</string>
+    <string name="share_text_sent">Text sent</string>
+</resources>

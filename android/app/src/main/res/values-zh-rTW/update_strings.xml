@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_check">檢查更新</string>
+    <string name="update_checking">正在查詢 GitHub…</string>
+    <string name="update_available">發現新版本</string>
+    <string name="update_current">目前已是最新版本</string>
+    <string name="update_failed">網路請求失敗，請檢查連線後重試。</string>
+    <string name="update_cancel">取消</string>
+    <string name="update_download">下載更新</string>
+    <string name="update_retry">重試</string>
+    <string name="update_install">安裝更新</string>
+    <string name="update_allow_install">允許安裝</string>
+    <string name="update_downloading">正在下載並校驗更新…</string>
+    <string name="update_ready">更新已校驗，可安裝。若剛授予安裝權限，請點擊安裝更新。</string>
+    <string name="update_verifying">正在複驗安裝包…</string>
+    <string name="update_permission_notice">請允許藍聯安裝應用程式，返回後點擊安裝更新。</string>
+    <string name="update_handed_off">已交給系統安裝程式，請在系統介面確認。</string>
+    <string name="update_integrity_failed">更新包不完整或校驗失敗，未安裝。請重試下載。</string>
+    <string name="update_signature_failed">更新包簽章與已安裝版本不同，無法覆蓋安裝。目前應用程式與資料保持不變。</string>
+    <string name="update_package_failed">更新包不屬於藍聯，已阻止安裝。</string>
+    <string name="update_version_failed">更新包版本不符或低於目前版本，已阻止安裝。</string>
+    <string name="update_install_failed">無法開啟系統安裝程式，請重試。</string>
+    <string name="update_in_app_notice">目前包含預覽版。更新包將在應用程式內下載並校驗，安裝時由系統請求確認。</string>
+</resources>

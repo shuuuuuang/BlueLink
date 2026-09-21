@@ -9,6 +9,7 @@ public partial class SettingsPage
     internal bool HasUnsavedChanges => !_isInitializing && !_savedDraft.SequenceEqual(CaptureDraft());
     private string[] CaptureDraft() => [
         ThemeBox.SelectedValue?.ToString() ?? "", LanguageBox.SelectedValue?.ToString() ?? "",
+        SendShortcutBox.SelectedValue?.ToString() ?? "",
         CloseBehaviorBox.SelectedValue?.ToString() ?? "", DuplicatePolicyBox.SelectedValue?.ToString() ?? "",
         RetentionBox.SelectedValue?.ToString() ?? "", DownloadPathText.Text.Trim(), ReceiveLimitText.Text.Trim(),
         ConnectionUsbToggle.IsChecked.ToString()!, ScanStartupToggle.IsChecked.ToString()!, AutoConnectToggle.IsChecked.ToString()!,

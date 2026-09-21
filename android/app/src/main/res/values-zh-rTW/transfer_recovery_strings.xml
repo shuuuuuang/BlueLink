@@ -1,0 +1,9 @@
+<resources>
+    <string name="transfer_recovery_pending">待恢復</string>
+    <string name="transfer_recovery_wait_sender">等待傳送方恢復</string>
+    <string name="transfer_recovery_action">恢復傳輸</string>
+    <string name="transfer_recovery_details">恢復說明</string>
+    <string name="transfer_recovery_sender_hint">應用程式中斷後保留的工作。請確認裝置連線後手動恢復；不會自動傳送。</string>
+    <string name="transfer_recovery_receiver_hint">應用程式中斷後保留的接收工作。請等待傳送方重試。</string>
+    <string name="transfer_recovery_write_failed">無法儲存工作恢復記錄，請檢查儲存空間後重試</string>
+</resources>

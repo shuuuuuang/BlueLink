@@ -86,7 +86,7 @@ public final class VerificationMain {
     }
 
     private void verifyProtocol11Payloads() throws Exception {
-        check(HexFormat.of().formatHex(ProtocolGreeting.current().encode()).equals("010100000000003f"),
+        check(HexFormat.of().formatHex(ProtocolGreeting.current().encode()).equals("010100000000007f"),
                 "BTX/1.1 greeting vector");
         ProtocolGreeting legacy = ProtocolGreeting.decode(new byte[]{1, 0, 0, 0});
         check(ProtocolGreeting.current().negotiate(legacy).minor() == 0
@@ -231,6 +231,12 @@ public final class VerificationMain {
                 extentSize, TransferReceiver.sha256(restartData), null, resumeKey)) {
             accept(receiver, restartData, extentSize, 0);
             check(receiver.contiguousCommittedOffset() == extentSize, "durable resume offset before restart");
+            boolean busy = false;
+            try (TransferReceiver competing = new TransferReceiver(root, "inbox/restart.bin", restartData.length,
+                    extentSize, new byte[32], null, resumeKey)) { }
+            catch (java.io.IOException expected) { busy = true; }
+            check(busy, "old receiver owns partial file until close");
+            check(receiver.contiguousCommittedOffset() == extentSize, "competing receiver cannot erase checkpoints");
         }
         try (TransferReceiver receiver = new TransferReceiver(root, "inbox/restart.bin", restartData.length,
                 extentSize, TransferReceiver.sha256(restartData), null, resumeKey)) {

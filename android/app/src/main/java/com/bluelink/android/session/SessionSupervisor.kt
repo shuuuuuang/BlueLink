@@ -45,6 +45,8 @@ internal class SessionSupervisor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
+    private val attempts = TransferAttemptRegistry()
+    var persistRecovery: ((ManagedSessionState, TransferItem) -> Boolean)? = null
     private val entries = mutableMapOf<UUID, Entry>()
     private val peerIndex = mutableMapOf<Pair<String, com.bluelink.android.domain.SessionTransport>, UUID>()
     @Volatile var localDeviceName: () -> String = { "" }
@@ -136,6 +138,7 @@ internal class SessionSupervisor(
                 onReceiveConfirmation = { onReceiveConfirmation(entry.snapshot(), it) },
             )
             entry = Entry(sessionId, name, address, session, connection.transport, connection.platform, connection.identityHint)
+            session.attempts = attempts
             session.mtpEnabled = mtpEnabled
             session.onMtpChanged = { publish(); onStateChanged(entry.snapshot()) }
             entries[sessionId] = entry
@@ -153,16 +156,35 @@ internal class SessionSupervisor(
         find(sessionId)?.session?.sendChat(text, messageId, onSent) ?: onSent(false)
     }
 
-    fun sendFile(sessionId: UUID, uri: Uri, name: String, size: Long) {
-        find(sessionId)?.session?.sendFile(uri, name, size)
+    fun sendSharedChat(sessionId: UUID,text: String,messageId: UUID,onSent:(Boolean)->Unit) {
+        find(sessionId)?.session?.sendSharedChat(text,messageId,onSent) ?: onSent(false)
     }
 
-    fun retryFile(sessionId: UUID, uri: Uri, template: TransferItem) {
-        find(sessionId)?.session?.retryFile(uri, template)
+    fun sendFile(sessionId: UUID, uri: Uri, name: String, size: Long, id: UUID = UUID.randomUUID(), beforeQueue: suspend (TransferItem) -> Unit = {}, onPrepared: (TransferItem?) -> Unit = {}, onAnnounced: (Boolean) -> Unit = {}) {
+        val entry=find(sessionId)
+        if(entry == null || entry.closed) { onPrepared(null); onAnnounced(false) } else entry.session.sendFile(uri, name, size, id, beforeQueue, onPrepared, onAnnounced)
     }
 
-    fun cancelTransfer(sessionId: UUID, transferId: UUID, reason: String = "用户取消") {
-        find(sessionId)?.session?.cancelTransfer(transferId, reason)
+    fun retryFile(sessionId: UUID, uri: Uri, template: TransferItem): Boolean {
+        val session = synchronized(lock) {
+            val entry = entries[sessionId] ?: return false
+            val peerId = entry.peerId
+            if (!TransferRetryEligibility.allows(template, peerId,
+                    !entry.closed && entry.phase == ConnectionPhase.CONNECTED,
+                    peerId != null && !identityStore.isRetired(peerId) &&
+                        peerId.lowercase(java.util.Locale.ROOT) in identityStore.trustedEntries())) return false
+            entry.session
+        }
+        return session.retryFile(uri, template)
+    }
+
+    fun switchQueuedToBluetooth(sessionId: UUID, template: TransferItem): Boolean =
+        find(sessionId)?.session?.switchQueuedToBluetooth(template) ?: false
+
+    fun cancelTransfer(sessionId: UUID, transferId: UUID, reason: String = "用户取消"): Boolean {
+        val session = find(sessionId)?.session ?: return false
+        session.cancelTransfer(transferId, reason)
+        return true
     }
 
     fun pauseTransfer(sessionId: UUID, transferId: UUID) {
@@ -236,8 +258,21 @@ internal class SessionSupervisor(
     }
 
     private fun publishTransfer(entry: Entry, value: TransferItem) {
-        val report = synchronized(lock) { entry.transfers.record(value) } ?: return
+        var persistenceFailure: Exception? = null
+        val report = synchronized(lock) {
+            var accepted = entry.transfers.record(value.copy(peerId = entry.peerId, recoveryPending = false)) ?: return
+            try { if (!saveRecovery(entry.snapshot(), accepted)) return }
+            catch (failure: Exception) {
+                persistenceFailure = failure
+                accepted = accepted.copy(status = com.bluelink.android.domain.TransferStatus.FAILED,
+                    failureDetail = context.getString(com.bluelink.android.R.string.transfer_recovery_write_failed))
+                entry.transfers.record(accepted)
+                saveRecovery(entry.snapshot(), accepted)
+            }
+            accepted
+        }
         onTransfer(entry.snapshot(), report)
+        persistenceFailure?.let { throw java.io.IOException(context.getString(com.bluelink.android.R.string.transfer_recovery_write_failed), it) }
     }
 
     private fun closeEntry(entry: Entry, reason: String) {
@@ -253,10 +288,18 @@ internal class SessionSupervisor(
             entry.detail = reason
             finalState = entry.snapshot()
         }
-        interrupted.forEach { onTransfer(finalState, it) }
+        interrupted.forEach { if (saveRecovery(finalState, it)) onTransfer(finalState, it) }
         _states.value = synchronized(lock) { entries.values.map { it.snapshot() } } + finalState
         onStateChanged(finalState)
         publish()
+    }
+
+    private fun saveRecovery(session: ManagedSessionState, item: TransferItem): Boolean = try {
+        persistRecovery?.invoke(session, item) ?: true
+    } catch (failure: Exception) {
+        if (item.status in com.bluelink.android.domain.HistoryQuery.activeStatuses) throw failure
+        onDiagnostic(DiagnosticLevel.ERROR, "Recovery", "无法保存任务终态：${failure.message}")
+        true // Let streams close; the last durable record can only be restored by explicit user action.
     }
 
     private fun publish() {

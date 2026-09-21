@@ -67,6 +67,13 @@ namespace BlueLink.Shared
                 !String.Equals(action, "None", StringComparison.OrdinalIgnoreCase);
         }
 
+        public static bool ShouldRepairPresentMsi(
+            bool runtimeOnlyPlan, bool uninstalling, string packageState, string requestedAction) =>
+            !runtimeOnlyPlan && !uninstalling &&
+            String.Equals(packageState, "Present", StringComparison.OrdinalIgnoreCase) &&
+            (String.Equals(requestedAction, "Install", StringComparison.OrdinalIgnoreCase) ||
+             String.Equals(requestedAction, "Repair", StringComparison.OrdinalIgnoreCase));
+
         public static bool ShouldConvertInstallToRepair(bool currentBundleInstalled, string requestedAction) =>
             currentBundleInstalled &&
             (String.Equals(requestedAction, "Unknown", StringComparison.OrdinalIgnoreCase) ||

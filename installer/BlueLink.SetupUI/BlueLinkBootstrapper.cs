@@ -318,8 +318,23 @@ namespace BlueLink.SetupUI
                 return;
             }
 
-            if (this.runtimeOnlyPlan && e.PackageId.Equals("BlueLinkMsi", StringComparison.OrdinalIgnoreCase))
+            if (!e.PackageId.Equals("BlueLinkMsi", StringComparison.OrdinalIgnoreCase)) return;
+            if (this.runtimeOnlyPlan)
+            {
                 e.State = RequestState.None;
+            }
+            else if (InstallerExecutionPolicy.ShouldRepairPresentMsi(
+                this.runtimeOnlyPlan, this.uninstalling,
+                e.CurrentState.ToString(), this.plannedLaunchAction.ToString()))
+            {
+                // The exact MSI may already be installed independently of this
+                // bundle. Present would then produce a no-op even though this
+                // bundle is new. Repair the package without changing upgrade
+                // planning for related bundles or weakening the execution gate.
+                e.State = RequestState.Repair;
+                this.engine.Log(LogLevel.Standard,
+                    "BlueLink BA: exact BlueLinkMsi is present; requesting package repair.");
+            }
         }
 
         private void OnPlanMsiPackage(object sender, PlanMsiPackageEventArgs e)

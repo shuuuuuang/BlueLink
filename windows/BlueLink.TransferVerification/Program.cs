@@ -19,6 +19,44 @@ using BlueLink.Files;
 
 try
 {
+    if (args.Length == 2 && args[0] == "--release-identity")
+    {
+        if (BlueLink.Updates.UpdateService.CurrentRelease.Tag != args[1]) throw new InvalidOperationException("Embedded release tag mismatch.");
+        Console.WriteLine("Embedded release identity verified: " + args[1]); return;
+    }
+    if (args.Length == 2 && args[0] == "--recovery-fixture") { await TransferRecoveryVerification.SeedAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--recovery-model") { new OffscreenWpfVerification().Run(args[1], recoveryOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--transfer-recovery") { TransferRecoveryVerification.Run(args[1]); return; }
+    if (args.Length == 1 && args[0] == "--transfer-attempts") { await TransferAttemptVerification.RunAsync(); return; }
+    if (args.Length == 2 && args[0] == "--transfer-source") { await TransferSourceIdentityVerification.RunAsync(args[1]); return; }
+    if (args.Length == 1 && args[0] == "--transfer-presentation") { TransferPresentationVerification.Run(); return; }
+    if (args.Length == 2 && args[0] == "--message-recovery") { await MessageRecoveryVerification.RunAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--file-showcase") { new OffscreenWpfVerification().Run(args[1], fileShowcaseOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--message-history") { new OffscreenWpfVerification().Run(args[1], messageHistoryOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--message-batch") { new OffscreenWpfVerification().Run(args[1], messageBatchOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--native-date-popups-child") { NativeDatePopupVerification.Run(args[1], true); return; }
+    if (args.Length == 2 && args[0] == "--native-date-popups") { NativeDatePopupVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--date-filters") { new OffscreenWpfVerification().Run(args[1], dateFiltersOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--file-batch") { new OffscreenWpfVerification().Run(args[1], batchOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--peer-preferences") { PeerPreferencesVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--temporary-storage") { TemporaryStorageVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--queued-route") { await new UsbVerification().VerifyQueuedRouteAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--composer-transport") { await new UsbVerification().VerifyComposerOrderAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--composer") { ComposerVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--drafts") { new OffscreenWpfVerification().Run(args[1], draftsOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--product-search") { new OffscreenWpfVerification().Run(args[1], productSearchOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--bubble-shapes") { new OffscreenWpfVerification().Run(args[1], bubbleShapesOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--native-search-selection") { NativeSearchSelectionVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--native-search-selection-child") { NativeSearchSelectionVerification.Run(args[1], true); return; }
+    if (args.Length == 2 && args[0] == "--search-interactions") { new OffscreenWpfVerification().Run(args[1], searchInteractionOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--message-menus") { new OffscreenWpfVerification().Run(args[1], messageMenusOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--search-layout") { new OffscreenWpfVerification().Run(args[1], searchActionsOnly: true); return; }
+    if (args.Length == 2 && args[0] == "--search-actions") { SearchResultVerification.Run(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--github-update-ui") { GitHubUpdateUiVerification.Run(args[1]); return; }
+    if (args.Contains("--github-updates-only")) { GitHubReleaseVerification.Run(); await new UpdateVerification().RunAsync(); return; }
+    if (args.Length == 3 && args[0] == "--github-local-package") { await GitHubReleaseVerification.VerifyLocalPreviewAsync(args[1], args[2]); return; }
+    if (args.Length == 2 && args[0] == "--github-download") { await GitHubReleaseVerification.DownloadLiveAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--github-live") { await GitHubReleaseVerification.LiveAsync(args[1]); return; }
     if (args.Contains("--runtime-packages-only")) { await RuntimePackageVerification.RunAsync(); return; }
     if (args.Contains("--portable-probe")) { await PortableVerification.ProbeAsync(); return; }
     if (args.Contains("--portable-only")) { await PortableVerification.RunAsync(); return; }
@@ -28,6 +66,7 @@ try
     if (args.Length == 2 && args[0] == "--dialogs-only") { DialogVerification.Run(args[1]); return; }
     if (args.Length == 4 && args[0] == "--desktop-dialog") { DialogVerification.Run(args[1], args[2], args[3]); return; }
     if (args.Length == 2 && args[0] == "--peer-reconnect") { await new UsbVerification().VerifyTransferReconnectAsync(args[1]); return; }
+    if (args.Length == 2 && args[0] == "--transfer-persistence") { await new TransferReceiverVerification().RunAsync(); TransferPersistenceVerification.Run(args[1]); return; }
     if (args.Contains("--transfer-reconnect-only")) { await SessionTransferLedgerVerification.RunAsync(); return; }
     if (args.Contains("--mtp-only")) { await MtpVerification.RunAsync(); return; }
     if (args.Contains("--protocol-only", StringComparer.OrdinalIgnoreCase))
@@ -265,6 +304,16 @@ try
         return;
     }
 
+    if (args.Contains("--query-layout", StringComparer.OrdinalIgnoreCase))
+    {
+        new OffscreenWpfVerification().Run(args[Array.IndexOf(args, "--query-layout") + 1], queryOnly: true);
+        return;
+    }
+    if (args.Contains("--history-search", StringComparer.OrdinalIgnoreCase))
+    {
+        await HistorySearchVerification.RunAsync(args[Array.IndexOf(args, "--history-search") + 1]);
+        return;
+    }
     if (args.Contains("--history-query-only", StringComparer.OrdinalIgnoreCase))
     {
         new HistoryQueryVerification().Run();
@@ -444,6 +493,7 @@ internal sealed class ChatScrollBarVerification
             try
             {
                 var app = new App();
+                SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
                 app.InitializeComponent();
                 var testRoot = Path.Combine(Path.GetTempPath(), $"BlueLinkChatLayout-{Guid.NewGuid():N}");
                 var window = new MainWindow(initializeRuntime: false, dataRoot: testRoot)
@@ -486,9 +536,17 @@ internal sealed class ChatScrollBarVerification
                     var itemOrigin = firstItem.TransformToAncestor(messageList).Transform(new Point());
                     var barOrigin = scrollBar.TransformToAncestor(messageList).Transform(new Point());
                     measuredGap = barOrigin.X - (itemOrigin.X + firstItem.ActualWidth);
-                    if (measuredGap < 8)
+                    // Rows now fill the viewport; spacing belongs to the message content,
+                    // not a permanent gutter on every ListBoxItem.
+                    if (measuredGap < -0.5)
                         throw new InvalidOperationException(
-                            $"Message/scrollbar safety gap is only {measuredGap:0.##} px.");
+                            $"Message row overlaps the scrollbar by {-measuredGap:0.##} px.");
+                    var bubble = FindVisualChild<Border>(firstItem, value => value.Name == "Bubble") ??
+                        throw new InvalidOperationException("Message bubble was not generated.");
+                    var bubbleRight = bubble.TransformToAncestor(messageList)
+                        .Transform(new Point(bubble.ActualWidth, 0)).X;
+                    if (barOrigin.X - bubbleRight < 8)
+                        throw new InvalidOperationException("Message content lacks scrollbar clearance.");
 
                     scrollViewer.ScrollToTop();
                     window.UpdateLayout();
@@ -539,22 +597,47 @@ internal sealed class ChatScrollBarVerification
             history.UpdateLayout();
             var input = (Wpf.Ui.Controls.TextBox)history.FindName("QueryInput");
             var results = (ListBox)history.FindName("Results");
+            void WaitForResults(int expected)
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(5);
+                var count = (TextBlock)history.FindName("ResultCount");
+                while (DateTime.UtcNow < deadline)
+                {
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    history.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => frame.Continue = false));
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                    history.UpdateLayout();
+                    if (results.Items.Count == expected && count.Text != BlueLink.Localization.Strings.Get("正在查询…")) return;
+                    Thread.Sleep(10);
+                }
+                throw new InvalidOperationException($"History query did not settle at {expected} results: {count.Text}");
+            }
+            WaitForResults(2);
             if (!history.IsVisible || results.Items.Count != 2 || results.SelectedItem is not null)
                 throw new InvalidOperationException("History grouping must not select a result or close during window creation.");
             input.Text = " review ";
-            history.UpdateLayout();
+            WaitForResults(1);
             if (results.Items.Count != 1) throw new InvalidOperationException("History input must filter rendered results.");
             input.Text = "missing QA";
-            if (((TextBlock)history.FindName("EmptyMessage")).Visibility != Visibility.Visible)
+            WaitForResults(0);
+            if (((FrameworkElement)history.FindName("EmptyState")).Visibility != Visibility.Visible)
                 throw new InvalidOperationException("Empty history result state is missing.");
             input.Text = "";
             var imageTab = FindVisualChild<RadioButton>(history, button => (string?)button.Tag == "Images")!;
             imageTab.IsChecked = true;
+            WaitForResults(1);
             if (results.Items.Count != 1) throw new InvalidOperationException("Image tab must filter attachment history.");
-            var dateTab = FindVisualChild<RadioButton>(history, button => (string?)button.Tag == "Date")!;
-            dateTab.IsChecked = true;
-            ((DatePicker)history.FindName("DateInput")).SelectedDate = DateTime.Today.AddDays(-1);
-            if (results.Items.Count != 1) throw new InvalidOperationException("Date filter must use the selected local day.");
+            var allTab = FindVisualChild<RadioButton>(history, button => (string?)button.Tag == "All")!;
+            allTab.IsChecked = true;
+            WaitForResults(2);
+            if (results.Items.Count != 2) throw new InvalidOperationException("All tab must restore both records.");
+            ((RecordDatePicker)history.FindName("DateInput")).SelectedDate = DateTime.Today;
+            WaitForResults(1);
+            if (results.Items.Count != 1 || ((ChatItem)results.Items[0].GetType().GetProperty("Message")!.GetValue(results.Items[0])!).Id != records[0].Id)
+                throw new InvalidOperationException("Start date must exclude the older image.");
+            ((RecordDatePicker)history.FindName("DateInput")).SelectedDate = null;
+            WaitForResults(2);
+            if (results.Items.Count != 2) throw new InvalidOperationException("Clearing the date must restore both records.");
         }
         finally { history.Close(); }
     }
@@ -706,7 +789,7 @@ internal sealed class BtxProtocolVerification
 {
     public void Run()
     {
-        Check(Convert.ToHexString(ProtocolGreeting.Current.Encode()) == "010100000000003F",
+        Check(Convert.ToHexString(ProtocolGreeting.Current.Encode()) == "010100000000007F",
             "BTX/1.1 greeting vector");
         var legacy = ProtocolGreeting.Decode([1, 0, 0, 0]);
         var downgrade = ProtocolGreeting.Current.Negotiate(legacy);

@@ -1,0 +1,9 @@
+<resources>
+    <string name="transfer_recovery_pending">Ready to recover</string>
+    <string name="transfer_recovery_wait_sender">Waiting for sender to recover</string>
+    <string name="transfer_recovery_action">Recover transfer</string>
+    <string name="transfer_recovery_details">Recovery details</string>
+    <string name="transfer_recovery_sender_hint">Task retained after interruption. Connect to the device and recover manually. Nothing is sent automatically.</string>
+    <string name="transfer_recovery_receiver_hint">Incoming task retained after interruption. Wait for the sender to retry.</string>
+    <string name="transfer_recovery_write_failed">Could not save task recovery data. Check available storage and retry.</string>
+</resources>

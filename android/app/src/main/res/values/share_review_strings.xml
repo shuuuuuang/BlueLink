@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_review_title">分享至蓝联</string>
+    <string name="share_choose_conversation">选择会话</string>
+    <string name="share_trusted_only">仅显示受信任的会话</string>
+    <string name="share_no_conversations">暂无受信任会话，请先连接设备</string>
+    <string name="share_content_label">分享内容</string>
+    <string name="share_files_summary">%1$d 个文件 · %2$s</string>
+    <string name="share_pick_note">选择会话后即可发送，也可以先保留。</string>
+    <string name="share_review_note">核对会话与内容后发送。</string>
+    <string name="share_keep_later">稍后发送</string>
+    <string name="share_submitting">正在提交…</string>
+    <string name="share_text_sent">文字已发送</string>
+</resources>

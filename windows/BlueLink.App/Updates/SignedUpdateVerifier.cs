@@ -23,6 +23,10 @@ public sealed class SignedUpdateVerifier : IUpdatePackageVerifier
                 throw new InvalidDataException("安装包发布者与当前应用不一致，已阻止安装。");
         }
         catch (CryptographicException error) { throw new InvalidDataException("当前应用缺少可核验的发布者签名，无法自动安装更新。", error); }
+        VerifyProduct(path, version);
+    }
+    public static void VerifyProduct(string path, Version version)
+    {
         var product = FileVersionInfo.GetVersionInfo(path);
         if (!(product.ProductName?.Contains("BlueLink", StringComparison.OrdinalIgnoreCase) ?? false) ||
             !Version.TryParse(product.ProductVersion?.Split('+')[0], out var actual) || actual.Major != version.Major || actual.Minor != version.Minor || actual.Build != version.Build)

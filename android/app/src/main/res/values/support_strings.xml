@@ -38,7 +38,6 @@
     <string name="support_privacy">隐私政策</string>
     <string name="support_agreement">用户协议</string>
     <string name="support_licenses">开源许可</string>
-    <string name="support_local_update">选择本地安装包</string>
     <string name="support_version">Android 版 %1$s（%2$d）</string>
     <string name="support_unresolved">仍未解决？</string>
     <string name="support_fill_feedback">填写问题反馈</string>

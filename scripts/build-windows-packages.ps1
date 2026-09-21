@@ -4,6 +4,7 @@ param(
     [ValidateSet('Bundled','External','Both')][string]$InstallerRuntime = 'Both',
     [string]$DotnetPath = '',
     [string]$OutputDirectory = '',
+    [string]$DeliveryDirectory = '',
     [string]$NuGetConfig = (Join-Path $PSScriptRoot '../NuGet.Config'),
     [switch]$Offline,
     [switch]$SkipTests
@@ -217,10 +218,10 @@ try {
                 $productCode = [Guid]::NewGuid().ToString('B')
                 $provider = 'BlueLink.Review.' + [Guid]::NewGuid().ToString('N')
                 $common = $buildOptions + @("-p:ProductVersion=$version","-p:ProductCode=$productCode","-p:PackageUpgradeCode=$packageUpgrade","-p:BundleUpgradeCode=$bundleUpgrade","-p:BundleProviderKey=$provider","-p:ProductRegistryKey=$registration","-p:ManifestPath=$ownership")
-                $msiArgs = @('build','installer/BlueLink.Package/BlueLink.Package.wixproj','-t:Rebuild') + $common + @("-p:Platform=$arch","-p:InstallerPlatform=$arch",'-p:MajorUpgradeSchedule=afterInstallInitialize','-p:AllowSameVersionUpgrades=yes',"-p:GeneratedPayloadPath=$generated","-p:ProductName=BlueLink Review ($arch)","-p:LauncherExe=$stage\BlueLink.exe","-p:LauncherConfig=$stage\BlueLink.exe.config","-p:UninstallExe=$stage\Uninstall.exe","-p:UninstallConfig=$stage\Uninstall.exe.config")
+                $msiArgs = @('build','installer/BlueLink.Package/BlueLink.Package.wixproj','-t:Rebuild') + $common + @("-p:BundledDesktopRuntime=$bundleFlag","-p:Platform=$arch","-p:InstallerPlatform=$arch",'-p:MajorUpgradeSchedule=afterInstallInitialize','-p:AllowSameVersionUpgrades=yes',"-p:GeneratedPayloadPath=$generated","-p:ProductName=BlueLink Review ($arch)","-p:LauncherExe=$stage\BlueLink.exe","-p:LauncherConfig=$stage\BlueLink.exe.config","-p:UninstallExe=$stage\Uninstall.exe","-p:UninstallConfig=$stage\Uninstall.exe.config")
                 foreach ($name in @('ApplicationComponentGuid','UninstallerComponentGuid','ManifestComponentGuid','DownloadComponentGuid','StartMenuComponentGuid','DesktopComponentGuid','AutoStartComponentGuid')) { $msiArgs += "-p:$name=" + [Guid]::NewGuid().ToString('B') }
                 Invoke-Dotnet $msiArgs (Join-Path $work 'msi-build.log')
-                $msi = Join-Path $root "installer/BlueLink.Package/bin/$arch/Release/BlueLink.Package.msi"
+                $msi = Join-Path $root "installer/BlueLink.Package/bin/$arch/Release/zh-CN/BlueLink.Package.msi"
                 $prerequisites = if ($bundled) { @('-p:IncludePrerequisites=no') } else {
                     @('-p:IncludePrerequisites=yes', "-p:RuntimePayload=$($externalRuntime.Path)",
                         "-p:RuntimeDownloadUrl=$($externalRuntime.Info.Url)", "-p:RuntimeVersion=$($externalRuntime.Info.Version)",
@@ -257,6 +258,7 @@ try {
                 Assert-PeMachine (Join-Path $ba 'mbanative.dll') $hostArch
                 $msiTemplate = [BlueLinkPackageSummary]::GetTemplate($msi).Split(';')[0]
                 if ($msiTemplate -ne @{ x86='Intel'; x64='x64'; arm64='Arm64' }[$arch]) { throw "MSI platform mismatch: $msiTemplate vs $arch" }
+                & (Join-Path $PSScriptRoot 'verify-msi-wizard.ps1') -MsiPath $msi -FrameworkDependent:(-not $bundled) *> (Join-Path $work 'msi-wizard-verification.log')
                 foreach ($kind in @('msi','exe')) {
                     $source = if ($kind -eq 'msi') { $msi } else { $exe }
                     $label = if ($bundled) { '' } else { '-NoRuntime' }
@@ -268,6 +270,19 @@ try {
             $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'build-manifest.json') -Encoding utf8
             $manifest | ForEach-Object { "$($_.Sha256)  $($_.File)" } | Set-Content -LiteralPath (Join-Path $OutputDirectory 'SHA256SUMS.txt') -Encoding ascii
         }
+    }
+    # Retention runs only after every requested artifact has passed the build/embedding gates.
+    $retention = Join-Path $PSScriptRoot 'prune-windows-packages.ps1'
+    if ($DeliveryDirectory) {
+        $DeliveryDirectory = [IO.Path]::GetFullPath($DeliveryDirectory)
+        if ($DeliveryDirectory -notmatch '[\\/]artifacts[\\/]' -or (Test-Path -LiteralPath $DeliveryDirectory)) { throw 'Use a new delivery directory under artifacts.' }
+        New-Item -ItemType Directory -Path $DeliveryDirectory | Out-Null
+        foreach ($entry in $manifest) { Copy-Item -LiteralPath (Join-Path $OutputDirectory $entry.File) -Destination $DeliveryDirectory }
+        Copy-Item -LiteralPath (Join-Path $OutputDirectory 'build-manifest.json'), (Join-Path $OutputDirectory 'SHA256SUMS.txt') -Destination $DeliveryDirectory
+        & $retention -ArtifactRoot (Split-Path -Parent $DeliveryDirectory) -SuccessfulDirectory $DeliveryDirectory -Keep 3 -Apply
+    }
+    if ((Split-Path -Parent $OutputDirectory) -match '[\\/]artifacts(?:[\\/].*)?$') {
+        & $retention -ArtifactRoot (Split-Path -Parent $OutputDirectory) -SuccessfulDirectory $OutputDirectory -Keep 3 -Apply
     }
     Write-Host "Windows artifacts: $OutputDirectory"
 } finally { Pop-Location; $env:DOTNET_CLI_HOME = $previousCli; $env:NUGET_PACKAGES = $previousPackages }

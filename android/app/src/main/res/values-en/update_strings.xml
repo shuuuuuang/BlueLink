@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking GitHub…</string>
+    <string name="update_available">Update available</string>
+    <string name="update_current">You are up to date</string>
+    <string name="update_failed">Network request failed. Check your connection and retry.</string>
+    <string name="update_cancel">Cancel</string>
+    <string name="update_download">Download update</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_install">Install update</string>
+    <string name="update_allow_install">Allow installation</string>
+    <string name="update_downloading">Downloading and verifying…</string>
+    <string name="update_ready">Update verified and ready. After granting permission, tap Install update.</string>
+    <string name="update_verifying">Verifying the package again…</string>
+    <string name="update_permission_notice">Allow BlueLink to install apps, return here, and tap Install update.</string>
+    <string name="update_handed_off">Handed off to the system installer. Confirm installation there.</string>
+    <string name="update_integrity_failed">Package incomplete or verification failed. Nothing was installed. Retry the download.</string>
+    <string name="update_signature_failed">The package signature differs from this installation. Your app and data are unchanged.</string>
+    <string name="update_package_failed">This package is not BlueLink. Installation blocked.</string>
+    <string name="update_version_failed">The package version is incorrect or older. Installation blocked.</string>
+    <string name="update_install_failed">Unable to open the system installer. Please retry.</string>
+    <string name="update_in_app_notice">Preview releases are included. Updates download and verify in the app; Android asks you to confirm installation.</string>
+</resources>

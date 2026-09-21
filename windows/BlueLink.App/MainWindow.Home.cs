@@ -10,26 +10,7 @@ public partial class MainWindow
     {
         if (DevicesColumn is null) return;
         DevicesColumn.Width = new(Math.Clamp(264 + (args.NewSize.Width - 1000) * .18, 264, 340));
-        MessageComposer.Height = args.NewSize.Height < 620 ? 104 : 120;
-    }
-
-    private void FileToolbar_SizeChanged(object sender, SizeChangedEventArgs args) => UpdateFileToolbarLayout();
-
-    private void UpdateFileToolbarLayout()
-    {
-        if (FileStatusFilter is null || FileToolbar.ActualWidth <= 0) return;
-        // Measure the localized buttons even while their parent is collapsed.
-        var tabsWidth = 0d;
-        foreach (System.Windows.Controls.RadioButton button in FileStatusFilters.Children)
-        {
-            button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            tabsWidth += button.DesiredSize.Width;
-        }
-        var required = tabsWidth + FileSearchHost.MinWidth + FileSearchHost.Margin.Left + FileSearchHost.Margin.Right +
-            FileToolbar.ColumnDefinitions[2].Width.Value + FileToolbar.ColumnDefinitions[3].Width.Value;
-        var compact = FileToolbar.ActualWidth < required;
-        FileStatusFilters.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        FileStatusFilter.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        ApplyComposerHeight();
     }
 
     private void DeviceGroup_Click(object sender, RoutedEventArgs e)
@@ -50,7 +31,8 @@ public partial class MainWindow
         _model.ShowFiles = true;
         // Checked can invoke FilesView_Click. Apply the requested scope after that callback.
         FilesViewButton.IsChecked = true;
-        _fileDevice = allDevices || !_model.HasActiveConversation ? "" : "@current";
+        _fileDevice = _fileScope = allDevices || !_model.HasActiveConversation ? "" : "@current";
+        _fileColumnSelections["Route"].RemoveWhere(key => key.StartsWith("peer:"));
         ConfigureTransferView();
     }
 
@@ -65,13 +47,26 @@ public partial class MainWindow
     {
         if (!IsInitialized) return;
         _model.ShowFiles = true;
-        _fileDevice = _model.HasActiveConversation ? "@current" : "";
+        _fileDevice = _fileScope = _model.HasActiveConversation ? "@current" : "";
+        _fileColumnSelections["Route"].RemoveWhere(key => key.StartsWith("peer:"));
         ConfigureTransferView();
     }
 
     private async void Home_KeyDown(object sender, KeyEventArgs e)
     {
         if (_model.IsSettingsOpen) return;
+        if (_model.MessageSelectionMode)
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; if (!_messageBatchRunning) SetMessageSelectionMode(false); return; }
+            if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; return; }
+            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; MessageBatchCopy_Click(sender, e); return; }
+        }
+        if (_model.FileSelectionMode)
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; SetFileSelectionMode(false); return; }
+            if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; return; }
+            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; if (FileBatchCopy.IsEnabled) FileBatch_Click(FileBatchCopy, e); return; }
+        }
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;

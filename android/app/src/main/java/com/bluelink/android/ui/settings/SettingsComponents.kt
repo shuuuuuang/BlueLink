@@ -82,7 +82,7 @@ internal fun SettingsHeader(page: Int, back: () -> Unit) = DeviceScreenTheme {
 @Composable
 internal fun SettingsHome(modifier: Modifier, select: (Int) -> Unit) = DeviceScreenTheme {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())
-        .padding(horizontal = 16.dp, vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val entries = listOf(
             Triple(SETTINGS_GENERAL, R.drawable.figma_settings_general, R.string.general_description),
             Triple(0, R.drawable.figma_settings_connections, R.string.connections_description),

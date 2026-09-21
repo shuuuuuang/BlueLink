@@ -1,0 +1,12 @@
+<resources>
+    <string name="message_batch_copied">已复制所选消息</string>
+    <string name="message_batch_copy_failed">复制失败，请重试</string>
+    <string name="message_batch_copy">复制</string>
+    <string name="message_batch_share_limit">每次最多分享100个附件，请减少选择</string>
+    <string name="message_batch_summary">已删除 %1$d 条，跳过或失败 %2$d 条</string>
+    <string name="message_batch_delete_confirm">确定删除所选的 %1$d 条本机消息记录吗？</string>
+    <string name="message_batch_delete_note">只删除本机消息记录，保留已保存文件；正在发送或待恢复的消息会跳过。</string>
+    <string name="message_batch_active">正在发送或待恢复的消息不能删除。</string>
+    <string name="message_batch_select_to_here">选择到这里</string>
+    <string name="message_share_text_file">分享文字</string>
+</resources>

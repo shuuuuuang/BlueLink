@@ -2,11 +2,11 @@
 
 BlueLink 是 Android 与 Windows 之间的本地聊天和文件传输应用。设备通过 Bluetooth 发现、连接并建立端到端加密会话；连接 USB 后，可使用 Windows WPD / Android MTP 文件通道加速传输。
 
-当前源码版本为 **0.2.17**，主分支为 **main**。项目仍在开发与验收中，已验证范围和已知限制见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
+当前源码版本为 **0.2.18**，主分支为 **main**。项目仍在开发与验收中，已验证范围和已知限制见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
 
 ## 下载
 
-安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.17-preview.3](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.17-preview.3)，新增 Windows 三种架构的 NoRuntime 精简安装包。
+安装包见 [GitHub Releases](https://github.com/shuuuuuang/BlueLink/releases)。当前预览版为 [v0.2.18-preview.1](https://github.com/shuuuuuang/BlueLink/releases/tag/v0.2.18-preview.1)，包含近期消息搜索、日期筛选、多选操作和双端图片预览优化；收藏功能留待后续版本。
 
 - Windows 常见电脑选择 `win-x64-Setup.exe`；需要免安装时选择同架构的 `Portable.zip`，也提供 x86 与 ARM64。
 - Android 不确定架构时选择 `android-universal-release.apk`，最低 Android 13；正式签名 APK 无法直接覆盖旧 Debug 安装。
@@ -48,7 +48,7 @@ BlueLink 是 Android 与 Windows 之间的本地聊天和文件传输应用。�
 - 蓝牙使用 BTX/1.1 加密记录及顺序校验；USB 中转目录保存加密文件，传输密钥通过已加密的蓝牙会话交换。
 - 接收端执行文件完整性校验，并处理接收大小限制、同名文件和最终发布。
 
-Android 当前不申请 `INTERNET` 权限。Windows 的更新检查与安装包下载会访问配置的 GitHub 发布源，运行库获取也可能联网；这些功能与设备间传输分开。构建时需要下载 Gradle、Android 和 NuGet 依赖。
+双端仅在用户点击时查询固定 GitHub 仓库的公开 Release，并在应用内下载、核验更新包，不上传设备、消息或文件数据。Android 声明 `INTERNET` 与 `REQUEST_INSTALL_PACKAGES`，校验哈希、包名、版本和同一签名后交给系统安装确认；首次使用需由用户允许蓝联安装应用。Windows 正式包要求可信签名和相同发布者；用户批准的未签名 Review 预览包例外须通过固定来源、大小、SHA-256 和产品版本校验，并在安装前明确提示未签名。运行库获取也可能联网；消息与文件仍走设备直连。构建时需要下载 Gradle、Android 和 NuGet 依赖。
 
 ## 工程结构
 
@@ -152,6 +152,17 @@ NoRuntime EXE 检测到缺少运行库时，会由现有向导提示从 Microsof
 
 这些包是未签名的开发验收产物。Review 安装包共用独立于正式版的安装身份，不用于与其他架构的 Review 版并排安装。脚本只生成产物，不自动执行安装。
 
+### GitHub 检查更新
+
+Windows 设置与 Android 关于页已接入固定仓库 `shuuuuuang/BlueLink` 的公开 Release 列表，当前开发阶段包含预览版。按完整标签比较版本（如 `v0.2.17-preview.10` 晚于 `preview.9`），忽略草稿，校验附件名称、大小、SHA-256 元数据和仓库下载地址。
+
+发布工作流将标签通过 `BLUELINK_RELEASE_TAG` 写入双端；普通本地构建只使用 VERSION，不猜测它对应哪个已发布预览版。Windows 按进程架构选择完整安装包或 Portable ZIP。安装版在应用内下载并校验，用户确认后启动安装程序；未签名 Review 预览包按上述例外处理，正式包签名门禁保留。Portable ZIP 在应用内下载，仍需退出后解压替换并保留 Data、Download，尚不支持自动替换。
+
+Android 在应用内下载 universal release APK，显示进度，支持取消和重试。安装前再次核验完整性及签名，系统权限和安装确认仍由系统界面完成，全流程不打开浏览器。正式签名 APK 与 Debug 安装签名不同，应用会拒绝覆盖；不要通过卸载来绕过该保护。
+
+无线真机已完成同签名候选包从应用内校验到系统覆盖安装，回到首页后原设备记录保留。真实 GitHub 下载已看到进度并验证取消清理；公网完整下载受网络影响未完成，Windows 完整公网下载超时，真实签名 Windows 覆盖更新和完整安装矩阵仍为 **Not verified**。本轮源码接入不等于发布了新 Release，既有 APK/EXE 不会自动获得这些改动。
+
+
 ### Portable 数据与更新
 
 将 ZIP 解压到可写目录，直接运行 `BlueLink.exe`。`BlueLink.portable` 标记使数据库、设备身份、设置、缓存和日志保存在程序目录内的 `Data`，默认接收文件放入 `Download`。
@@ -168,12 +179,12 @@ NoRuntime EXE 检测到缺少运行库时，会由现有向导提示从 Microsof
 
 ### GitHub Releases 自动发布
 
-仓库的 `.github/workflows/release.yml` 在推送 `v<VERSION>-preview.N` 标签时执行自动发布，例如 `v0.2.17-preview.1`。当前多架构安装器仍为 Review 身份，因此此工作流只发布预览版；正式稳定发布继续遵守上面的发布锁和验收要求。
+仓库的 `.github/workflows/release.yml` 在推送 `v<VERSION>-preview.N` 标签时执行自动发布，例如 `v0.2.18-preview.1`。当前多架构安装器仍为 Review 身份，因此此工作流只发布预览版；正式稳定发布继续遵守上面的发布锁和验收要求。
 
 ```powershell
 git push origin main
-git tag -a v0.2.17-preview.1 -m "BlueLink 0.2.17 preview 1"
-git push origin v0.2.17-preview.1
+git tag -a v0.2.18-preview.1 -m "BlueLink 0.2.18 preview 1"
+git push origin v0.2.18-preview.1
 ```
 
 标签必须与根目录 `VERSION` 一致，指向远程 `main` 历史中的提交。每次发布使用新的标签；升级 Android 版本时还须递增 `android/app/build.gradle.kts` 的 `versionCode`。Actions 页面也可手动运行 **Publish preview release**，填写已有标签；手动运行默认保留草稿。

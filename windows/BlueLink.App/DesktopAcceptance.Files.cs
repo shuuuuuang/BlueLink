@@ -8,7 +8,7 @@ internal static partial class DesktopAcceptance
 {
     internal static bool HasFileFixture(string? scene) => scene is
         "settings-trusted" or
-        "files-device-transfer" or "files-device-transfer-paused" or "files-current" or "files-global" or "files-offline" or "files-bluetooth-off" or "message-history" or "search-results" or "search-empty" ||
+        "files-stage-progress" or "files-device-transfer" or "files-device-transfer-paused" or "files-current" or "files-global" or "files-offline" or "files-bluetooth-off" or "message-history" or "search-results" or "search-empty" ||
         scene is not null && (MenuFixtures.ContainsKey(scene) || scene.StartsWith("toast-", StringComparison.Ordinal) || scene.StartsWith("security-", StringComparison.Ordinal));
 
     private static async Task SeedFileFixtureAsync(BlueLinkDatabase db, string directory, string scene, DateTimeOffset now)

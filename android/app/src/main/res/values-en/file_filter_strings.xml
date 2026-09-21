@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_filter_device">Device</string>
+    <string name="file_filter_title">Filter</string>
+    <string name="file_filter_reset">Reset</string>
+    <string name="file_filter_unlimited">Any date</string>
+    <string name="file_filter_invalid_dates">Start date must not be after end date</string>
+    <string name="file_filter_search_devices">Search devices</string>
+    <string name="file_filter_sort_description">Sort: %1$s, %2$s</string>
+    <string name="file_filter_count_description">Filter, active: %d</string>
+    <plurals name="file_filter_view_results">
+        <item quantity="one">Show %d file</item>
+        <item quantity="other">Show %d files</item>
+    </plurals>
+</resources>

@@ -26,10 +26,12 @@ class TransferActionsTest {
         for (state in TransferStatus.entries) {
             val actions = TransferActions.available(item(state, uri = "content://test/1"))
             assertEquals(state == TransferStatus.COMPLETED, TransferAction.OPEN in actions)
-            assertEquals(state == TransferStatus.COMPLETED, TransferAction.COPY in actions)
-            assertEquals(state == TransferStatus.COMPLETED, TransferAction.REVEAL in actions)
+            assertEquals(state == TransferStatus.COMPLETED, TransferAction.SHARE in actions)
+            assertEquals(state == TransferStatus.COMPLETED, TransferAction.SAVE in actions)
         }
-        assertFalse(TransferAction.OPEN in TransferActions.available(item(TransferStatus.COMPLETED)))
+        assertEquals(listOf(TransferAction.DETAILS, TransferAction.DELETE), TransferActions.available(item(TransferStatus.COMPLETED)))
+        assertEquals(listOf(TransferAction.OPEN, TransferAction.SHARE, TransferAction.SAVE, TransferAction.DETAILS, TransferAction.DELETE),
+            TransferActions.available(item(TransferStatus.COMPLETED, uri = "content://test/1")))
     }
 
     @Test fun failedAndRejectedMessagesExposeRetryOnlyForTheSenderWithASource() {
@@ -40,12 +42,27 @@ class TransferActionsTest {
         }
     }
 
-    @Test fun failedFilterIncludesCanceledAndRejectedRecordsAndPreservesScope() {
+    @Test fun routeSwitchOnlyAppearsForUnstartedOutgoingUsbTask() {
+        val queued = item(TransferStatus.QUEUED, true).copy(queuedForUsb = true)
+        assertTrue(TransferAction.BLUETOOTH in TransferActions.available(queued))
+        assertFalse(TransferAction.BLUETOOTH in TransferActions.available(queued.copy(outgoing = false)))
+        assertFalse(TransferAction.BLUETOOTH in TransferActions.available(queued.copy(queuedForUsb = false)))
+        assertFalse(TransferAction.BLUETOOTH in TransferActions.available(queued.copy(status = TransferStatus.TRANSFERRING)))
+    }
+
+    @Test fun sourceRepairRequiresOriginalFingerprintAndOutgoingTerminalTask() {
+        val original=item(TransferStatus.FAILED,true).copy(sourceSha256="A".repeat(64))
+        assertTrue(TransferAction.RESELECT in TransferActions.available(original))
+        assertFalse(TransferAction.RESELECT in TransferActions.available(original.copy(outgoing=false)))
+        assertFalse(TransferAction.RESELECT in TransferActions.available(original.copy(sourceSha256=null)))
+        assertFalse(TransferAction.RESELECT in TransferActions.available(original.copy(status=TransferStatus.TRANSFERRING)))
+    }
+    @Test fun incompleteFilterIncludesCanceledAndRejectedRecordsAndPreservesScope() {
         val canceled = item(TransferStatus.CANCELED).copy(peerId = "chosen")
         val failed = item(TransferStatus.FAILED).copy(peerId = "chosen")
         val rejected = item(TransferStatus.REJECTED).copy(peerId = "other")
         val all = listOf(canceled, failed, rejected)
-        assertEquals(setOf(canceled, failed), HistoryQuery.files(all, "", FileStatusFilter.FAILED, FileDirectionFilter.ALL, "chosen").toSet())
-        assertEquals(all.toSet(), HistoryQuery.files(all, "", FileStatusFilter.FAILED, FileDirectionFilter.ALL, null).toSet())
+        assertEquals(setOf(canceled, failed), HistoryQuery.files(all, "", FileStatusFilter.INCOMPLETE, FileDirectionFilter.ALL, "chosen").toSet())
+        assertEquals(all.toSet(), HistoryQuery.files(all, "", FileStatusFilter.INCOMPLETE, FileDirectionFilter.ALL, null).toSet())
     }
 }
